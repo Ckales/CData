@@ -217,7 +217,7 @@ void main() {
     expect(source.edits, isEmpty);
   });
 
-  testWidgets('二进制单元格拒绝编辑', (tester) async {
+  testWidgets('二进制单元格只能查看不能编辑', (tester) async {
     final source = FakeGridSource(
       summary: summaryOf(columns: [column('id'), column('data')], totalRows: 1),
       rows: [
@@ -227,9 +227,11 @@ void main() {
     await pumpGrid(tester, source);
 
     await doubleTap(tester, find.byKey(const ValueKey('cell-0-1')));
+    await tester.pumpAndSettle();
 
+    // 二进制打开的是只读的十六进制查看，不是编辑框
     expect(find.byType(TextField), findsNothing);
-    expect(find.textContaining('二进制'), findsWidgets);
+    expect(find.text('HEX 4'), findsOneWidget);
     expect(source.edits, isEmpty);
   });
 

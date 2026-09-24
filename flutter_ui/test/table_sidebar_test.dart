@@ -1,6 +1,7 @@
 // 侧栏的 widget 测试。内存数据，不起 app、不连库。
 
 import 'package:cdata_flutter/table_sidebar.dart';
+import 'package:flutter/gestures.dart' show kSecondaryButton;
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -12,6 +13,7 @@ Future<void> pumpSidebar(
   String database = 'shop',
   void Function(String table)? onTableSelected,
   void Function(String database)? onDatabaseChanged,
+  void Function(String table)? onShowStructure,
 }) async {
   await tester.pumpWidget(
     MaterialApp(
@@ -21,6 +23,7 @@ Future<void> pumpSidebar(
           database: database,
           onDatabaseChanged: onDatabaseChanged ?? (_) {},
           onTableSelected: onTableSelected ?? (_) {},
+          onShowStructure: onShowStructure,
         ),
       ),
     ),
@@ -77,5 +80,29 @@ void main() {
     await pumpSidebar(tester, FakeSchemaSource.simple(), database: 'analytics');
 
     expect(find.text('0 张表'), findsOneWidget);
+  });
+
+  testWidgets('右键表名弹菜单，可以看结构也可以浏览', (tester) async {
+    String? structureOf;
+    String? browsed;
+    await pumpSidebar(
+      tester,
+      FakeSchemaSource.simple(),
+      onShowStructure: (table) => structureOf = table,
+      onTableSelected: (table) => browsed = table,
+    );
+
+    await tester.tap(find.text('users'), buttons: kSecondaryButton);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('查看结构'));
+    await tester.pumpAndSettle();
+    expect(structureOf, 'users');
+    expect(browsed, isNull, reason: '看结构不该顺带跑查询');
+
+    await tester.tap(find.text('orders'), buttons: kSecondaryButton);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('浏览数据'));
+    await tester.pumpAndSettle();
+    expect(browsed, 'orders');
   });
 }

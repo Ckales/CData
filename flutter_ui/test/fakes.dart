@@ -23,13 +23,19 @@ Uint64List keyIndexes(List<int> indexes) {
 /// 造 n 个字节，测二进制单元格用
 Uint8List bytesOf(int length) => Uint8List(length);
 
-ColumnMeta column(String name, {String table = 'orders', bool isBinary = false}) {
+ColumnMeta column(
+  String name, {
+  String table = 'orders',
+  bool isBinary = false,
+  ColumnKind kind = ColumnKind.text,
+}) {
   return ColumnMeta(
     name: name,
     orgName: name,
     orgTable: table,
     schema: 'shop',
     isBinary: isBinary,
+    kind: isBinary ? ColumnKind.binary : kind,
   );
 }
 
@@ -211,6 +217,53 @@ class FakeGridSource implements GridSource {
     return written;
   }
 
+  /// 列下标 → ENUM / SET 可选值
+  final Map<int, List<String>> choices = {};
+
+  @override
+  Future<List<String>> columnChoices(int column) async {
+    final list = choices[column];
+    if (list == null) throw Exception('列 $column 不是 ENUM / SET');
+    return list;
+  }
+
+  /// 简化版：只认对象和数组的外形。真实的校验和格式化由 cdata-core 的测试保证
+  @override
+  Future<String> formatJson(String text) async {
+    final trimmed = text.trim();
+    final looksLikeJson = (trimmed.startsWith('{') && trimmed.endsWith('}')) ||
+        (trimmed.startsWith('[') && trimmed.endsWith(']'));
+    if (!looksLikeJson) throw Exception('不是合法的 JSON：line 1');
+    // 和真实格式化一样是幂等的：格式化过的文本再校验一次也得通过
+    return '${trimmed.substring(0, 1)}\n${trimmed.substring(1).trimLeft()}';
+  }
+
+  @override
+  Future<String> hexDump(Uint8List bytes) async => 'HEX ${bytes.length}';
+
+  /// exportRows 的调用记录
+  final List<({String path, int rowStart, int? rowCount, List<int> columns, ExportOptions options})>
+      exports = [];
+
+  /// 导出时假装结果集被截断过
+  bool exportTruncated = false;
+
+  @override
+  Future<ExportSummary> exportRows(
+    String path,
+    int rowStart,
+    int? rowCount,
+    List<int> columns,
+    ExportOptions options,
+  ) async {
+    final error = editError;
+    if (error != null) throw Exception(error);
+
+    exports.add((path: path, rowStart: rowStart, rowCount: rowCount, columns: columns, options: options));
+    final written = rowCount ?? rows.length - rowStart;
+    return ExportSummary(rowsWritten: BigInt.from(written), sourceTruncated: exportTruncated);
+  }
+
   /// 和 Rust 侧 display_text 保持一致的显示规则
   String _display(CellValue cell) {
     return switch (cell) {
@@ -251,4 +304,14 @@ class FakeSchemaSource implements SchemaSource {
 
   @override
   Future<List<TableInfo>> tables(String database) async => tablesByDb[database] ?? [];
+
+  /// 表名 → 结构。没有的表 structure 会抛错，用来测失败提示
+  final Map<String, TableStructure> structures = {};
+
+  @override
+  Future<TableStructure> structure(String database, String table) async {
+    final structure = structures[table];
+    if (structure == null) throw Exception('表 $table 不存在');
+    return structure;
+  }
 }
