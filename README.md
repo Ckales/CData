@@ -97,7 +97,8 @@ CREATE TABLE no_pk (a INT, b VARCHAR(50));
 > **在命令行里完全看不出来**，只有按 utf8mb4 读的客户端才会看到乱码。
 
 测试会自己在测试库里建几张探针表（`CREATE TABLE IF NOT EXISTS`，只增不删）：表结构查看用 `structure_parent` / `structure_child`，
-结构编辑用 `alter_probe_*`（跑完结构改回原样），导入用 `import_probe`（跑完按批次标记删掉本次写入的行）。
+结构编辑用 `alter_probe_*`（跑完结构改回原样），新建表用 `create_probe_child`（只在不存在时建一次），导入用 `import_probe`（跑完按批次标记删掉本次写入的行）。
+用户与权限的测试会临时建 `cdata_probe_*`@localhost 账号（只授测试库上的权限），跑完只删自己建的这几个。
 
 连接信息通过环境变量传，不写进代码：
 
