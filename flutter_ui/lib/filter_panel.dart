@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
+import 'mac_widgets.dart';
 import 'src/rust/api/db.dart';
+import 'theme.dart';
 
 /// 运算符在界面上的写法
 String filterOpLabel(FilterOp op) {
@@ -69,29 +71,54 @@ class FilterBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final description = this.description;
-    return Padding(
+    final mac = MacColors.of(context);
+    // Querious 网格上方那一条：左边一个小弹出按钮，后面接当前条件
+    return Container(
+      height: 28,
       padding: const EdgeInsets.symmetric(horizontal: 8),
+      decoration: BoxDecoration(
+        color: mac.window,
+        border: Border(bottom: BorderSide(color: mac.separator)),
+      ),
       child: Row(
         children: [
-          TextButton.icon(
+          OutlinedButton(
             onPressed: onEdit,
-            icon: const Icon(Icons.filter_alt_outlined, size: 16),
-            label: const Text('筛选', style: TextStyle(fontSize: 12)),
+            style: OutlinedButton.styleFrom(
+              minimumSize: const Size(0, 20),
+              padding: const EdgeInsets.only(left: 6, right: 2),
+              // 有筛选时按钮变成系统蓝，一眼看出结果是筛过的
+              foregroundColor: description == null ? mac.text : mac.accent,
+            ),
+            child: const Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.filter_alt_outlined, size: 13),
+                SizedBox(width: 3),
+                // 字号写在 Text 上而不是 textStyle：textStyle 会整个替换主题的按钮字体
+                Text('筛选', style: TextStyle(fontSize: 12)),
+                Icon(Icons.unfold_more, size: 13),
+              ],
+            ),
           ),
+          const SizedBox(width: 8),
           Expanded(
             child: Text(
               description ?? '未筛选',
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontSize: 12,
-                fontFamily: description == null ? null : 'Menlo',
-                color: description == null ? Theme.of(context).colorScheme.outline : Theme.of(context).colorScheme.onSurface,
-              ),
+              style: TextStyle(fontSize: 12, color: description == null ? mac.tertiaryText : mac.text),
             ),
           ),
           if (description != null)
-            TextButton(onPressed: onClear, child: const Text('清除', style: TextStyle(fontSize: 12))),
+            TextButton(
+              onPressed: onClear,
+              style: TextButton.styleFrom(
+                minimumSize: const Size(0, 20),
+                padding: const EdgeInsets.symmetric(horizontal: 6),
+              ),
+              child: const Text('清除', style: TextStyle(fontSize: 12)),
+            ),
         ],
       ),
     );
@@ -220,7 +247,7 @@ class _FilterDialogState extends State<_FilterDialog> {
     return AlertDialog(
       title: Row(
         children: [
-          const Text('筛选', style: TextStyle(fontSize: 16)),
+          const Text('筛选'),
           const Spacer(),
           _matchDropdown(_root, const ValueKey('filter-match')),
         ],
@@ -236,25 +263,44 @@ class _FilterDialogState extends State<_FilterDialog> {
         ),
       ),
       actions: [
-        TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('取消')),
+        OutlinedButton(onPressed: () => Navigator.of(context).pop(), child: const Text('取消')),
         FilledButton(onPressed: _apply, child: const Text('应用')),
       ],
     );
   }
 
   Widget _matchDropdown(_GroupDraft group, Key key) {
-    return DropdownButton<bool>(
+    return MacPopupButton<bool>(
       key: key,
       value: group.matchAll,
-      isDense: true,
-      style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurface),
-      items: const [
-        DropdownMenuItem(value: true, child: Text('满足全部条件')),
-        DropdownMenuItem(value: false, child: Text('满足任一条件')),
-      ],
-      onChanged: (value) {
-        if (value != null) setState(() => group.matchAll = value);
-      },
+      items: const {true: '满足全部条件', false: '满足任一条件'},
+      onChanged: (value) => setState(() => group.matchAll = value),
+    );
+  }
+
+  /// 小号的文字按钮：添加条件、添加分组
+  Widget _smallButton(Key key, IconData icon, String label, VoidCallback onPressed) {
+    return TextButton.icon(
+      key: key,
+      onPressed: onPressed,
+      style: TextButton.styleFrom(
+        minimumSize: const Size(0, 22),
+        padding: const EdgeInsets.symmetric(horizontal: 6),
+        iconSize: 14,
+      ),
+      icon: Icon(icon),
+      label: Text(label, style: const TextStyle(fontSize: 12)),
+    );
+  }
+
+  /// 删掉一条或一个分组的小叉
+  Widget _removeButton(Key key, String tooltip, VoidCallback onPressed) {
+    return IconButton(
+      key: key,
+      tooltip: tooltip,
+      style: IconButton.styleFrom(minimumSize: const Size(22, 22), padding: EdgeInsets.zero, iconSize: 14),
+      onPressed: onPressed,
+      icon: const Icon(Icons.remove_circle_outline),
     );
   }
 
@@ -271,20 +317,18 @@ class _FilterDialogState extends State<_FilterDialog> {
         },
       Row(
         children: [
-          TextButton.icon(
-            key: ValueKey('filter-add$addSuffix'),
-            onPressed: () => setState(() => group.items.add(_newDraft())),
-            icon: const Icon(Icons.add, size: 16),
-            label: const Text('添加条件', style: TextStyle(fontSize: 12)),
+          _smallButton(
+            ValueKey('filter-add$addSuffix'),
+            Icons.add,
+            '添加条件',
+            () => setState(() => group.items.add(_newDraft())),
           ),
-          TextButton.icon(
-            key: ValueKey('filter-add-group$addSuffix'),
+          _smallButton(
+            ValueKey('filter-add-group$addSuffix'),
+            Icons.account_tree_outlined,
+            '添加分组',
             // 新组先给一条条件：空组没有意义，core 也不收
-            onPressed: () => setState(() => group.items.add(
-                  _GroupDraft(matchAll: !group.matchAll)..items.add(_newDraft()),
-                )),
-            icon: const Icon(Icons.account_tree_outlined, size: 16),
-            label: const Text('添加分组', style: TextStyle(fontSize: 12)),
+            () => setState(() => group.items.add(_GroupDraft(matchAll: !group.matchAll)..items.add(_newDraft()))),
           ),
         ],
       ),
@@ -292,27 +336,26 @@ class _FilterDialogState extends State<_FilterDialog> {
   }
 
   Widget _groupBox(_GroupDraft inner, List<_GroupDraft> path, int index, String key) {
-    final scheme = Theme.of(context).colorScheme;
+    final mac = MacColors.of(context);
     return Container(
-      margin: const EdgeInsets.symmetric(vertical: 4),
-      padding: const EdgeInsets.fromLTRB(8, 4, 0, 0),
-      decoration: BoxDecoration(border: Border(left: BorderSide(color: scheme.primary, width: 2))),
+      margin: const EdgeInsets.symmetric(vertical: 3),
+      padding: const EdgeInsets.fromLTRB(8, 4, 4, 2),
+      // 分组是一块浅底带细边框的区域，像 macOS 的分组框
+      decoration: BoxDecoration(
+        color: mac.text.withValues(alpha: 0.03),
+        border: Border.all(color: mac.separator),
+        borderRadius: BorderRadius.circular(6),
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              Text('分组', style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant)),
+              Text('分组', style: TextStyle(fontSize: 12, color: mac.secondaryText)),
               const SizedBox(width: 8),
               _matchDropdown(inner, ValueKey('filter-match-$key')),
               const Spacer(),
-              IconButton(
-                key: ValueKey('filter-remove-$key'),
-                tooltip: '删掉这个分组',
-                iconSize: 16,
-                onPressed: () => _remove(path, index),
-                icon: const Icon(Icons.close),
-              ),
+              _removeButton(ValueKey('filter-remove-$key'), '删掉这个分组', () => _remove(path, index)),
             ],
           ),
           ..._groupBody([...path, inner], '$key.'),
@@ -328,46 +371,30 @@ class _FilterDialogState extends State<_FilterDialog> {
     final takesList = filterOpTakesList(draft.op);
 
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
+      padding: const EdgeInsets.symmetric(vertical: 3),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           SizedBox(
             width: 160,
-            child: DropdownButton<String>(
+            child: MacPopupButton<String>(
               key: ValueKey('filter-column-$key'),
               value: draft.column,
-              isDense: true,
-              isExpanded: true,
-              style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurface),
-              items: [
-                for (final column in columns)
-                  DropdownMenuItem(value: column, child: Text(column, overflow: TextOverflow.ellipsis)),
-              ],
-              onChanged: (column) {
-                if (column != null) setState(() => draft.column = column);
-              },
+              items: {for (final column in columns) column: column},
+              onChanged: (column) => setState(() => draft.column = column),
             ),
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: 6),
           SizedBox(
             width: 100,
-            child: DropdownButton<FilterOp>(
+            child: MacPopupButton<FilterOp>(
               key: ValueKey('filter-op-$key'),
               value: draft.op,
-              isDense: true,
-              isExpanded: true,
-              style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurface),
-              items: [
-                for (final op in FilterOp.values)
-                  DropdownMenuItem(value: op, child: Text(filterOpLabel(op))),
-              ],
-              onChanged: (op) {
-                if (op != null) setState(() => draft.op = op);
-              },
+              items: {for (final op in FilterOp.values) op: filterOpLabel(op)},
+              onChanged: (op) => setState(() => draft.op = op),
             ),
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: 6),
           Expanded(
             child: TextField(
               key: ValueKey('filter-value-$key'),
@@ -377,10 +404,10 @@ class _FilterDialogState extends State<_FilterDialog> {
               minLines: 1,
               maxLines: takesList ? 5 : 1,
               keyboardType: takesList ? TextInputType.multiline : TextInputType.text,
-              style: const TextStyle(fontSize: 12, fontFamily: 'Menlo'),
+              style: const TextStyle(fontSize: 12),
+              // 边框、底色沿用主题，只压低高度和弹出按钮对齐
               decoration: InputDecoration(
-                isDense: true,
-                border: const OutlineInputBorder(),
+                // 紧凑输入框的高度是 10 + 上下内边距，6 正好 22px，和弹出按钮一样高
                 contentPadding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
                 hintText: takesList ? '一行一个值' : null,
                 helperText: switch (draft.op) {
@@ -393,13 +420,8 @@ class _FilterDialogState extends State<_FilterDialog> {
               onSubmitted: takesList ? null : (_) => _apply(),
             ),
           ),
-          IconButton(
-            key: ValueKey('filter-remove-$key'),
-            tooltip: '删掉这条',
-            iconSize: 16,
-            onPressed: () => _remove(path, index),
-            icon: const Icon(Icons.close),
-          ),
+          const SizedBox(width: 2),
+          _removeButton(ValueKey('filter-remove-$key'), '删掉这条', () => _remove(path, index)),
         ],
       ),
     );

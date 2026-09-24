@@ -90,7 +90,7 @@ class SqlEditorField extends StatefulWidget {
 }
 
 class _SqlEditorFieldState extends State<SqlEditorField> {
-  static const double _itemHeight = 24;
+  static const double _itemHeight = 22;
   static const int _visibleItems = 8;
 
   final _portal = OverlayPortalController();
@@ -316,17 +316,22 @@ class _SqlEditorFieldState extends State<SqlEditorField> {
         // 事件先到输入框，输入框不处理才冒泡到这里；弹窗开着时上下键、回车归补全
         child: Focus(
           onKeyEvent: _onKey,
+          // 用 Tab 把焦点移走时关掉弹窗
+          onFocusChange: (focused) {
+            if (!focused) _close();
+          },
           child: TextField(
+            // 点了编辑框外面（比如「运行」按钮）也关掉：桌面上鼠标点按钮不会让输入框失焦，
+            // 弹窗留着就是上一段文字的过期候选，还会盖住下面的控件。
+            // 点弹窗里的项不算外面，弹窗包在 TextFieldTapRegion 里
+            onTapOutside: (_) => _close(),
             key: _fieldKey,
             controller: widget.controller,
             maxLines: 6,
             minLines: 2,
             style: TextStyle(fontSize: widget.fontSize, fontFamily: 'Menlo'),
-            decoration: const InputDecoration(
-              border: OutlineInputBorder(),
-              isDense: true,
-              contentPadding: EdgeInsets.all(10),
-            ),
+            // 边框、底色、聚焦环都跟主题的输入框走，这里只收紧内边距
+            decoration: const InputDecoration(contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 6)),
           ),
         ),
       ),
@@ -360,47 +365,77 @@ class _CompletionList extends StatelessWidget {
     };
   }
 
+  /// 像 macOS 的弹出菜单：白底圆角、细边框、柔和阴影，选中项是内缩的系统蓝圆角条、白字
   @override
   Widget build(BuildContext context) {
     final count = items.length < visibleItems ? items.length : visibleItems;
     final scheme = Theme.of(context).colorScheme;
     return Material(
-      elevation: 6,
-      borderRadius: BorderRadius.circular(4),
-      child: SizedBox(
-        key: const ValueKey('completion-popup'),
-        width: 360,
-        height: count * itemHeight,
-        child: ListView.builder(
-          controller: controller,
-          itemExtent: itemHeight,
-          padding: EdgeInsets.zero,
-          itemCount: items.length,
-          itemBuilder: (context, index) {
-            final item = items[index];
-            return InkWell(
-              onTap: () => onTap(index),
-              child: Container(
-                color: index == selected ? scheme.primaryContainer : null,
-                padding: const EdgeInsets.symmetric(horizontal: 8),
-                child: Row(
-                  children: [
-                    Icon(_icon(item.kind), size: 13, color: scheme.onSurfaceVariant),
-                    const SizedBox(width: 6),
-                    Expanded(
-                      child: Text(
-                        item.label,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(fontSize: 12, fontFamily: 'Menlo'),
+      elevation: 8,
+      color: scheme.surface,
+      shadowColor: Colors.black.withValues(alpha: 0.4),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(6),
+        side: BorderSide(color: scheme.outlineVariant),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Padding(
+        // 上下留白放在滚动区外面，选中项滚进可视区的计算不用管它
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        child: SizedBox(
+          key: const ValueKey('completion-popup'),
+          width: 360,
+          height: count * itemHeight,
+          child: ListView.builder(
+            controller: controller,
+            itemExtent: itemHeight,
+            padding: EdgeInsets.zero,
+            itemCount: items.length,
+            itemBuilder: (context, index) {
+              final item = items[index];
+              final isSelected = index == selected;
+              return Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 4),
+                child: Material(
+                  color: isSelected ? scheme.primary : Colors.transparent,
+                  borderRadius: BorderRadius.circular(4),
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(4),
+                    onTap: () => onTap(index),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 6),
+                      child: Row(
+                        children: [
+                          Icon(
+                            _icon(item.kind),
+                            size: 13,
+                            color: isSelected ? scheme.onPrimary : scheme.onSurfaceVariant,
+                          ),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              item.label,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontFamily: 'Menlo',
+                                color: isSelected ? scheme.onPrimary : scheme.onSurface,
+                              ),
+                            ),
+                          ),
+                          Text(
+                            item.detail,
+                            style: TextStyle(fontSize: 11, color: isSelected ? Colors.white70 : scheme.outline),
+                          ),
+                        ],
                       ),
                     ),
-                    Text(item.detail, style: TextStyle(fontSize: 11, color: scheme.outline)),
-                  ],
+                  ),
                 ),
-              ),
-            );
-          },
+              );
+            },
+          ),
         ),
       ),
     );

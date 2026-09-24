@@ -7,21 +7,22 @@ import 'package:flutter/material.dart';
 
 import 'src/rust/api/value.dart';
 
-/// 编辑器底部的按钮：写 NULL / 取消 / 保存
+/// 编辑器右下角的按钮：写 NULL / 取消 / 保存。保存是实心的默认按钮，其余是普通按钮
 List<Widget> _actions(BuildContext context, {required VoidCallback? onSave}) {
   return [
-    TextButton(
+    OutlinedButton(
       onPressed: () => Navigator.of(context).pop(const CellValue.null_()),
       child: const Text('写入 NULL'),
     ),
-    TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('取消')),
+    OutlinedButton(onPressed: () => Navigator.of(context).pop(), child: const Text('取消')),
     FilledButton(onPressed: onSave, child: const Text('保存')),
   ];
 }
 
-Text _title(String column, String kind) {
-  return Text('$column（$kind）', style: const TextStyle(fontSize: 15));
-}
+Text _title(String column, String kind) => Text('$column（$kind）');
+
+/// 单选、多选列表的一行：24px 左右高，和 macOS 的列表行差不多
+const _compactTile = VisualDensity(vertical: -4);
 
 /// JSON：多行编辑，可以格式化；保存前先校验，不合法不让存
 Future<CellValue?> showJsonEditor(
@@ -88,7 +89,7 @@ class _JsonEditorState extends State<_JsonEditor> {
         children: [
           _title(widget.column, 'JSON'),
           const Spacer(),
-          TextButton(onPressed: _format, child: const Text('格式化')),
+          OutlinedButton(onPressed: _format, child: const Text('格式化')),
         ],
       ),
       content: SizedBox(
@@ -104,8 +105,8 @@ class _JsonEditorState extends State<_JsonEditor> {
                 maxLines: null,
                 expands: true,
                 textAlignVertical: TextAlignVertical.top,
+                // JSON 是代码，等宽字体对得齐缩进
                 style: const TextStyle(fontSize: 12, fontFamily: 'Menlo', height: 1.4),
-                decoration: const InputDecoration(border: OutlineInputBorder()),
               ),
             ),
             if (_error != null)
@@ -141,12 +142,17 @@ Future<CellValue?> showEnumEditor(
               for (final choice in choices)
                 ListTile(
                   dense: true,
+                  visualDensity: _compactTile,
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 6),
+                  minLeadingWidth: 16,
+                  horizontalTitleGap: 6,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(5)),
                   selected: choice == current,
                   leading: Icon(
                     choice == current ? Icons.radio_button_checked : Icons.radio_button_unchecked,
-                    size: 16,
+                    size: 15,
                   ),
-                  title: Text(choice, style: const TextStyle(fontSize: 13, fontFamily: 'Menlo')),
+                  title: Text(choice, style: const TextStyle(fontSize: 13)),
                   onTap: () => Navigator.of(context).pop(CellValue.text(choice)),
                 ),
             ],
@@ -210,8 +216,11 @@ class _SetEditorState extends State<_SetEditor> {
               for (final choice in widget.choices)
                 CheckboxListTile(
                   dense: true,
+                  visualDensity: _compactTile,
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 2),
+                  controlAffinity: ListTileControlAffinity.leading,
                   value: _checked.contains(choice),
-                  title: Text(choice, style: const TextStyle(fontSize: 13, fontFamily: 'Menlo')),
+                  title: Text(choice, style: const TextStyle(fontSize: 13)),
                   onChanged: (checked) => setState(() {
                     if (checked == true) {
                       _checked.add(choice);
@@ -296,18 +305,14 @@ class _DateEditorState extends State<_DateEditor> {
               child: TextField(
                 key: const ValueKey('date-text'),
                 controller: _controller,
-                style: const TextStyle(fontSize: 13, fontFamily: 'Menlo'),
-                decoration: InputDecoration(
-                  isDense: true,
-                  border: const OutlineInputBorder(),
-                  hintText: widget.withTime ? 'YYYY-MM-DD HH:MM:SS' : 'YYYY-MM-DD',
-                ),
+                style: const TextStyle(fontSize: 13),
+                decoration: InputDecoration(hintText: widget.withTime ? 'YYYY-MM-DD HH:MM:SS' : 'YYYY-MM-DD'),
               ),
             ),
             IconButton(
               tooltip: '选择日期',
               onPressed: _pickDate,
-              icon: const Icon(Icons.calendar_month, size: 18),
+              icon: const Icon(Icons.calendar_month, size: 16),
             ),
           ],
         ),
@@ -384,12 +389,8 @@ class _TimeEditorState extends State<_TimeEditor> {
             TextField(
               key: const ValueKey('time-text'),
               controller: _controller,
-              style: const TextStyle(fontSize: 13, fontFamily: 'Menlo'),
-              decoration: const InputDecoration(
-                isDense: true,
-                border: OutlineInputBorder(),
-                hintText: '[-]时:分:秒[.微秒]',
-              ),
+              style: const TextStyle(fontSize: 13),
+              decoration: const InputDecoration(hintText: '[-]时:分:秒[.微秒]'),
               onChanged: (text) => setState(() => _error = widget.check(text)),
               onSubmitted: (_) => _save(),
             ),
@@ -397,7 +398,7 @@ class _TimeEditorState extends State<_TimeEditor> {
             Text(
               _error ?? '范围 -838:59:59 到 838:59:59，小时可以超过 24；这一列$precision',
               style: TextStyle(
-                fontSize: 12,
+                fontSize: 11,
                 color: _error == null ? Theme.of(context).colorScheme.onSurfaceVariant : Theme.of(context).colorScheme.error,
               ),
             ),
@@ -437,6 +438,7 @@ Future<void> showHexViewer(
               ),
             Expanded(
               child: SingleChildScrollView(
+                // 十六进制按列对齐，必须等宽
                 child: SelectableText(
                   dump,
                   style: const TextStyle(fontSize: 12, fontFamily: 'Menlo', height: 1.4),
@@ -454,7 +456,7 @@ Future<void> showHexViewer(
         ),
       ),
       actions: [
-        TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('关闭')),
+        FilledButton(onPressed: () => Navigator.of(context).pop(), child: const Text('关闭')),
       ],
     ),
   );

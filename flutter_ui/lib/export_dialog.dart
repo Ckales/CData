@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'mac_widgets.dart';
 import 'src/rust/api/db.dart';
 
 /// 导出选项对话框。返回选项和「是否只导出选中区域」；取消返回 null
@@ -69,7 +70,7 @@ class _ExportDialogState extends State<_ExportDialog> {
     final selectionLabel = widget.selectionLabel;
 
     return AlertDialog(
-      title: const Text('导出', style: TextStyle(fontSize: 16)),
+      title: const Text('导出'),
       content: SizedBox(
         width: 420,
         child: Column(
@@ -130,60 +131,54 @@ class _ExportDialogState extends State<_ExportDialog> {
               ),
               _row(
                 '列名',
-                Checkbox(
-                  key: const ValueKey('export-header'),
-                  value: _header,
-                  onChanged: (value) => setState(() => _header = value ?? true),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Checkbox(
+                      key: const ValueKey('export-header'),
+                      value: _header,
+                      onChanged: (value) => setState(() => _header = value ?? true),
+                    ),
+                    const Text('第一行写列名', style: TextStyle(fontSize: 13)),
+                  ],
                 ),
               ),
             ] else
-              _row(
-                '表名',
-                TextField(
+              FormRow(
+                label: '表名',
+                labelWidth: 80,
+                child: TextField(
                   key: const ValueKey('export-table'),
                   controller: _table,
-                  style: const TextStyle(fontSize: 12, fontFamily: 'Menlo'),
-                  decoration: const InputDecoration(
-                    isDense: true,
-                    border: OutlineInputBorder(),
-                    hintText: '留空用结果集的来源表',
-                  ),
+                  style: const TextStyle(fontSize: 12),
+                  decoration: const InputDecoration(hintText: '留空用结果集的来源表'),
                 ),
               ),
           ],
         ),
       ),
       actions: [
-        TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('取消')),
+        OutlinedButton(onPressed: () => Navigator.of(context).pop(), child: const Text('取消')),
         FilledButton(onPressed: _submit, child: const Text('导出…')),
       ],
     );
   }
 
+  /// 弹出按钮按内容宽度靠左，不拉满整行（macOS 表单的排法）
   Widget _row(String label, Widget field) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        children: [
-          SizedBox(width: 80, child: Text(label, style: const TextStyle(fontSize: 12))),
-          Expanded(child: Align(alignment: Alignment.centerLeft, child: field)),
-        ],
-      ),
+    return FormRow(
+      label: label,
+      labelWidth: 80,
+      child: Align(alignment: Alignment.centerLeft, child: field),
     );
   }
 
   Widget _dropdown<T>(String key, T value, Map<T, String> items, void Function(T value) onChanged) {
-    return DropdownButton<T>(
+    return MacPopupButton<T>(
       key: ValueKey(key),
       value: value,
-      isDense: true,
-      style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurface),
-      items: [
-        for (final entry in items.entries) DropdownMenuItem(value: entry.key, child: Text(entry.value)),
-      ],
-      onChanged: (selected) {
-        if (selected != null) setState(() => onChanged(selected));
-      },
+      items: items,
+      onChanged: (selected) => setState(() => onChanged(selected)),
     );
   }
 }

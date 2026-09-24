@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'mac_widgets.dart';
 import 'src/rust/api/db.dart';
 import 'src/rust/api/value.dart';
 
@@ -57,7 +58,7 @@ class _InsertRowDialogState extends State<_InsertRowDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('新增行', style: TextStyle(fontSize: 16)),
+      title: const Text('新增行'),
       content: SizedBox(
         width: 520,
         child: SingleChildScrollView(
@@ -70,7 +71,7 @@ class _InsertRowDialogState extends State<_InsertRowDialog> {
         ),
       ),
       actions: [
-        TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('取消')),
+        OutlinedButton(onPressed: () => Navigator.of(context).pop(), child: const Text('取消')),
         FilledButton(onPressed: _submit, child: const Text('插入')),
       ],
     );
@@ -79,43 +80,31 @@ class _InsertRowDialogState extends State<_InsertRowDialog> {
   Widget _columnRow(int index) {
     final column = widget.columns[index];
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
+    return FormRow(
+      label: column.name,
+      labelWidth: 140,
       child: Row(
         children: [
           SizedBox(
-            width: 140,
-            child: Text(
-              column.name,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+            width: 72,
+            child: MacPopupButton<_Mode>(
+              key: ValueKey('insert-mode-$index'),
+              value: _modes[index],
+              items: const {_Mode.useDefault: '默认', _Mode.null_: 'NULL', _Mode.value: '值'},
+              disabled: column.isBinary ? const {_Mode.value} : const {},
+              onChanged: (mode) => setState(() => _modes[index] = mode),
             ),
           ),
-          DropdownButton<_Mode>(
-            key: ValueKey('insert-mode-$index'),
-            value: _modes[index],
-            isDense: true,
-            style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurface),
-            items: [
-              const DropdownMenuItem(value: _Mode.useDefault, child: Text('默认')),
-              const DropdownMenuItem(value: _Mode.null_, child: Text('NULL')),
-              DropdownMenuItem(value: _Mode.value, enabled: !column.isBinary, child: const Text('值')),
-            ],
-            onChanged: (mode) {
-              if (mode != null) setState(() => _modes[index] = mode);
-            },
-          ),
-          const SizedBox(width: 8),
+          const SizedBox(width: 6),
           Expanded(
             child: TextField(
               key: ValueKey('insert-field-$index'),
               controller: _controllers[index],
               enabled: !column.isBinary,
-              style: const TextStyle(fontSize: 12, fontFamily: 'Menlo'),
+              style: const TextStyle(fontSize: 12),
+              // 边框、底色、提示样式沿用主题，只压低高度和弹出按钮对齐
               decoration: InputDecoration(
-                isDense: true,
-                border: const OutlineInputBorder(),
+                // 紧凑输入框的高度是 10 + 上下内边距，6 正好 22px，和弹出按钮一样高
                 contentPadding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
                 hintText: column.isBinary ? '二进制列暂不支持输入' : _hint(_modes[index]),
               ),

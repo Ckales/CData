@@ -1,13 +1,41 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import 'mac_widgets.dart';
 import 'src/rust/api/users.dart';
 import 'user_source.dart';
 
-/// 用户与权限管理。所有改动先预览 Rust 侧生成的语句，确认后才执行；
-/// 当前登录账号的删除、锁定、回收由 Rust 侧在预览时拒绝，这里只显示原因
+/// 用户与权限对话框：Dialog 里包一个 UserAdminPanel，外加标题和关闭按钮
 Future<void> showUserAdmin(BuildContext context, {required UserSource source}) {
-  return showDialog<void>(context: context, builder: (context) => _UserAdminDialog(source: source));
+  return showDialog<void>(
+    context: context,
+    builder: (context) => Dialog(
+      clipBehavior: Clip.antiAlias,
+      child: SizedBox(
+        width: 1100,
+        height: 660,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
+              child: Row(
+                children: [
+                  Expanded(child: Text('用户与权限', style: Theme.of(context).textTheme.titleMedium)),
+                  IconButton(
+                    tooltip: '关闭',
+                    icon: const Icon(Icons.close),
+                    onPressed: () => Navigator.of(context).pop(),
+                  ),
+                ],
+              ),
+            ),
+            Expanded(child: UserAdminPanel(source: source)),
+          ],
+        ),
+      ),
+    ),
+  );
 }
 
 const _scopeLabels = {
@@ -37,28 +65,69 @@ class _Prepared {
   const _Prepared(this.change, this.plan, this.password);
 }
 
-Widget _textField(String key, TextEditingController controller, String label, {bool obscure = false}) {
-  return TextField(
-    key: ValueKey(key),
-    controller: controller,
-    obscureText: obscure,
-    style: const TextStyle(fontSize: 12),
-    decoration: InputDecoration(isDense: true, border: const OutlineInputBorder(), labelText: label),
+/// 表单的标签宽度：标签右对齐，控件左边对齐成一条线
+const double _formLabelWidth = 90;
+
+/// 表单里一行输入框：左边标签，右边输入框，note 是输入框下面的一行小字说明
+Widget _textField(
+  BuildContext context,
+  String key,
+  TextEditingController controller,
+  String label, {
+  bool obscure = false,
+  String? note,
+}) {
+  final field = FormRow(
+    label: label,
+    labelWidth: _formLabelWidth,
+    child: TextField(key: ValueKey(key), controller: controller, obscureText: obscure),
+  );
+  if (note == null) return field;
+  return Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      field,
+      Padding(
+        padding: const EdgeInsets.only(left: _formLabelWidth + 8),
+        child: Text(note, style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.onSurfaceVariant)),
+      ),
+    ],
   );
 }
 
 Widget _dropdown<T>(BuildContext context, String key, T value, Map<T, String> items, void Function(T value) onChanged) {
-  return DropdownButton<T>(
+  return Align(
+    alignment: Alignment.centerLeft,
+    child: MacPopupButton<T>(
+      key: ValueKey(key),
+      value: value,
+      items: items,
+      onChanged: onChanged,
+    ),
+  );
+}
+
+/// 紧凑的勾选框：框和文字一起可点，比 CheckboxListTile 矮一半
+Widget _check(String key, bool value, Widget label, ValueChanged<bool> onChanged) {
+  return InkWell(
     key: ValueKey(key),
-    value: value,
-    isDense: true,
-    style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurface),
-    items: [
-      for (final entry in items.entries) DropdownMenuItem(value: entry.key, child: Text(entry.value)),
-    ],
-    onChanged: (selected) {
-      if (selected is T) onChanged(selected);
-    },
+    borderRadius: BorderRadius.circular(4),
+    onTap: () => onChanged(!value),
+    child: Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SizedBox(
+            width: 20,
+            height: 20,
+            child: Checkbox(value: value, onChanged: (checked) => onChanged(checked ?? false)),
+          ),
+          const SizedBox(width: 6),
+          Flexible(child: label),
+        ],
+      ),
+    ),
   );
 }
 
@@ -71,16 +140,20 @@ Widget _tag(String text, Color background, Color foreground) {
   );
 }
 
-class _UserAdminDialog extends StatefulWidget {
+/// 用户与权限面板：左边账号列表，右边选中账号的操作和权限。没有外框和关闭按钮，可以直接嵌进页面。
+///
+/// 所有改动先预览 Rust 侧生成的语句，确认后才执行；
+/// 当前登录账号的删除、锁定、回收由 Rust 侧在预览时拒绝，这里只显示原因
+class UserAdminPanel extends StatefulWidget {
   final UserSource source;
 
-  const _UserAdminDialog({required this.source});
+  const UserAdminPanel({super.key, required this.source});
 
   @override
-  State<_UserAdminDialog> createState() => _UserAdminDialogState();
+  State<UserAdminPanel> createState() => _UserAdminPanelState();
 }
 
-class _UserAdminDialogState extends State<_UserAdminDialog> {
+class _UserAdminPanelState extends State<UserAdminPanel> {
   UserAdmin? _admin;
   String? _loadError;
   Account? _selected;
@@ -187,81 +260,88 @@ class _UserAdminDialogState extends State<_UserAdminDialog> {
     final scheme = Theme.of(context).colorScheme;
     final admin = _admin;
     final loadError = _loadError;
-    return Dialog(
-      child: SizedBox(
-        width: 1100,
-        height: 660,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Row(
-                children: [
-                  const Text('用户与权限', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
-                  const SizedBox(width: 12),
-                  if (admin != null)
-                    Text('当前登录：${_label(admin.current)}', style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant)),
-                  const Spacer(),
-                  TextButton(onPressed: _reload, child: const Text('刷新')),
-                  TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('关闭')),
-                ],
-              ),
-              const Divider(height: 12),
-              if (loadError != null)
-                SelectableText(loadError, style: TextStyle(color: scheme.error, fontSize: 12))
-              else if (admin == null)
-                const Text('加载中…', style: TextStyle(fontSize: 12))
-              else
-                Expanded(
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      SizedBox(width: 340, child: _userList(admin)),
-                      const VerticalDivider(width: 16),
-                      Expanded(child: _detail(admin)),
-                    ],
-                  ),
-                ),
-            ],
-          ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        MacPanelBar(
+          children: [
+            if (admin != null)
+              Text('当前登录：${_label(admin.current)}', style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant)),
+            const Spacer(),
+            OutlinedButton.icon(
+              onPressed: _reload,
+              icon: const Icon(Icons.refresh, size: 14),
+              label: const Text('刷新'),
+            ),
+          ],
         ),
-      ),
+        if (loadError != null)
+          Padding(
+            padding: const EdgeInsets.all(12),
+            child: SelectableText(loadError, style: TextStyle(color: scheme.error, fontSize: 12)),
+          )
+        else if (admin == null)
+          const Padding(padding: EdgeInsets.all(12), child: Text('加载中…', style: TextStyle(fontSize: 12)))
+        else
+          Expanded(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                SizedBox(width: 300, child: _userList(admin)),
+                VerticalDivider(width: 1, color: scheme.outlineVariant),
+                Expanded(child: ColoredBox(color: scheme.surface, child: _detail(admin))),
+              ],
+            ),
+          ),
+      ],
     );
   }
 
+  /// 账号列表：侧栏灰底，选中行系统蓝；底部一条放「新建用户」，和 macOS 列表下面的 + 一样
   Widget _userList(UserAdmin admin) {
     final scheme = Theme.of(context).colorScheme;
     final unavailable = admin.usersUnavailable;
     final selected = _selected;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Row(
-          children: [
-            Text(unavailable == null ? '账号 ${admin.users.length}' : '账号', style: const TextStyle(fontSize: 12)),
-            const Spacer(),
-            TextButton(
+    return ColoredBox(
+      color: scheme.surfaceContainerHigh,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 8, 14, 4),
+            child: Text(
+              unavailable == null ? '账号 ${admin.users.length}' : '账号',
+              style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: scheme.onSurfaceVariant),
+            ),
+          ),
+          if (unavailable != null)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(14, 0, 14, 8),
+              child: Text(unavailable, style: TextStyle(fontSize: 12, color: scheme.error)),
+            ),
+          Expanded(
+            child: ListView(
+              padding: const EdgeInsets.symmetric(horizontal: 6),
+              children: [
+                for (final account in _accounts(admin))
+                  _userTile(account, _rowOf(account), selected != null && _sameAccount(account, selected), admin),
+              ],
+            ),
+          ),
+          Container(
+            height: 30,
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+            decoration: BoxDecoration(border: Border(top: BorderSide(color: scheme.outlineVariant))),
+            alignment: Alignment.centerLeft,
+            child: TextButton.icon(
               key: const ValueKey('user-create'),
               onPressed: () => _openForm(_CreateUserDialog(source: widget.source, plugins: admin.plugins)),
-              child: const Text('新建用户'),
+              icon: const Icon(Icons.add, size: 14),
+              label: const Text('新建用户'),
             ),
-          ],
-        ),
-        if (unavailable != null)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 8),
-            child: Text(unavailable, style: TextStyle(fontSize: 12, color: scheme.error)),
           ),
-        Expanded(
-          child: ListView(
-            children: [
-              for (final account in _accounts(admin))
-                _userTile(account, _rowOf(account), selected != null && _sameAccount(account, selected), admin),
-            ],
-          ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
@@ -269,28 +349,52 @@ class _UserAdminDialogState extends State<_UserAdminDialog> {
     final scheme = Theme.of(context).colorScheme;
     final expired = row?.passwordExpired;
     final isCurrent = row?.isCurrent ?? _sameAccount(account, admin.current);
-    return InkWell(
-      key: ValueKey('user-${account.user}@${account.host}'),
-      onTap: () => _select(account),
-      child: Container(
-        color: selected ? scheme.secondaryContainer : null,
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 1),
+      child: Material(
+        color: selected ? scheme.primary : Colors.transparent,
+        borderRadius: BorderRadius.circular(5),
+        child: InkWell(
+          key: ValueKey('user-${account.user}@${account.host}'),
+          borderRadius: BorderRadius.circular(5),
+          onTap: () => _select(account),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Flexible(
-                  child: Text(_label(account), overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12, fontFamily: 'Menlo')),
+                Row(
+                  children: [
+                    Icon(Icons.person_outline, size: 14, color: selected ? scheme.onPrimary : scheme.onSurfaceVariant),
+                    const SizedBox(width: 6),
+                    Flexible(
+                      child: Text(
+                        _label(account),
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontFamily: 'Menlo',
+                          color: selected ? scheme.onPrimary : scheme.onSurface,
+                        ),
+                      ),
+                    ),
+                    if (isCurrent) _tag('当前登录', scheme.primaryContainer, scheme.onPrimaryContainer),
+                    if (row != null && row.locked) _tag('已锁定', scheme.errorContainer, scheme.onErrorContainer),
+                    if (expired != null)
+                      Tooltip(message: expired, child: _tag('密码过期', scheme.errorContainer, scheme.onErrorContainer)),
+                  ],
                 ),
-                if (isCurrent) _tag('当前登录', scheme.primaryContainer, scheme.onPrimaryContainer),
-                if (row != null && row.locked) _tag('已锁定', scheme.errorContainer, scheme.onErrorContainer),
-                if (expired != null)
-                  Tooltip(message: expired, child: _tag('密码过期', scheme.errorContainer, scheme.onErrorContainer)),
+                if (row != null)
+                  Padding(
+                    padding: const EdgeInsets.only(left: 20),
+                    child: Text(
+                      row.plugin,
+                      style: TextStyle(fontSize: 11, color: selected ? Colors.white70 : scheme.onSurfaceVariant),
+                    ),
+                  ),
               ],
             ),
-            if (row != null) Text(row.plugin, style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant)),
-          ],
+          ),
         ),
       ),
     );
@@ -303,62 +407,66 @@ class _UserAdminDialogState extends State<_UserAdminDialog> {
     final row = _rowOf(account);
     final actionError = _actionError;
     final locked = row?.locked ?? false;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Text(_label(account), style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, fontFamily: 'Menlo')),
-        if (row?.passwordExpired != null)
-          Text('密码：${row!.passwordExpired}', style: TextStyle(fontSize: 12, color: scheme.error)),
-        const SizedBox(height: 6),
-        Wrap(
-          spacing: 4,
-          children: [
-            OutlinedButton(
-              key: const ValueKey('user-password'),
-              onPressed: _busy ? null : () => _openForm(_PasswordDialog(source: widget.source, account: account)),
-              child: const Text('改密码'),
-            ),
-            OutlinedButton(
-              key: const ValueKey('user-lock'),
-              onPressed: _busy ? null : () => _previewDirect(UserChange.setLocked(account: account, locked: !locked)),
-              child: Text(locked ? '解锁' : '锁定'),
-            ),
-            OutlinedButton(
-              key: const ValueKey('user-grant'),
-              onPressed: _busy ? null : () => _openForm(_GrantDialog(source: widget.source, admin: admin, account: account)),
-              child: const Text('授予 / 回收权限'),
-            ),
-            OutlinedButton(
-              key: const ValueKey('user-role'),
-              onPressed: _busy
-                  ? null
-                  : () => _openForm(_RoleDialog(
-                        source: widget.source,
-                        account: account,
-                        candidates: [for (final other in _accounts(admin)) if (!_sameAccount(other, account)) other],
-                        granted: [
-                          for (final entry in _grants?.entries ?? const <GrantEntry>[])
-                            if (entry.role != null) entry.role!,
-                        ],
-                      )),
-              child: const Text('角色'),
-            ),
-            OutlinedButton(
-              key: const ValueKey('user-drop'),
-              style: OutlinedButton.styleFrom(foregroundColor: scheme.error),
-              onPressed: _busy ? null : () => _previewDirect(UserChange.drop(account: account)),
-              child: const Text('删除用户'),
-            ),
-          ],
-        ),
-        if (actionError != null)
-          Padding(
-            padding: const EdgeInsets.only(top: 6),
-            child: SelectableText(actionError, style: TextStyle(color: scheme.error, fontSize: 12)),
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(_label(account), style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, fontFamily: 'Menlo')),
+          if (row?.passwordExpired != null)
+            Text('密码：${row!.passwordExpired}', style: TextStyle(fontSize: 12, color: scheme.error)),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              OutlinedButton(
+                key: const ValueKey('user-password'),
+                onPressed: _busy ? null : () => _openForm(_PasswordDialog(source: widget.source, account: account)),
+                child: const Text('改密码'),
+              ),
+              OutlinedButton(
+                key: const ValueKey('user-lock'),
+                onPressed: _busy ? null : () => _previewDirect(UserChange.setLocked(account: account, locked: !locked)),
+                child: Text(locked ? '解锁' : '锁定'),
+              ),
+              OutlinedButton(
+                key: const ValueKey('user-grant'),
+                onPressed: _busy ? null : () => _openForm(_GrantDialog(source: widget.source, admin: admin, account: account)),
+                child: const Text('授予 / 回收权限'),
+              ),
+              OutlinedButton(
+                key: const ValueKey('user-role'),
+                onPressed: _busy
+                    ? null
+                    : () => _openForm(_RoleDialog(
+                          source: widget.source,
+                          account: account,
+                          candidates: [for (final other in _accounts(admin)) if (!_sameAccount(other, account)) other],
+                          granted: [
+                            for (final entry in _grants?.entries ?? const <GrantEntry>[])
+                              if (entry.role != null) entry.role!,
+                          ],
+                        )),
+                child: const Text('角色'),
+              ),
+              OutlinedButton(
+                key: const ValueKey('user-drop'),
+                style: OutlinedButton.styleFrom(foregroundColor: scheme.error),
+                onPressed: _busy ? null : () => _previewDirect(UserChange.drop(account: account)),
+                child: const Text('删除用户'),
+              ),
+            ],
           ),
-        const Divider(height: 16),
-        Expanded(child: _grantsView()),
-      ],
+          if (actionError != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: SelectableText(actionError, style: TextStyle(color: scheme.error, fontSize: 12)),
+            ),
+          Divider(height: 20, color: scheme.outlineVariant),
+          Expanded(child: _grantsView()),
+        ],
+      ),
     );
   }
 
@@ -375,8 +483,11 @@ class _UserAdminDialogState extends State<_UserAdminDialog> {
         for (final scope in GrantScope.values)
           if (grants.entries.any((entry) => entry.scope == scope)) ...[
             Padding(
-              padding: const EdgeInsets.only(top: 6, bottom: 2),
-              child: Text(_scopeLabels[scope]!, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+              padding: const EdgeInsets.only(top: 8, bottom: 2),
+              child: Text(
+                _scopeLabels[scope]!,
+                style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: scheme.onSurfaceVariant),
+              ),
             ),
             for (final entry in grants.entries)
               if (entry.scope == scope) _grantRow(entry),
@@ -394,8 +505,13 @@ class _UserAdminDialogState extends State<_UserAdminDialog> {
           ],
         ),
         Container(
+          margin: const EdgeInsets.only(bottom: 12),
           padding: const EdgeInsets.all(8),
-          color: scheme.surfaceContainerHighest,
+          decoration: BoxDecoration(
+            color: scheme.surfaceContainerLow,
+            border: Border.all(color: scheme.outlineVariant),
+            borderRadius: BorderRadius.circular(5),
+          ),
           child: SelectableText(raw, style: const TextStyle(fontSize: 12, fontFamily: 'Menlo', height: 1.5)),
         ),
       ],
@@ -448,7 +564,7 @@ class _FormShell extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     final error = this.error;
     return AlertDialog(
-      title: Text(title, style: const TextStyle(fontSize: 15)),
+      title: Text(title),
       content: SizedBox(
         width: 520,
         child: SingleChildScrollView(
@@ -467,7 +583,7 @@ class _FormShell extends StatelessWidget {
         ),
       ),
       actions: [
-        TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('取消')),
+        OutlinedButton(onPressed: () => Navigator.of(context).pop(), child: const Text('取消')),
         FilledButton(onPressed: previewing ? null : onPreview, child: Text(previewing ? '生成中…' : '预览')),
       ],
     );
@@ -545,26 +661,20 @@ class _CreateUserDialogState extends State<_CreateUserDialog> with _PreviewForm 
       previewing: previewing,
       onPreview: _preview,
       children: [
-        _textField('create-user', _user, '用户名'),
-        const SizedBox(height: 8),
-        _textField('create-host', _host, '主机（% 表示任意主机）'),
-        const SizedBox(height: 8),
-        _textField('create-password', _password, '密码', obscure: true),
-        const SizedBox(height: 8),
-        _textField('create-confirm', _confirm, '再输一次密码', obscure: true),
-        const SizedBox(height: 8),
-        Row(
-          children: [
-            const Text('认证插件', style: TextStyle(fontSize: 12)),
-            const SizedBox(width: 8),
-            _dropdown<String?>(
-              context,
-              'create-plugin',
-              _plugin,
-              {null: '服务器默认', for (final plugin in widget.plugins) plugin: plugin},
-              (plugin) => setState(() => _plugin = plugin),
-            ),
-          ],
+        _textField(context, 'create-user', _user, '用户名'),
+        _textField(context, 'create-host', _host, '主机', note: '% 表示任意主机'),
+        _textField(context, 'create-password', _password, '密码', obscure: true),
+        _textField(context, 'create-confirm', _confirm, '确认密码', obscure: true),
+        FormRow(
+          label: '认证插件',
+          labelWidth: _formLabelWidth,
+          child: _dropdown<String?>(
+            context,
+            'create-plugin',
+            _plugin,
+            {null: '服务器默认', for (final plugin in widget.plugins) plugin: plugin},
+            (plugin) => setState(() => _plugin = plugin),
+          ),
         ),
       ],
     );
@@ -611,9 +721,8 @@ class _PasswordDialogState extends State<_PasswordDialog> with _PreviewForm {
       previewing: previewing,
       onPreview: _preview,
       children: [
-        _textField('password-new', _password, '新密码', obscure: true),
-        const SizedBox(height: 8),
-        _textField('password-confirm', _confirm, '再输一次', obscure: true),
+        _textField(context, 'password-new', _password, '新密码', obscure: true),
+        _textField(context, 'password-confirm', _confirm, '确认新密码', obscure: true),
       ],
     );
   }
@@ -684,77 +793,76 @@ class _GrantDialogState extends State<_GrantDialog> with _PreviewForm {
       previewing: previewing,
       onPreview: _preview,
       children: [
-        Row(
-          children: [
-            _dropdown<bool>(context, 'grant-mode', _revoke, {false: '授予 GRANT', true: '回收 REVOKE'},
-                (revoke) => setState(() => _revoke = revoke)),
-            const SizedBox(width: 16),
-            _dropdown<_Level>(
-              context,
-              'grant-level',
-              _level,
-              {_Level.global: '全局 *.*', _Level.database: '库 db.*', _Level.table: '表 db.tbl'},
-              (level) => setState(() {
-                _level = level;
-                // 换了层级，不在新层级里的勾选作废
-                _checked.retainAll(_choices);
-              }),
-            ),
-          ],
+        FormRow(
+          label: '操作',
+          labelWidth: _formLabelWidth,
+          child: _dropdown<bool>(context, 'grant-mode', _revoke, {false: '授予 GRANT', true: '回收 REVOKE'},
+              (revoke) => setState(() => _revoke = revoke)),
         ),
-        if (_level != _Level.global) ...[
-          const SizedBox(height: 8),
-          _textField('grant-database', _database, '库名'),
-        ],
-        if (_level == _Level.table) ...[
-          const SizedBox(height: 8),
-          _textField('grant-table', _table, '表名'),
-        ],
-        const SizedBox(height: 8),
-        CheckboxListTile(
-          key: const ValueKey('grant-all'),
-          dense: true,
-          contentPadding: EdgeInsets.zero,
-          controlAffinity: ListTileControlAffinity.leading,
-          value: _all,
-          onChanged: (checked) => setState(() => _all = checked ?? false),
-          title: Text(_allPrivileges, style: TextStyle(fontSize: 12, color: _revoke ? scheme.error : null)),
-        ),
-        CheckboxListTile(
-          key: const ValueKey('grant-option'),
-          dense: true,
-          contentPadding: EdgeInsets.zero,
-          controlAffinity: ListTileControlAffinity.leading,
-          value: _withGrantOption,
-          onChanged: (checked) => setState(() => _withGrantOption = checked ?? false),
-          title: Text(
-            _revoke ? _grantOptionPrivilege : 'WITH GRANT OPTION（可以把权限再授予别人）',
-            style: TextStyle(fontSize: 12, color: _revoke ? scheme.error : null),
+        FormRow(
+          label: '范围',
+          labelWidth: _formLabelWidth,
+          child: _dropdown<_Level>(
+            context,
+            'grant-level',
+            _level,
+            {_Level.global: '全局 *.*', _Level.database: '库 db.*', _Level.table: '表 db.tbl'},
+            (level) => setState(() {
+              _level = level;
+              // 换了层级，不在新层级里的勾选作废
+              _checked.retainAll(_choices);
+            }),
           ),
         ),
-        const Divider(),
-        Wrap(
-          children: [
-            for (final privilege in _choices)
-              SizedBox(
-                width: 240,
-                child: CheckboxListTile(
-                  key: ValueKey('grant-privilege-$privilege'),
-                  dense: true,
-                  contentPadding: EdgeInsets.zero,
-                  controlAffinity: ListTileControlAffinity.leading,
-                  value: _checked.contains(privilege),
-                  onChanged: (checked) => setState(() {
-                    if (checked == true) {
-                      _checked.add(privilege);
-                    } else {
-                      _checked.remove(privilege);
-                    }
-                  }),
-                  title: Text(privilege, style: const TextStyle(fontSize: 12)),
-                ),
+        if (_level != _Level.global) _textField(context, 'grant-database', _database, '库名'),
+        if (_level == _Level.table) _textField(context, 'grant-table', _table, '表名'),
+        Padding(
+          padding: const EdgeInsets.only(left: _formLabelWidth + 8, top: 6),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _check(
+                'grant-all',
+                _all,
+                Text(_allPrivileges, style: TextStyle(fontSize: 12, color: _revoke ? scheme.error : null)),
+                (checked) => setState(() => _all = checked),
               ),
-          ],
+              _check(
+                'grant-option',
+                _withGrantOption,
+                Text(
+                  _revoke ? _grantOptionPrivilege : 'WITH GRANT OPTION（可以把权限再授予别人）',
+                  style: TextStyle(fontSize: 12, color: _revoke ? scheme.error : null),
+                ),
+                (checked) => setState(() => _withGrantOption = checked),
+              ),
+            ],
+          ),
+        ),
+        Divider(height: 16, color: scheme.outlineVariant),
+        Padding(
+          padding: const EdgeInsets.only(left: _formLabelWidth + 8),
+          child: Wrap(
+            runSpacing: 2,
+            children: [
+              for (final privilege in _choices)
+                SizedBox(
+                  width: 170,
+                  child: _check(
+                    'grant-privilege-$privilege',
+                    _checked.contains(privilege),
+                    Text(privilege, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12)),
+                    (checked) => setState(() {
+                      if (checked) {
+                        _checked.add(privilege);
+                      } else {
+                        _checked.remove(privilege);
+                      }
+                    }),
+                  ),
+                ),
+            ],
+          ),
         ),
       ],
     );
@@ -807,22 +915,28 @@ class _RoleDialogState extends State<_RoleDialog> with _PreviewForm {
       previewing: previewing,
       onPreview: _preview,
       children: [
-        _dropdown<bool>(context, 'role-mode', _revoke, {false: '授予角色', true: '回收角色'},
-            (revoke) => setState(() {
-                  _revoke = revoke;
-                  _choice = null;
-                })),
-        const SizedBox(height: 8),
-        if (options.isEmpty)
-          Text(_revoke ? '这个账号没有被授予角色' : '列不出别的账号，没有可选的角色', style: const TextStyle(fontSize: 12))
-        else
-          _dropdown<int?>(
-            context,
-            'role-choice',
-            _choice,
-            {null: '选择角色…', for (var i = 0; i < options.length; i++) i: _label(options[i])},
-            (choice) => setState(() => _choice = choice),
-          ),
+        FormRow(
+          label: '操作',
+          labelWidth: _formLabelWidth,
+          child: _dropdown<bool>(context, 'role-mode', _revoke, {false: '授予角色', true: '回收角色'},
+              (revoke) => setState(() {
+                    _revoke = revoke;
+                    _choice = null;
+                  })),
+        ),
+        FormRow(
+          label: '角色',
+          labelWidth: _formLabelWidth,
+          child: options.isEmpty
+              ? Text(_revoke ? '这个账号没有被授予角色' : '列不出别的账号，没有可选的角色', style: const TextStyle(fontSize: 12))
+              : _dropdown<int?>(
+                  context,
+                  'role-choice',
+                  _choice,
+                  {null: '选择角色…', for (var i = 0; i < options.length; i++) i: _label(options[i])},
+                  (choice) => setState(() => _choice = choice),
+                ),
+        ),
       ],
     );
   }
@@ -869,7 +983,7 @@ class _PreviewDialogState extends State<_PreviewDialog> {
     final error = _error;
     final dangerous = plan.dangers.isNotEmpty;
     return AlertDialog(
-      title: const Text('确认要执行的语句', style: TextStyle(fontSize: 15)),
+      title: const Text('确认要执行的语句'),
       content: SizedBox(
         width: 640,
         child: SingleChildScrollView(
@@ -880,7 +994,7 @@ class _PreviewDialogState extends State<_PreviewDialog> {
               if (dangerous)
                 Container(
                   padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(color: scheme.errorContainer, borderRadius: BorderRadius.circular(4)),
+                  decoration: BoxDecoration(color: scheme.errorContainer, borderRadius: BorderRadius.circular(5)),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -908,7 +1022,11 @@ class _PreviewDialogState extends State<_PreviewDialog> {
               const SizedBox(height: 8),
               Container(
                 padding: const EdgeInsets.all(10),
-                color: scheme.surfaceContainerHighest,
+                decoration: BoxDecoration(
+                  color: scheme.surface,
+                  border: Border.all(color: scheme.outlineVariant),
+                  borderRadius: BorderRadius.circular(5),
+                ),
                 child: SelectableText(plan.statement, style: const TextStyle(fontSize: 12, fontFamily: 'Menlo', height: 1.5)),
               ),
               if (error != null)
@@ -921,7 +1039,7 @@ class _PreviewDialogState extends State<_PreviewDialog> {
         ),
       ),
       actions: [
-        TextButton(onPressed: _running ? null : () => Navigator.of(context).pop(false), child: const Text('返回')),
+        OutlinedButton(onPressed: _running ? null : () => Navigator.of(context).pop(false), child: const Text('返回')),
         FilledButton(
           style: dangerous ? FilledButton.styleFrom(backgroundColor: scheme.error, foregroundColor: scheme.onError) : null,
           onPressed: _running ? null : _apply,

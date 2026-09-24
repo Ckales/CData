@@ -136,7 +136,11 @@ void main() {
       matching: find.text('big_rows'),
     );
     await settleUntil(tester, popupItem);
-    expect(popupItem, findsOneWidget, reason: '补全没列出真库里的表');
+    final popup = find.byKey(const ValueKey('completion-popup'));
+    final candidates = [
+      for (final text in tester.widgetList<Text>(find.descendant(of: popup, matching: find.byType(Text)))) text.data,
+    ];
+    expect(popupItem, findsOneWidget, reason: '补全没列出真库里的表。弹窗 ${popup.evaluate().length} 个，候选 $candidates。${shownErrors(tester)}');
     await savePng('completion');
     await tester.sendKeyEvent(LogicalKeyboardKey.enter);
     await settle(tester, rounds: 1);
@@ -180,16 +184,17 @@ void main() {
     await settle(tester, rounds: 1);
 
     // 多连接：从标题菜单新开一条连到 information_schema，再切回来
+    // 菜单打开有 300ms 的动画，动画没走完之前点不中菜单项
     await tester.tap(find.byKey(const ValueKey('connection-title')));
-    await settle(tester, rounds: 1);
+    await settle(tester, rounds: 3);
     await tester.tap(find.text('新建连接…'));
     await settle(tester, rounds: 1);
     await connect('information_schema');
-    await settleUntil(tester, find.text('TABLES'));
-    expect(find.text('TABLES'), findsWidgets, reason: '第二条连接的侧栏没列出 information_schema 的表。${shownErrors(tester)}');
+    await settleUntil(tester, find.text('CHARACTER_SETS'));
+    expect(find.text('CHARACTER_SETS'), findsWidgets, reason: '第二条连接的侧栏没列出 information_schema 的表。${shownErrors(tester)}');
 
     await tester.tap(find.byKey(const ValueKey('connection-title')));
-    await settle(tester, rounds: 1);
+    await settle(tester, rounds: 3);
     await tester.tap(find.textContaining('切换到').first);
     await settleUntil(tester, find.text('用户1'));
     expect(find.text('用户1'), findsOneWidget, reason: '切回第一条连接，原来的标签和结果要还在');

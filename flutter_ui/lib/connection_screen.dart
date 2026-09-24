@@ -124,9 +124,10 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
     return '${_user.text.trim()}@${_host.text.trim()}:${_port.text.trim()}$via';
   }
 
+  /// 没起名就用主机名当标题：标题下面一行本来就是「用户@主机:端口」，再写一遍是重复
   String get _displayName {
     final name = _name.text.trim();
-    return name.isEmpty ? _connectionId : name;
+    return name.isEmpty ? _host.text.trim() : name;
   }
 
   Future<void> _save() async {
@@ -301,7 +302,7 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
                 style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: mac.text),
               ),
               const SizedBox(height: 14),
-              FormRow(label: '名称', child: _field('conn-name', _name, hint: '留空用 用户@主机:端口')),
+              FormRow(label: '名称', child: _field('conn-name', _name, hint: '留空用主机名')),
               FormRow(label: '主机', child: _field('conn-host', _host)),
               FormRow(label: '端口', child: SizedBox(width: 90, child: _field('conn-port', _port))),
               FormRow(label: '用户', child: _field('conn-user', _user)),

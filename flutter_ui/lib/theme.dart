@@ -113,11 +113,17 @@ ThemeData appTheme(Brightness brightness) {
       ),
     ),
     segmentedButtonTheme: SegmentedButtonThemeData(
+      // macOS 的分段控件：没选中的段是正文色白底，选中的是实心蓝；和普通按钮一样矮
       style: SegmentedButton.styleFrom(
-        minimumSize: buttonSize,
+        minimumSize: const Size(0, 24),
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        visualDensity: const VisualDensity(horizontal: -2, vertical: -4),
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
         textStyle: text.bodyMedium,
         shape: buttonShape,
         side: BorderSide(color: mac.controlBorder),
+        foregroundColor: mac.text,
+        backgroundColor: mac.control,
         selectedBackgroundColor: mac.accent,
         selectedForegroundColor: Colors.white,
       ),

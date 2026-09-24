@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'mac_widgets.dart';
 import 'src/rust/api/editor.dart';
 import 'src/rust/api/editor.dart'
     as editor
@@ -116,51 +117,57 @@ class _LibraryDialogState extends State<_LibraryDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return Dialog(
+      clipBehavior: Clip.antiAlias,
       child: SizedBox(
         width: 760,
         height: 520,
         child: DefaultTabController(
           length: 2,
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Row(
-                  children: [
-                    const Expanded(
-                      child: TabBar(
-                        labelStyle: TextStyle(fontSize: 13),
-                        tabs: [
-                          Tab(text: '历史'),
-                          Tab(text: '收藏'),
-                        ],
-                      ),
-                    ),
-                    IconButton(
-                      tooltip: '关闭',
-                      iconSize: 18,
-                      onPressed: () => Navigator.of(context).pop(),
-                      icon: const Icon(Icons.close),
-                    ),
-                  ],
-                ),
-                if (_error != null)
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 6),
-                    child: Text(
-                      _error!,
-                      style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.error),
-                    ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              MacPanelBar(
+                children: [
+                  const Expanded(child: MacTabBar(labels: ['历史', '收藏'])),
+                  IconButton(
+                    tooltip: '关闭',
+                    onPressed: () => Navigator.of(context).pop(),
+                    icon: const Icon(Icons.close),
                   ),
-                Expanded(child: TabBarView(children: [_historyTab(), _favoritesTab()])),
-              ],
-            ),
+                ],
+              ),
+              if (_error != null)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 6, 12, 0),
+                  child: Text(_error!, style: TextStyle(fontSize: 12, color: scheme.error)),
+                ),
+              Expanded(
+                child: ColoredBox(
+                  color: scheme.surface,
+                  child: TabBarView(children: [_historyTab(), _favoritesTab()]),
+                ),
+              ),
+            ],
           ),
         ),
       ),
     );
+  }
+
+  /// 列表上面一条：搜索框或收藏表单
+  Widget _toolbar(Widget child) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(border: Border(bottom: BorderSide(color: scheme.outlineVariant))),
+      child: child,
+    );
+  }
+
+  Widget _empty(String text) {
+    return Center(child: Text(text, style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant)));
   }
 
   Widget _historyTab() {
@@ -174,30 +181,32 @@ class _LibraryDialogState extends State<_LibraryDialog> {
     }
 
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Padding(
-          padding: const EdgeInsets.symmetric(vertical: 8),
+        _toolbar(SizedBox(
+          height: 26,
           child: TextField(
             key: const ValueKey('history-search'),
             controller: _search,
-            style: const TextStyle(fontSize: 12),
+            style: const TextStyle(fontSize: 13),
             decoration: const InputDecoration(
-              isDense: true,
-              prefixIcon: Icon(Icons.search, size: 16),
+              prefixIcon: Icon(Icons.search, size: 15),
+              prefixIconConstraints: BoxConstraints(minWidth: 28, minHeight: 24),
+              contentPadding: EdgeInsets.symmetric(vertical: 5),
               hintText: '搜索历史',
-              border: OutlineInputBorder(),
             ),
             onChanged: (_) => setState(() {}),
           ),
-        ),
+        )),
         Expanded(
           child: matched.isEmpty
-              ? const Center(child: Text('没有记录'))
+              ? _empty('没有记录')
               : ListView.builder(
                   itemCount: matched.length,
                   itemBuilder: (context, index) {
                     final entry = matched[index];
                     return _SqlTile(
+                      index: index,
                       title: _formatTime(entry.executedAt),
                       sql: entry.sql,
                       onTap: () => Navigator.of(context).pop(entry.sql),
@@ -214,44 +223,37 @@ class _LibraryDialogState extends State<_LibraryDialog> {
     if (favorites == null) return const Center(child: Text('加载中…'));
 
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Padding(
-          padding: const EdgeInsets.symmetric(vertical: 8),
-          child: Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  key: const ValueKey('favorite-name'),
-                  controller: _favoriteName,
-                  style: const TextStyle(fontSize: 12),
-                  decoration: const InputDecoration(
-                    isDense: true,
-                    hintText: '给编辑器里当前的 SQL 起个名字',
-                    border: OutlineInputBorder(),
-                  ),
-                  onSubmitted: (_) => _saveCurrent(),
-                ),
+        _toolbar(Row(
+          children: [
+            Expanded(
+              child: TextField(
+                key: const ValueKey('favorite-name'),
+                controller: _favoriteName,
+                decoration: const InputDecoration(hintText: '给编辑器里当前的 SQL 起个名字'),
+                onSubmitted: (_) => _saveCurrent(),
               ),
-              const SizedBox(width: 8),
-              FilledButton(onPressed: _saveCurrent, child: const Text('收藏当前 SQL')),
-            ],
-          ),
-        ),
+            ),
+            const SizedBox(width: 8),
+            FilledButton(onPressed: _saveCurrent, child: const Text('收藏当前 SQL')),
+          ],
+        )),
         Expanded(
           child: favorites.isEmpty
-              ? const Center(child: Text('还没有收藏'))
+              ? _empty('还没有收藏')
               : ListView.builder(
                   itemCount: favorites.length,
                   itemBuilder: (context, index) {
                     final favorite = favorites[index];
                     return _SqlTile(
+                      index: index,
                       title: favorite.name,
                       sql: favorite.sql,
                       onTap: () => Navigator.of(context).pop(favorite.sql),
                       trailing: IconButton(
                         key: ValueKey('favorite-delete-${favorite.id}'),
                         tooltip: '删除收藏',
-                        iconSize: 16,
                         onPressed: () => _delete(favorite.id),
                         icon: const Icon(Icons.delete_outline),
                       ),
@@ -271,28 +273,49 @@ class _LibraryDialogState extends State<_LibraryDialog> {
   }
 }
 
+/// 一条历史或收藏：上面一行小字（时间或名字），下面最多三行 SQL；隔行变色，行间一条分隔线
 class _SqlTile extends StatelessWidget {
+  final int index;
   final String title;
   final String sql;
   final VoidCallback onTap;
   final Widget? trailing;
 
-  const _SqlTile({required this.title, required this.sql, required this.onTap, this.trailing});
+  const _SqlTile({required this.index, required this.title, required this.sql, required this.onTap, this.trailing});
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return ListTile(
-      dense: true,
-      onTap: onTap,
-      title: Text(title, style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant)),
-      subtitle: Text(
-        sql,
-        maxLines: 3,
-        overflow: TextOverflow.ellipsis,
-        style: TextStyle(fontSize: 12, fontFamily: 'Menlo', color: scheme.onSurface),
+    final trailing = this.trailing;
+    return Material(
+      color: index.isOdd ? scheme.surfaceContainerLow : scheme.surface,
+      child: InkWell(
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(12, 5, 6, 5),
+          decoration: BoxDecoration(border: Border(bottom: BorderSide(color: scheme.outlineVariant))),
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(title, style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant)),
+                    const SizedBox(height: 2),
+                    Text(
+                      sql,
+                      maxLines: 3,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(fontSize: 12, fontFamily: 'Menlo', color: scheme.onSurface),
+                    ),
+                  ],
+                ),
+              ),
+              ?trailing,
+            ],
+          ),
+        ),
       ),
-      trailing: trailing,
     );
   }
 }

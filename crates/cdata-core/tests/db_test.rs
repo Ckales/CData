@@ -1076,3 +1076,16 @@ async fn completion_uses_the_loaded_catalog() {
 
     cdata_core::session::close_session(id).await.ok();
 }
+
+/// information_schema 里是 SYSTEM VIEW，也要标成视图：侧栏按它给视图图标，编辑按它拒绝
+#[tokio::test]
+async fn system_views_are_listed_as_views() {
+    let Some(config) = config_from_env() else {
+        eprintln!("跳过：未配置 CDATA_TEST_* 环境变量");
+        return;
+    };
+    let pool = open_pool(&config).await.unwrap();
+    let tables = cdata_core::schema::list_tables(&pool, "information_schema").await.unwrap();
+    let tables_view = tables.iter().find(|t| t.name == "TABLES").expect("information_schema 里应该有 TABLES");
+    assert!(tables_view.is_view, "SYSTEM VIEW 没被当成视图");
+}

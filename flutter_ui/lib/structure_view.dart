@@ -2,10 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'data_source.dart';
+import 'mac_widgets.dart';
 import 'src/rust/api/schema.dart';
 import 'structure_editor.dart';
 
-/// 表结构对话框：列 / 索引 / 外键 / 建表语句四页
+/// 表结构对话框：Dialog 里包一个 StructurePanel，外加标题和关闭按钮
 Future<void> showTableStructure(
   BuildContext context, {
   required SchemaSource source,
@@ -15,11 +16,41 @@ Future<void> showTableStructure(
 }) {
   return showDialog<void>(
     context: context,
-    builder: (context) => _StructureDialog(source: source, database: database, table: table, onAltered: onAltered),
+    builder: (context) => Dialog(
+      clipBehavior: Clip.antiAlias,
+      child: SizedBox(
+        width: 900,
+        height: 560,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
+              child: Row(
+                children: [
+                  Text('$database.$table', style: Theme.of(context).textTheme.titleMedium),
+                  const Spacer(),
+                  IconButton(
+                    tooltip: '关闭',
+                    onPressed: () => Navigator.of(context).pop(),
+                    icon: const Icon(Icons.close),
+                  ),
+                ],
+              ),
+            ),
+            Expanded(
+              child: StructurePanel(source: source, database: database, table: table, onAltered: onAltered),
+            ),
+          ],
+        ),
+      ),
+    ),
   );
 }
 
-class _StructureDialog extends StatefulWidget {
+/// 表结构面板：列 / 索引 / 外键 / CHECK / 建表语句五页，右上角「编辑」。
+/// 没有外框和关闭按钮，可以直接嵌进页面；database / table 变了会重读
+class StructurePanel extends StatefulWidget {
   final SchemaSource source;
   final String database;
   final String table;
@@ -27,13 +58,19 @@ class _StructureDialog extends StatefulWidget {
   /// 结构改动执行成功后立刻调（不等关窗），调用方据此刷新补全目录等
   final VoidCallback? onAltered;
 
-  const _StructureDialog({required this.source, required this.database, required this.table, this.onAltered});
+  const StructurePanel({
+    super.key,
+    required this.source,
+    required this.database,
+    required this.table,
+    this.onAltered,
+  });
 
   @override
-  State<_StructureDialog> createState() => _StructureDialogState();
+  State<StructurePanel> createState() => _StructurePanelState();
 }
 
-class _StructureDialogState extends State<_StructureDialog> {
+class _StructurePanelState extends State<StructurePanel> {
   TableStructure? _structure;
   String? _error;
   bool _copied = false;
@@ -44,12 +81,36 @@ class _StructureDialogState extends State<_StructureDialog> {
     _load();
   }
 
+  @override
+  void didUpdateWidget(StructurePanel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.source == widget.source &&
+        oldWidget.database == widget.database &&
+        oldWidget.table == widget.table) {
+      return;
+    }
+    // 换了表先清空，不让上一张表的结构顶着新表名显示
+    setState(() {
+      _structure = null;
+      _error = null;
+      _copied = false;
+    });
+    _load();
+  }
+
   Future<void> _load() async {
+    final source = widget.source;
+    final database = widget.database;
+    final table = widget.table;
+    // 回来时已经换了表，这份结果作废
+    bool stale() => !mounted || source != widget.source || database != widget.database || table != widget.table;
     try {
-      final structure = await widget.source.structure(widget.database, widget.table);
-      if (mounted) setState(() => _structure = structure);
+      final structure = await source.structure(database, table);
+      if (stale()) return;
+      setState(() => _structure = structure);
     } catch (e) {
-      if (mounted) setState(() => _error = '$e');
+      if (stale()) return;
+      setState(() => _error = '$e');
     }
   }
 
@@ -76,86 +137,62 @@ class _StructureDialogState extends State<_StructureDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return Dialog(
-      child: SizedBox(
-        width: 900,
-        height: 560,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
+    final structure = _structure;
+    // 分页控制器放在最外层：换表时停在同一页，像 Querious 一样
+    return DefaultTabController(
+      length: 5,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          MacPanelBar(
             children: [
-              Row(
-                children: [
-                  Text(
-                    '${widget.database}.${widget.table}',
-                    style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+              if (structure != null)
+                Expanded(
+                  child: MacTabBar(
+                    labels: [
+                      '列 ${structure.columns.length}',
+                      '索引 ${structure.indexes.length}',
+                      '外键 ${structure.foreignKeys.length}',
+                      // null 是服务器读不了，不是没有，标签上不写 0
+                      structure.checks == null ? 'CHECK' : 'CHECK ${structure.checks!.length}',
+                      '建表语句',
+                    ],
                   ),
-                  const Spacer(),
-                  if (_structure != null)
-                    TextButton.icon(
-                      onPressed: _edit,
-                      icon: const Icon(Icons.edit_outlined, size: 16),
-                      label: const Text('编辑', style: TextStyle(fontSize: 12)),
-                    ),
-                  IconButton(
-                    tooltip: '关闭',
-                    iconSize: 18,
-                    onPressed: () => Navigator.of(context).pop(),
-                    icon: const Icon(Icons.close),
-                  ),
-                ],
-              ),
-              Expanded(child: _body()),
+                )
+              else
+                const Spacer(),
+              if (structure != null)
+                OutlinedButton.icon(
+                  onPressed: _edit,
+                  icon: const Icon(Icons.edit_outlined, size: 14),
+                  label: const Text('编辑'),
+                ),
             ],
           ),
-        ),
+          Expanded(child: _body(structure)),
+        ],
       ),
     );
   }
 
-  Widget _body() {
+  Widget _body(TableStructure? structure) {
     final error = _error;
     if (error != null) {
       return Center(
         child: SelectableText('读取结构失败：$error', style: TextStyle(color: Theme.of(context).colorScheme.error)),
       );
     }
-    final structure = _structure;
     // 加载状态用静态文字，不用转圈：无限动画会让 widget 测试的 pumpAndSettle 挂死
     if (structure == null) return const Center(child: Text('加载中…'));
 
-    return DefaultTabController(
-      length: 5,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          TabBar(
-            isScrollable: true,
-            tabAlignment: TabAlignment.start,
-            labelStyle: const TextStyle(fontSize: 12),
-            tabs: [
-              Tab(text: '列 ${structure.columns.length}'),
-              Tab(text: '索引 ${structure.indexes.length}'),
-              Tab(text: '外键 ${structure.foreignKeys.length}'),
-              // null 是服务器读不了，不是没有，标签上不写 0
-              Tab(text: structure.checks == null ? 'CHECK' : 'CHECK ${structure.checks!.length}'),
-              const Tab(text: '建表语句'),
-            ],
-          ),
-          Expanded(
-            child: TabBarView(
-              children: [
-                _columnsTab(structure),
-                _indexesTab(structure),
-                _foreignKeysTab(structure),
-                _checksTab(structure),
-                _ddlTab(structure),
-              ],
-            ),
-          ),
-        ],
-      ),
+    return TabBarView(
+      children: [
+        _columnsTab(structure),
+        _indexesTab(structure),
+        _foreignKeysTab(structure),
+        _checksTab(structure),
+        _ddlTab(structure),
+      ],
     );
   }
 
@@ -198,7 +235,7 @@ class _StructureDialogState extends State<_StructureDialog> {
   }
 
   Widget _indexesTab(TableStructure structure) {
-    if (structure.indexes.isEmpty) return const Center(child: Text('没有索引'));
+    if (structure.indexes.isEmpty) return _empty('没有索引');
     return _Grid(
       headers: const ['名称', '列', '唯一', '类型', '注释'],
       widths: const [180, 300, 50, 100, 240],
@@ -216,7 +253,7 @@ class _StructureDialogState extends State<_StructureDialog> {
   }
 
   Widget _foreignKeysTab(TableStructure structure) {
-    if (structure.foreignKeys.isEmpty) return const Center(child: Text('没有外键'));
+    if (structure.foreignKeys.isEmpty) return _empty('没有外键');
     return _Grid(
       headers: const ['名称', '列', '引用', 'ON UPDATE', 'ON DELETE'],
       widths: const [180, 180, 280, 110, 110],
@@ -238,11 +275,11 @@ class _StructureDialogState extends State<_StructureDialog> {
 
   Widget _checksTab(TableStructure structure) {
     final checks = structure.checks;
-    if (checks == null) return const Center(child: Text('这个服务器读不到 CHECK 约束（要 MySQL 8.0.16+）'));
-    if (checks.isEmpty) return const Center(child: Text('没有 CHECK 约束'));
+    if (checks == null) return _empty('这个服务器读不到 CHECK 约束（要 MySQL 8.0.16+）');
+    if (checks.isEmpty) return _empty('没有 CHECK 约束');
     return _Grid(
       headers: const ['名称', '表达式', '强制执行'],
-      widths: const [200, 480, 80],
+      widths: const [200, 480, 120],
       rows: [
         for (final check in checks)
           [
@@ -255,29 +292,43 @@ class _StructureDialogState extends State<_StructureDialog> {
   }
 
   Widget _ddlTab(TableStructure structure) {
+    final scheme = Theme.of(context).colorScheme;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Align(
+        Expanded(
+          child: Container(
+            color: scheme.surface,
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(12),
+              child: SelectableText(
+                structure.createSql,
+                style: const TextStyle(fontSize: 12, fontFamily: 'Menlo', height: 1.5),
+              ),
+            ),
+          ),
+        ),
+        Container(
+          height: 32,
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          decoration: BoxDecoration(border: Border(top: BorderSide(color: scheme.outlineVariant))),
           alignment: Alignment.centerRight,
-          child: TextButton.icon(
+          child: OutlinedButton.icon(
             onPressed: () async {
               await Clipboard.setData(ClipboardData(text: structure.createSql));
               if (mounted) setState(() => _copied = true);
             },
             icon: const Icon(Icons.copy, size: 14),
-            label: Text(_copied ? '已复制' : '复制', style: const TextStyle(fontSize: 12)),
-          ),
-        ),
-        Expanded(
-          child: SingleChildScrollView(
-            child: SelectableText(
-              structure.createSql,
-              style: const TextStyle(fontSize: 12, fontFamily: 'Menlo', height: 1.5),
-            ),
+            label: Text(_copied ? '已复制' : '复制'),
           ),
         ),
       ],
+    );
+  }
+
+  Widget _empty(String text) {
+    return Center(
+      child: Text(text, style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant)),
     );
   }
 
@@ -290,11 +341,11 @@ class _StructureDialogState extends State<_StructureDialog> {
   }) {
     return Text(
       text,
-      maxLines: 2,
+      maxLines: 1,
       overflow: TextOverflow.ellipsis,
       style: TextStyle(
         fontSize: 12,
-        fontWeight: bold ? FontWeight.w600 : null,
+        fontWeight: bold ? FontWeight.w500 : null,
         fontFamily: mono ? 'Menlo' : null,
         fontStyle: italic ? FontStyle.italic : null,
         color: muted ? Theme.of(context).colorScheme.onSurfaceVariant : null,
@@ -303,7 +354,8 @@ class _StructureDialogState extends State<_StructureDialog> {
   }
 }
 
-/// 固定列宽的小表格，横竖都能滚。结构页的行数有限，不用虚拟滚动
+/// 固定列宽的列表，像 NSTableView：灰底表头带竖分隔，行 22px 隔行变色，横竖都能滚。
+/// 结构页的行数有限，不用虚拟滚动
 class _Grid extends StatelessWidget {
   final List<String> headers;
   final List<double> widths;
@@ -313,45 +365,69 @@ class _Grid extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     var totalWidth = 0.0;
     for (final width in widths) {
       totalWidth += width;
     }
 
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: SizedBox(
-        width: totalWidth,
-        child: Column(
-          children: [
-            _row(context, [
-              for (final header in headers)
-                Text(header, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600)),
-            ], header: true),
-            Expanded(child: ListView(children: [for (final row in rows) _row(context, row)])),
-          ],
+    return ColoredBox(
+      color: scheme.surface,
+      child: LayoutBuilder(
+        builder: (context, constraints) => SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: SizedBox(
+            // 比面板窄时撑满，最后一列后面的空白也画出表头和隔行底色
+            width: totalWidth > constraints.maxWidth ? totalWidth : constraints.maxWidth,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Container(
+                  height: 22,
+                  decoration: BoxDecoration(
+                    color: scheme.surfaceContainerHighest,
+                    border: Border(bottom: BorderSide(color: scheme.outlineVariant)),
+                  ),
+                  child: _cells([
+                    for (final header in headers)
+                      Text(
+                        header,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(fontSize: 11, fontWeight: FontWeight.w500, color: scheme.onSurfaceVariant),
+                      ),
+                  ], divider: scheme.outlineVariant),
+                ),
+                Expanded(
+                  child: ListView.builder(
+                    itemCount: rows.length,
+                    itemExtent: 22,
+                    itemBuilder: (context, index) => ColoredBox(
+                      color: index.isOdd ? scheme.surfaceContainerLow : scheme.surface,
+                      child: _cells(rows[index]),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );
   }
 
-  Widget _row(BuildContext context, List<Widget> cells, {bool header = false}) {
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 6),
-      decoration: BoxDecoration(
-        color: header ? Theme.of(context).colorScheme.surfaceContainerHighest : null,
-        border: Border(bottom: BorderSide(color: Theme.of(context).colorScheme.outlineVariant)),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          for (var i = 0; i < cells.length; i++)
-            SizedBox(
-              width: widths[i],
-              child: Padding(padding: const EdgeInsets.symmetric(horizontal: 6), child: cells[i]),
-            ),
-        ],
-      ),
+  Widget _cells(List<Widget> cells, {Color? divider}) {
+    return Row(
+      children: [
+        for (var i = 0; i < cells.length; i++)
+          Container(
+            width: widths[i],
+            padding: const EdgeInsets.symmetric(horizontal: 6),
+            alignment: Alignment.centerLeft,
+            decoration: divider == null ? null : BoxDecoration(border: Border(right: BorderSide(color: divider))),
+            child: cells[i],
+          ),
+      ],
     );
   }
 }

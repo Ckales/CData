@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'data_source.dart';
+import 'mac_widgets.dart';
 import 'src/rust/api/schema.dart';
 
 /// 表结构编辑器。改动先攒在界面里，预览 core 生成的 DDL 确认后才执行。
@@ -464,80 +465,104 @@ class _EditorDialogState extends State<_EditorDialog> {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final titleStyle = Theme.of(context).textTheme.titleMedium;
     final error = _error;
     return Dialog(
+      clipBehavior: Clip.antiAlias,
       child: SizedBox(
         width: 1100,
         height: 640,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-          child: DefaultTabController(
-            length: 5,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                if (_creating)
-                  Row(
-                    children: [
-                      Text(
-                        '新建表：${widget.database}.',
-                        style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
-                      ),
-                      SizedBox(width: 260, child: _field(_tableName, hint: '表名', key: const ValueKey('table-name'))),
-                    ],
-                  )
-                else
-                  Text(
-                    '编辑结构：${widget.database}.${widget.table}',
-                    style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+        child: DefaultTabController(
+          length: 5,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                child: _creating
+                    ? Row(
+                        children: [
+                          Text('新建表：${widget.database}.', style: titleStyle),
+                          SizedBox(width: 260, child: _field(_tableName, hint: '表名', key: const ValueKey('table-name'))),
+                        ],
+                      )
+                    : Text('编辑结构：${widget.database}.${widget.table}', style: titleStyle),
+              ),
+              MacPanelBar(
+                children: [
+                  Expanded(
+                    child: MacTabBar(
+                      labels: [
+                        '列 ${_columns.length}',
+                        '索引 ${_indexes.length}',
+                        '外键 ${_foreignKeys.length}',
+                        'CHECK ${_checks.length}',
+                        '表选项',
+                      ],
+                    ),
                   ),
-                TabBar(
-                  isScrollable: true,
-                  tabAlignment: TabAlignment.start,
-                  labelStyle: const TextStyle(fontSize: 12),
-                  tabs: [
-                    Tab(text: '列 ${_columns.length}'),
-                    Tab(text: '索引 ${_indexes.length}'),
-                    Tab(text: '外键 ${_foreignKeys.length}'),
-                    Tab(text: 'CHECK ${_checks.length}'),
-                    const Tab(text: '表选项'),
-                  ],
-                ),
-                Expanded(
+                ],
+              ),
+              Expanded(
+                child: ColoredBox(
+                  color: scheme.surface,
                   child: TabBarView(
                     children: [_columnsTab(), _indexesTab(), _foreignKeysTab(), _checksTab(), _optionsTab()],
                   ),
                 ),
-                if (error != null)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 8),
-                    child: SelectableText(error, style: TextStyle(color: scheme.error, fontSize: 12)),
-                  ),
-                const SizedBox(height: 8),
-                Row(
+              ),
+              Container(
+                padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
+                decoration: BoxDecoration(border: Border(top: BorderSide(color: scheme.outlineVariant))),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Text('改动在预览确认之前不会写入数据库', style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant)),
-                    const Spacer(),
-                    TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('取消')),
-                    const SizedBox(width: 8),
-                    FilledButton(
-                      onPressed: _previewing ? null : _preview,
-                      child: Text(_previewing ? '生成中…' : '预览 DDL'),
+                    if (error != null)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: SelectableText(error, style: TextStyle(color: scheme.error, fontSize: 12)),
+                      ),
+                    Row(
+                      children: [
+                        Text('改动在预览确认之前不会写入数据库', style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant)),
+                        const Spacer(),
+                        OutlinedButton(onPressed: () => Navigator.of(context).pop(), child: const Text('取消')),
+                        const SizedBox(width: 8),
+                        FilledButton(
+                          onPressed: _previewing ? null : _preview,
+                          child: Text(_previewing ? '生成中…' : '预览 DDL'),
+                        ),
+                      ],
                     ),
                   ],
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),
     );
   }
 
+  /// 表格下面一条：放「添加…」按钮
+  Widget _addBar(Widget button) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      height: 30,
+      padding: const EdgeInsets.symmetric(horizontal: 6),
+      alignment: Alignment.centerLeft,
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainer,
+        border: Border(top: BorderSide(color: scheme.outlineVariant)),
+      ),
+      child: button,
+    );
+  }
+
   // ---- 列 ----
 
   // 操作按钮放第一列：表比对话框宽，放最后要横着滚才看得到删除
-  static const _columnWidths = [150.0, 150.0, 160.0, 44.0, 110.0, 150.0, 44.0, 170.0, 150.0, 180.0];
+  static const _columnWidths = [96.0, 150.0, 160.0, 40.0, 110.0, 150.0, 40.0, 170.0, 150.0, 180.0];
 
   Widget _columnsTab() {
     return Column(
@@ -550,15 +575,12 @@ class _EditorDialogState extends State<_EditorDialog> {
             rows: [for (var i = 0; i < _columns.length; i++) _columnRow(i)],
           ),
         ),
-        Align(
-          alignment: Alignment.centerLeft,
-          child: TextButton.icon(
-            key: const ValueKey('add-column'),
-            onPressed: _addColumn,
-            icon: const Icon(Icons.add, size: 16),
-            label: const Text('添加列'),
-          ),
-        ),
+        _addBar(TextButton.icon(
+          key: const ValueKey('add-column'),
+          onPressed: _addColumn,
+          icon: const Icon(Icons.add, size: 14),
+          label: const Text('添加列'),
+        )),
       ],
     );
   }
@@ -571,11 +593,20 @@ class _EditorDialogState extends State<_EditorDialog> {
       Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (!editable)
-            Tooltip(
-              message: column.locked!,
-              child: Icon(Icons.lock_outline, key: ValueKey('column-locked-$i'), size: 16, color: Theme.of(context).colorScheme.onSurfaceVariant),
-            ),
+          SizedBox(
+            width: 18,
+            child: editable
+                ? null
+                : Tooltip(
+                    message: column.locked!,
+                    child: Icon(
+                      Icons.lock_outline,
+                      key: ValueKey('column-locked-$i'),
+                      size: 13,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+          ),
           _iconButton(Icons.arrow_upward, '上移', () => _moveColumn(i, i - 1)),
           _iconButton(Icons.arrow_downward, '下移', () => _moveColumn(i, i + 1)),
           _iconButton(Icons.delete_outline, '删除列', () => _removeColumn(column), key: ValueKey('column-delete-$i')),
@@ -583,26 +614,22 @@ class _EditorDialogState extends State<_EditorDialog> {
       ),
       _field(column.name, key: ValueKey('column-name-$i')),
       _field(column.type, enabled: editable, key: ValueKey('column-type-$i')),
-      Checkbox(
+      _checkbox(
+        column.nullable,
+        editable ? (value) => setState(() => column.nullable = value) : null,
         key: ValueKey('column-nullable-$i'),
-        value: column.nullable,
-        onChanged: editable ? (value) => setState(() => column.nullable = value ?? false) : null,
       ),
-      DropdownButton<_DefaultKind>(
+      MacPopupButton<_DefaultKind>(
         key: ValueKey('column-default-kind-$i'),
         value: column.defaultKind,
-        isDense: true,
-        style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurface),
-        onChanged: editable ? (value) => setState(() => column.defaultKind = value ?? column.defaultKind) : null,
-        items: [
-          for (final kind in _DefaultKind.values)
-            DropdownMenuItem(value: kind, child: Text(_defaultKindLabels[kind]!)),
-        ],
+        expand: true,
+        onChanged: editable ? (value) => setState(() => column.defaultKind = value) : null,
+        items: {for (final kind in _DefaultKind.values) kind: _defaultKindLabels[kind]!},
       ),
       _field(column.defaultText, enabled: editable && hasDefaultText, key: ValueKey('column-default-$i')),
-      Checkbox(
-        value: column.autoIncrement,
-        onChanged: editable ? (value) => setState(() => column.autoIncrement = value ?? false) : null,
+      _checkbox(
+        column.autoIncrement,
+        editable ? (value) => setState(() => column.autoIncrement = value) : null,
       ),
       // 空着就是没有 ON UPDATE。提示写成例子的话，一排空框看起来像每列都设了 CURRENT_TIMESTAMP
       _field(column.onUpdate, enabled: editable, hint: '无'),
@@ -619,26 +646,24 @@ class _EditorDialogState extends State<_EditorDialog> {
       children: [
         Expanded(
           child: ListView(
+            padding: const EdgeInsets.all(8),
             children: [for (var i = 0; i < _indexes.length; i++) _indexBlock(i)],
           ),
         ),
-        Align(
-          alignment: Alignment.centerLeft,
-          child: TextButton.icon(
-            onPressed: () => setState(() {
-              _indexes.add(_IndexRow(
-                originalName: null,
-                locked: null,
-                name: '',
-                comment: '',
-                kind: IndexKind.normal,
-                parts: [_PartRow(_columns.isEmpty ? null : _columns.first)],
-              ));
-            }),
-            icon: const Icon(Icons.add, size: 16),
-            label: const Text('添加索引'),
-          ),
-        ),
+        _addBar(TextButton.icon(
+          onPressed: () => setState(() {
+            _indexes.add(_IndexRow(
+              originalName: null,
+              locked: null,
+              name: '',
+              comment: '',
+              kind: IndexKind.normal,
+              parts: [_PartRow(_columns.isEmpty ? null : _columns.first)],
+            ));
+          }),
+          icon: const Icon(Icons.add, size: 14),
+          label: const Text('添加索引'),
+        )),
       ],
     );
   }
@@ -648,22 +673,22 @@ class _EditorDialogState extends State<_EditorDialog> {
     final editable = index.locked == null;
     final scheme = Theme.of(context).colorScheme;
     return Container(
-      margin: const EdgeInsets.symmetric(vertical: 4),
-      padding: const EdgeInsets.all(8),
-      decoration: BoxDecoration(border: Border.all(color: scheme.outlineVariant), borderRadius: BorderRadius.circular(4)),
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.fromLTRB(8, 6, 4, 6),
+      decoration: _groupBox(),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              DropdownButton<IndexKind>(
-                value: index.kind,
-                isDense: true,
-                style: TextStyle(fontSize: 12, color: scheme.onSurface),
-                onChanged: editable ? (value) => setState(() => index.kind = value ?? index.kind) : null,
-                items: [
-                  for (final kind in IndexKind.values) DropdownMenuItem(value: kind, child: Text(_indexKindLabels[kind]!)),
-                ],
+              SizedBox(
+                width: 110,
+                child: MacPopupButton<IndexKind>(
+                  value: index.kind,
+                  expand: true,
+                  onChanged: editable ? (value) => setState(() => index.kind = value) : null,
+                  items: {for (final kind in IndexKind.values) kind: _indexKindLabels[kind]!},
+                ),
               ),
               const SizedBox(width: 8),
               SizedBox(
@@ -682,10 +707,13 @@ class _EditorDialogState extends State<_EditorDialog> {
           ),
           for (var p = 0; p < index.parts.length; p++) _partRow(index, p, editable),
           if (editable)
-            TextButton.icon(
-              onPressed: _columns.isEmpty ? null : () => setState(() => index.parts.add(_PartRow(_columns.first))),
-              icon: const Icon(Icons.add, size: 14),
-              label: const Text('添加列', style: TextStyle(fontSize: 12)),
+            Padding(
+              padding: const EdgeInsets.only(left: 12, top: 2),
+              child: TextButton.icon(
+                onPressed: _columns.isEmpty ? null : () => setState(() => index.parts.add(_PartRow(_columns.first))),
+                icon: const Icon(Icons.add, size: 14),
+                label: const Text('添加列', style: TextStyle(fontSize: 12)),
+              ),
             ),
         ],
       ),
@@ -696,7 +724,7 @@ class _EditorDialogState extends State<_EditorDialog> {
     final part = index.parts[p];
     final column = part.column;
     return Padding(
-      padding: const EdgeInsets.only(left: 16, top: 4),
+      padding: const EdgeInsets.only(left: 20, top: 4),
       child: Row(
         children: [
           SizedBox(
@@ -707,8 +735,11 @@ class _EditorDialogState extends State<_EditorDialog> {
           ),
           const SizedBox(width: 8),
           SizedBox(width: 90, child: _field(part.prefix, enabled: editable, hint: '前缀长度')),
-          Checkbox(value: part.descending, onChanged: editable ? (value) => setState(() => part.descending = value ?? false) : null),
+          const SizedBox(width: 8),
+          _checkbox(part.descending, editable ? (value) => setState(() => part.descending = value) : null),
+          const SizedBox(width: 4),
           _label('降序'),
+          const SizedBox(width: 8),
           if (editable) ...[
             _iconButton(Icons.arrow_upward, '上移', () {
               if (p == 0) return;
@@ -727,38 +758,39 @@ class _EditorDialogState extends State<_EditorDialog> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Expanded(child: ListView(children: [for (var i = 0; i < _foreignKeys.length; i++) _foreignKeyBlock(i)])),
-        Align(
-          alignment: Alignment.centerLeft,
-          child: TextButton.icon(
-            onPressed: _columns.isEmpty
-                ? null
-                : () => setState(() {
-                      _foreignKeys.add(_ForeignKeyRow(
-                        originalName: null,
-                        name: '',
-                        referencedSchema: widget.database,
-                        referencedTable: '',
-                        pairs: [_ForeignKeyPair(_columns.first, '')],
-                        onUpdate: 'RESTRICT',
-                        onDelete: 'RESTRICT',
-                      ));
-                    }),
-            icon: const Icon(Icons.add, size: 16),
-            label: const Text('添加外键'),
+        Expanded(
+          child: ListView(
+            padding: const EdgeInsets.all(8),
+            children: [for (var i = 0; i < _foreignKeys.length; i++) _foreignKeyBlock(i)],
           ),
         ),
+        _addBar(TextButton.icon(
+          onPressed: _columns.isEmpty
+              ? null
+              : () => setState(() {
+                    _foreignKeys.add(_ForeignKeyRow(
+                      originalName: null,
+                      name: '',
+                      referencedSchema: widget.database,
+                      referencedTable: '',
+                      pairs: [_ForeignKeyPair(_columns.first, '')],
+                      onUpdate: 'RESTRICT',
+                      onDelete: 'RESTRICT',
+                    ));
+                  }),
+          icon: const Icon(Icons.add, size: 14),
+          label: const Text('添加外键'),
+        )),
       ],
     );
   }
 
   Widget _foreignKeyBlock(int i) {
     final fk = _foreignKeys[i];
-    final scheme = Theme.of(context).colorScheme;
     return Container(
-      margin: const EdgeInsets.symmetric(vertical: 4),
-      padding: const EdgeInsets.all(8),
-      decoration: BoxDecoration(border: Border.all(color: scheme.outlineVariant), borderRadius: BorderRadius.circular(4)),
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.fromLTRB(8, 6, 4, 6),
+      decoration: _groupBox(),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -785,7 +817,7 @@ class _EditorDialogState extends State<_EditorDialog> {
           ),
           for (var p = 0; p < fk.pairs.length; p++)
             Padding(
-              padding: const EdgeInsets.only(left: 16, top: 4),
+              padding: const EdgeInsets.only(left: 20, top: 4),
               child: Row(
                 children: [
                   SizedBox(width: 200, child: _columnPicker(fk.pairs[p].column, (picked) => setState(() => fk.pairs[p].column = picked))),
@@ -795,10 +827,13 @@ class _EditorDialogState extends State<_EditorDialog> {
                 ],
               ),
             ),
-          TextButton.icon(
-            onPressed: _columns.isEmpty ? null : () => setState(() => fk.pairs.add(_ForeignKeyPair(_columns.first, ''))),
-            icon: const Icon(Icons.add, size: 14),
-            label: const Text('添加列', style: TextStyle(fontSize: 12)),
+          Padding(
+            padding: const EdgeInsets.only(left: 12, top: 2),
+            child: TextButton.icon(
+              onPressed: _columns.isEmpty ? null : () => setState(() => fk.pairs.add(_ForeignKeyPair(_columns.first, ''))),
+              icon: const Icon(Icons.add, size: 14),
+              label: const Text('添加列', style: TextStyle(fontSize: 12)),
+            ),
           ),
         ],
       ),
@@ -816,39 +851,36 @@ class _EditorDialogState extends State<_EditorDialog> {
       children: [
         if (unsupported)
           Padding(
-            padding: const EdgeInsets.all(8),
+            padding: const EdgeInsets.fromLTRB(10, 8, 10, 0),
             child: Text(
               '这个服务器读不到 CHECK 约束（要 MySQL 8.0.16+）。更早的版本会解析 CHECK 但不执行，所以这里不能加。',
-              style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
+              style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant),
             ),
           ),
         Padding(
-          padding: const EdgeInsets.all(8),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
           child: Text(
             '已有的 CHECK 约束只能删除，要改就删掉再新加一条。表达式里不能有括号外的逗号、分号、注释。',
-            style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
+            style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant),
           ),
         ),
         Expanded(
           child: _Table(
-            widths: const [44, 200, 520, 80],
+            widths: const [40, 200, 520, 80],
             headers: const ['', '约束名', '表达式', '强制执行'],
             rows: [for (var i = 0; i < _checks.length; i++) _checkRow(i)],
           ),
         ),
-        Align(
-          alignment: Alignment.centerLeft,
-          child: TextButton.icon(
-            key: const ValueKey('add-check'),
-            onPressed: unsupported
-                ? null
-                : () => setState(() {
-                      _checks.add(_CheckRow(const CheckDraft(name: '', expression: '', enforced: true)));
-                    }),
-            icon: const Icon(Icons.add, size: 16),
-            label: const Text('添加 CHECK'),
-          ),
-        ),
+        _addBar(TextButton.icon(
+          key: const ValueKey('add-check'),
+          onPressed: unsupported
+              ? null
+              : () => setState(() {
+                    _checks.add(_CheckRow(const CheckDraft(name: '', expression: '', enforced: true)));
+                  }),
+          icon: const Icon(Icons.add, size: 14),
+          label: const Text('添加 CHECK'),
+        )),
       ],
     );
   }
@@ -865,10 +897,10 @@ class _EditorDialogState extends State<_EditorDialog> {
       }, key: ValueKey('check-delete-$i')),
       _field(check.name, enabled: editable, hint: '留空自动起名', key: ValueKey('check-name-$i')),
       _field(check.expression, enabled: editable, hint: 'price >= 0', key: ValueKey('check-expression-$i')),
-      Checkbox(
+      _checkbox(
+        check.enforced,
+        editable ? (value) => setState(() => check.enforced = value) : null,
         key: ValueKey('check-enforced-$i'),
-        value: check.enforced,
-        onChanged: editable ? (value) => setState(() => check.enforced = value ?? true) : null,
       ),
     ];
   }
@@ -880,30 +912,37 @@ class _EditorDialogState extends State<_EditorDialog> {
     final current = widget.structure?.autoIncrement;
     final autoIncrementHint = _creating ? '留空从 1 开始' : (current == null ? '留空不改' : '当前 $current，留空不改');
     return ListView(
-      padding: const EdgeInsets.all(8),
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
       children: [
         _optionRow('引擎', _field(_engine, key: const ValueKey('option-engine'))),
         _optionRow('默认字符集', _field(_charset, hint: _creating ? '跟库的默认' : null, key: const ValueKey('option-charset'))),
         _optionRow('排序规则', _field(_collation, hint: _creating ? '字符集的默认' : null, key: const ValueKey('option-collation'))),
         if (!_creating)
           Padding(
-            padding: const EdgeInsets.only(left: 132, bottom: 8),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Checkbox(
-                  key: const ValueKey('option-convert'),
-                  value: _convertCharset,
-                  onChanged: (value) => setState(() => _convertCharset = value ?? false),
+            padding: const EdgeInsets.only(left: _optionLabelWidth + 8, top: 2, bottom: 6),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: SizedBox(
+                width: 480,
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _checkbox(
+                      _convertCharset,
+                      (value) => setState(() => _convertCharset = value),
+                      key: const ValueKey('option-convert'),
+                    ),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        '转换已有列（CONVERT TO CHARACTER SET）。不勾只改表的默认值，已有的列不动、之后新加的列才用它；'
+                        '勾上会把所有字符串列的数据转换过去，重写整张表。',
+                        style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant),
+                      ),
+                    ),
+                  ],
                 ),
-                Expanded(
-                  child: Text(
-                    '转换已有列（CONVERT TO CHARACTER SET）。不勾只改表的默认值，已有的列不动、之后新加的列才用它；'
-                    '勾上会把所有字符串列的数据转换过去，重写整张表。',
-                    style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
-                  ),
-                ),
-              ],
+              ),
             ),
           ),
         _optionRow('表注释', _field(_tableComment, key: const ValueKey('option-comment'))),
@@ -913,50 +952,52 @@ class _EditorDialogState extends State<_EditorDialog> {
     );
   }
 
+  static const double _optionLabelWidth = 140;
+
   Widget _optionRow(String label, Widget field) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Row(
-        children: [
-          SizedBox(width: 132, child: _label(label)),
-          SizedBox(width: 360, child: field),
-        ],
-      ),
+    return FormRow(
+      label: label,
+      labelWidth: _optionLabelWidth,
+      child: Align(alignment: Alignment.centerLeft, child: SizedBox(width: 360, child: field)),
+    );
+  }
+
+  /// 索引、外键一条一个框：内容区上的浅灰分组框，像 NSBox
+  BoxDecoration _groupBox() {
+    final scheme = Theme.of(context).colorScheme;
+    return BoxDecoration(
+      color: scheme.surfaceContainerLow,
+      border: Border.all(color: scheme.outlineVariant),
+      borderRadius: BorderRadius.circular(6),
     );
   }
 
   Widget _actionPicker(String value, ValueChanged<String> onChanged) {
-    return DropdownButton<String>(
+    return MacPopupButton<String>(
       value: value,
-      isDense: true,
-      style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurface),
-      onChanged: (picked) {
-        if (picked != null) onChanged(picked);
-      },
-      items: [for (final action in _foreignKeyActions) DropdownMenuItem(value: action, child: Text(action))],
+      onChanged: onChanged,
+      items: {for (final action in _foreignKeyActions) action: action},
     );
   }
 
   /// 列的下拉框。选项是当前的列（显示当前名字），值是列对象
   Widget _columnPicker(_ColumnRow value, ValueChanged<_ColumnRow>? onChanged) {
-    return DropdownButton<_ColumnRow>(
+    return MacPopupButton<_ColumnRow?>(
       value: _columns.contains(value) ? value : null,
-      isDense: true,
-      isExpanded: true,
-      style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurface),
+      expand: true,
       onChanged: onChanged == null
           ? null
           : (picked) {
               if (picked != null) onChanged(picked);
             },
-      items: [
-        for (final column in _columns)
-          DropdownMenuItem(value: column, child: Text(column.name.text.isEmpty ? '（未命名）' : column.name.text)),
-      ],
+      placeholder: '（选一列）',
+      items: {for (final column in _columns) column: column.name.text.isEmpty ? '（未命名）' : column.name.text},
     );
   }
 
+  /// 表格里的输入框：细边框、紧凑，一行 24px
   Widget _field(TextEditingController controller, {bool enabled = true, String? hint, Key? key}) {
+    final scheme = Theme.of(context).colorScheme;
     return TextField(
       key: key,
       controller: controller,
@@ -965,10 +1006,32 @@ class _EditorDialogState extends State<_EditorDialog> {
       onChanged: (_) => setState(() {}),
       style: const TextStyle(fontSize: 12, fontFamily: 'Menlo'),
       decoration: InputDecoration(
-        isDense: true,
         hintText: hint,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
-        border: const OutlineInputBorder(),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: const BorderRadius.all(Radius.circular(4)),
+          borderSide: BorderSide(color: scheme.outlineVariant),
+        ),
+        disabledBorder: OutlineInputBorder(
+          borderRadius: const BorderRadius.all(Radius.circular(4)),
+          borderSide: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.5)),
+        ),
+        // 不能改的格子不填白底，一眼看出哪些是锁住的
+        fillColor: enabled ? null : Colors.transparent,
+      ),
+    );
+  }
+
+  Widget _checkbox(bool value, ValueChanged<bool>? onChanged, {Key? key}) {
+    return Center(
+      child: SizedBox(
+        width: 20,
+        height: 20,
+        child: Checkbox(
+          key: key,
+          value: value,
+          onChanged: onChanged == null ? null : (checked) => onChanged(checked ?? false),
+        ),
       ),
     );
   }
@@ -979,8 +1042,9 @@ class _EditorDialogState extends State<_EditorDialog> {
     return IconButton(
       key: key,
       tooltip: tooltip,
-      iconSize: 16,
-      visualDensity: VisualDensity.compact,
+      iconSize: 14,
+      constraints: const BoxConstraints.tightFor(width: 24, height: 24),
+      style: IconButton.styleFrom(minimumSize: const Size(24, 24), padding: EdgeInsets.zero),
       onPressed: onPressed,
       icon: Icon(icon),
     );
@@ -1002,41 +1066,59 @@ class _Table extends StatelessWidget {
       totalWidth += width;
     }
     final scheme = Theme.of(context).colorScheme;
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: SizedBox(
-        width: totalWidth,
-        child: Column(
-          children: [
-            Container(
-              color: scheme.surfaceContainerHighest,
-              padding: const EdgeInsets.symmetric(vertical: 6),
-              child: _cells([
-                for (final header in headers)
-                  Text(header, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600)),
-              ]),
-            ),
-            Expanded(
-              child: ListView(
-                children: [
-                  for (final row in rows)
-                    Padding(padding: const EdgeInsets.symmetric(vertical: 3), child: _cells(row)),
-                ],
+    return LayoutBuilder(
+      builder: (context, constraints) => SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: SizedBox(
+          // 比对话框窄时撑满，表头和隔行底色一直画到右边
+          width: totalWidth > constraints.maxWidth ? totalWidth : constraints.maxWidth,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Container(
+                height: 22,
+                decoration: BoxDecoration(
+                  color: scheme.surfaceContainerHighest,
+                  border: Border(bottom: BorderSide(color: scheme.outlineVariant)),
+                ),
+                child: _cells([
+                  for (final header in headers)
+                    Text(
+                      header,
+                      maxLines: 1,
+                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.w500, color: scheme.onSurfaceVariant),
+                    ),
+                ], divider: scheme.outlineVariant),
               ),
-            ),
-          ],
+              Expanded(
+                child: ListView(
+                  children: [
+                    for (var i = 0; i < rows.length; i++)
+                      Container(
+                        color: i.isOdd ? scheme.surfaceContainerLow : scheme.surface,
+                        padding: const EdgeInsets.symmetric(vertical: 2),
+                        child: _cells(rows[i]),
+                      ),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
 
-  Widget _cells(List<Widget> cells) {
+  Widget _cells(List<Widget> cells, {Color? divider}) {
     return Row(
       children: [
         for (var i = 0; i < cells.length; i++)
-          SizedBox(
+          Container(
             width: widths[i],
-            child: Padding(padding: const EdgeInsets.symmetric(horizontal: 3), child: cells[i]),
+            padding: const EdgeInsets.symmetric(horizontal: 3),
+            alignment: Alignment.centerLeft,
+            decoration: divider == null ? null : BoxDecoration(border: Border(right: BorderSide(color: divider))),
+            child: cells[i],
           ),
       ],
     );
@@ -1092,7 +1174,7 @@ class _PreviewDialogState extends State<_PreviewDialog> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              const Text('确认要执行的 DDL', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+              Text('确认要执行的 DDL', style: Theme.of(context).textTheme.titleMedium),
               const SizedBox(height: 8),
               Expanded(
                 child: ListView(
@@ -1100,7 +1182,7 @@ class _PreviewDialogState extends State<_PreviewDialog> {
                     if (dangerous)
                       Container(
                         padding: const EdgeInsets.all(10),
-                        decoration: BoxDecoration(color: scheme.errorContainer, borderRadius: BorderRadius.circular(4)),
+                        decoration: BoxDecoration(color: scheme.errorContainer, borderRadius: BorderRadius.circular(5)),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
@@ -1134,7 +1216,11 @@ class _PreviewDialogState extends State<_PreviewDialog> {
                       Container(
                         margin: const EdgeInsets.only(bottom: 8),
                         padding: const EdgeInsets.all(10),
-                        color: scheme.surfaceContainerHighest,
+                        decoration: BoxDecoration(
+                          color: scheme.surface,
+                          border: Border.all(color: scheme.outlineVariant),
+                          borderRadius: BorderRadius.circular(5),
+                        ),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
@@ -1158,7 +1244,7 @@ class _PreviewDialogState extends State<_PreviewDialog> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
-                  TextButton(
+                  OutlinedButton(
                     onPressed: _running ? null : () => Navigator.of(context).pop(false),
                     child: const Text('返回修改'),
                   ),

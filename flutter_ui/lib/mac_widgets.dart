@@ -416,12 +416,164 @@ class FormRow extends StatelessWidget {
         children: [
           SizedBox(
             width: labelWidth,
-            child: Text('$label：', textAlign: TextAlign.right, style: const TextStyle(fontSize: 13)),
+            child: Text(
+              '$label：',
+              textAlign: TextAlign.right,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 13),
+            ),
           ),
           const SizedBox(width: 8),
           Expanded(child: child),
         ],
       ),
+    );
+  }
+}
+
+/// macOS 的弹出按钮（NSPopUpButton）：白底细边框、右侧上下箭头，点开是一列紧凑的菜单项，当前项打勾。
+///
+/// 不用 DropdownButton：它的菜单项被断言成至少 48px 高，做不出 Mac 那种紧凑的菜单。
+/// 当前值不在选项里（比如列选择器里那一列被删了）时显示 placeholder，不拿原始值冒充显示文字
+class MacPopupButton<T> extends StatelessWidget {
+  final T value;
+
+  /// 选项和显示文字，按插入顺序排
+  final Map<T, String> items;
+
+  /// null 表示整个按钮不可用
+  final ValueChanged<T>? onChanged;
+
+  /// 列出来但不能选的项
+  final Set<T> disabled;
+
+  /// 撑满父级宽度；否则按内容定宽
+  final bool expand;
+
+  final String placeholder;
+
+  const MacPopupButton({
+    super.key,
+    required this.value,
+    required this.items,
+    required this.onChanged,
+    this.disabled = const {},
+    this.expand = false,
+    this.placeholder = '—',
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final mac = MacColors.of(context);
+    final enabled = onChanged != null;
+    final label = items[value];
+    final text = Text(
+      label ?? placeholder,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: TextStyle(fontSize: 12, color: enabled && label != null ? mac.text : mac.tertiaryText),
+    );
+    return PopupMenuButton<T>(
+      initialValue: value,
+      enabled: enabled,
+      // 空串就不挂 Tooltip，否则悬停会冒出 Material 的「Show menu」
+      tooltip: '',
+      onSelected: onChanged,
+      itemBuilder: (context) => [
+        for (final entry in items.entries)
+          PopupMenuItem<T>(
+            value: entry.key,
+            height: 24,
+            enabled: !disabled.contains(entry.key),
+            padding: const EdgeInsets.only(left: 4, right: 12),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                SizedBox(
+                  width: 18,
+                  child: entry.key == value ? Icon(Icons.check, size: 13, color: mac.text) : null,
+                ),
+                Flexible(child: Text(entry.value, style: const TextStyle(fontSize: 13))),
+              ],
+            ),
+          ),
+      ],
+      child: Container(
+        height: 22,
+        padding: const EdgeInsets.only(left: 8, right: 4),
+        decoration: BoxDecoration(
+          color: enabled ? mac.control : mac.window,
+          border: Border.all(color: enabled ? mac.controlBorder : mac.separator),
+          borderRadius: BorderRadius.circular(5),
+        ),
+        child: Row(
+          mainAxisSize: expand ? MainAxisSize.max : MainAxisSize.min,
+          children: [
+            if (expand) Expanded(child: text) else Flexible(child: text),
+            const SizedBox(width: 4),
+            Icon(Icons.unfold_more, size: 14, color: enabled ? mac.secondaryText : mac.tertiaryText),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 面板顶上的一条细工具栏：窗口灰底、底部一条分隔线，放分页和操作按钮。
+///
+/// 只用 colorScheme（appTheme 里 surfaceContainer 就是窗口灰），没套 appTheme 的测试里也能用
+class MacPanelBar extends StatelessWidget {
+  final List<Widget> children;
+
+  const MacPanelBar({super.key, required this.children});
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      height: 32,
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainer,
+        border: Border(bottom: BorderSide(color: scheme.outlineVariant)),
+      ),
+      child: Row(children: children),
+    );
+  }
+}
+
+/// 分页标签：选中项一块浅灰圆角底，像 Xcode / Querious 的分段切换，不用 Material 的下划线。
+/// 要放在 DefaultTabController 里面。和 MacPanelBar 一样只用 colorScheme
+class MacTabBar extends StatelessWidget {
+  final List<String> labels;
+
+  const MacTabBar({super.key, required this.labels});
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return TabBar(
+      isScrollable: true,
+      tabAlignment: TabAlignment.start,
+      dividerHeight: 0,
+      padding: EdgeInsets.zero,
+      labelPadding: const EdgeInsets.symmetric(horizontal: 2),
+      indicatorSize: TabBarIndicatorSize.tab,
+      indicator: BoxDecoration(color: scheme.onSurface.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(5)),
+      overlayColor: const WidgetStatePropertyAll(Colors.transparent),
+      splashFactory: NoSplash.splashFactory,
+      labelStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+      unselectedLabelStyle: const TextStyle(fontSize: 12),
+      labelColor: scheme.onSurface,
+      unselectedLabelColor: scheme.onSurfaceVariant,
+      tabs: [
+        for (final label in labels)
+          Tab(
+            height: 22,
+            child: Padding(padding: const EdgeInsets.symmetric(horizontal: 8), child: Text(label)),
+          ),
+      ],
     );
   }
 }

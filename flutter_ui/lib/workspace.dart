@@ -5,17 +5,19 @@ import 'package:flutter/services.dart';
 import 'data_source.dart';
 import 'import_dialog.dart';
 import 'mac_widgets.dart';
-import 'panels_shim.dart';
 import 'query_tab.dart';
 import 'server_source.dart';
+import 'server_status.dart';
 import 'sql_library.dart';
 import 'src/rust/api/db.dart';
 import 'src/rust/api/editor.dart';
 import 'src/rust/api/options.dart';
 import 'src/rust/api/schema.dart';
 import 'structure_editor.dart';
+import 'structure_view.dart';
 import 'table_sidebar.dart';
 import 'theme.dart';
+import 'user_admin.dart';
 import 'user_source.dart';
 
 /// 工具栏上的四个模式，和 Querious 一样
@@ -144,6 +146,7 @@ class _WorkspaceViewState extends State<WorkspaceView> {
   final _pageFocus = FocusNode(debugLabel: 'workspace');
 
   String? _error;
+  Offset _titleTapPosition = Offset.zero;
 
   Workspace get _ws => widget.workspace;
   WorkspaceTab get _tab => _ws.activeTab;
@@ -452,7 +455,9 @@ class _WorkspaceViewState extends State<WorkspaceView> {
           builder: (context) => InkWell(
             key: const ValueKey('connection-title'),
             borderRadius: BorderRadius.circular(6),
-            onTapUp: (details) => _showConnectionMenu(details.globalPosition),
+            // 菜单要从点击的位置弹出：按下时记位置，点完再开（只挂 onTapUp 时 InkWell 不响应点击）
+            onTapDown: (details) => _titleTapPosition = details.globalPosition,
+            onTap: () => _showConnectionMenu(_titleTapPosition),
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
               child: Row(

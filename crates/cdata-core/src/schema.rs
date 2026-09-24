@@ -43,7 +43,8 @@ pub async fn list_tables(pool: &DbPool, database: &str) -> Result<Vec<TableInfo>
             name,
             // 视图的 TABLE_ROWS 是 NULL，估不出来就给 0，界面按 is_view 区分展示
             estimated_rows: estimated_rows.unwrap_or(0),
-            is_view: table_type == "VIEW",
+            // information_schema、performance_schema 里的是 SYSTEM VIEW，也是视图，不能当表编辑
+            is_view: table_type == "VIEW" || table_type == "SYSTEM VIEW",
         });
     }
     Ok(tables)

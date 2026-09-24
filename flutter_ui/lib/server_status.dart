@@ -2,11 +2,12 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import 'mac_widgets.dart';
 import 'server_source.dart';
 import 'src/rust/api/server.dart';
 import 'src/rust/api/value.dart' show DisplayCell;
 
-/// 服务器状态：进程、变量、状态计数、慢日志四页。
+/// 服务器状态对话框：Dialog 里包一个 ServerStatusPanel，外加标题和关闭按钮。
 ///
 /// KILL 和 SET GLOBAL 都要二次确认：页面上的按钮只打开确认框，确认框里说清后果再执行。
 /// 拦截规则（自己的连接、目标变了、语句和预览不一致）在 core 里，这里不重复判断。
@@ -17,7 +18,33 @@ Future<void> showServerStatus(
 }) {
   return showDialog<void>(
     context: context,
-    builder: (context) => _ServerStatusDialog(source: source, serverLabel: serverLabel),
+    builder: (context) => Dialog(
+      clipBehavior: Clip.antiAlias,
+      child: SizedBox(
+        width: 1100,
+        height: 720,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
+              child: Row(
+                children: [
+                  Expanded(child: Text('服务器状态', style: Theme.of(context).textTheme.titleMedium)),
+                  IconButton(
+                    key: const ValueKey('server-close'),
+                    tooltip: '关闭',
+                    icon: const Icon(Icons.close),
+                    onPressed: () => Navigator.of(context).pop(),
+                  ),
+                ],
+              ),
+            ),
+            Expanded(child: ServerStatusPanel(source: source, serverLabel: serverLabel)),
+          ],
+        ),
+      ),
+    ),
   );
 }
 
@@ -26,68 +53,113 @@ const List<int> _refreshChoices = [0, 2, 5, 10, 30];
 
 const TextStyle _mono = TextStyle(fontSize: 12, fontFamily: 'Menlo');
 
-class _ServerStatusDialog extends StatelessWidget {
+/// 服务器状态面板：进程、变量、状态计数、慢日志四页。没有外框和关闭按钮，可以直接嵌进页面
+class ServerStatusPanel extends StatelessWidget {
   final ServerSource source;
+
+  /// 显示在分页右边，说明看的是哪台服务器
   final String serverLabel;
 
-  const _ServerStatusDialog({required this.source, required this.serverLabel});
+  const ServerStatusPanel({super.key, required this.source, required this.serverLabel});
 
   @override
   Widget build(BuildContext context) {
-    return Dialog(
-      child: SizedBox(
-        width: 1100,
-        height: 720,
-        child: DefaultTabController(
-          length: 4,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
+    final scheme = Theme.of(context).colorScheme;
+    return DefaultTabController(
+      length: 4,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          MacPanelBar(
             children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(20, 12, 8, 0),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Text('服务器状态 · $serverLabel', style: Theme.of(context).textTheme.titleMedium),
-                    ),
-                    IconButton(
-                      key: const ValueKey('server-close'),
-                      tooltip: '关闭',
-                      icon: const Icon(Icons.close),
-                      onPressed: () => Navigator.of(context).pop(),
-                    ),
-                  ],
-                ),
-              ),
-              const TabBar(
-                tabs: [Tab(text: '进程'), Tab(text: '变量'), Tab(text: '状态'), Tab(text: '慢日志')],
-              ),
-              Expanded(
-                child: TabBarView(
-                  children: [
-                    _ProcessesPage(source: source),
-                    _VariablesPage(source: source),
-                    _StatusPage(source: source),
-                    _SlowLogPage(source: source),
-                  ],
-                ),
-              ),
+              const Expanded(child: MacTabBar(labels: ['进程', '变量', '状态', '慢日志'])),
+              Icon(Icons.dns_outlined, size: 14, color: scheme.onSurfaceVariant),
+              const SizedBox(width: 4),
+              Text(serverLabel, style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant)),
+              const SizedBox(width: 4),
             ],
           ),
-        ),
+          Expanded(
+            child: ColoredBox(
+              color: scheme.surface,
+              child: TabBarView(
+                children: [
+                  _ProcessesPage(source: source),
+                  _VariablesPage(source: source),
+                  _StatusPage(source: source),
+                  _SlowLogPage(source: source),
+                ],
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
 }
 
+/// 每页顶上的一排操作：紧凑，和下面的列表之间一条分隔线
+Widget _pageBar(BuildContext context, List<Widget> children) {
+  final scheme = Theme.of(context).colorScheme;
+  return Container(
+    height: 36,
+    padding: const EdgeInsets.symmetric(horizontal: 10),
+    decoration: BoxDecoration(border: Border(bottom: BorderSide(color: scheme.outlineVariant))),
+    child: Row(children: children),
+  );
+}
+
+/// 列表的表头：灰底、11pt，像 NSTableView
+Widget _tableHeader(BuildContext context, List<Widget> children) {
+  final scheme = Theme.of(context).colorScheme;
+  return Container(
+    height: 22,
+    padding: const EdgeInsets.symmetric(horizontal: 10),
+    decoration: BoxDecoration(
+      color: scheme.surfaceContainerHighest,
+      border: Border(bottom: BorderSide(color: scheme.outlineVariant)),
+    ),
+    child: DefaultTextStyle.merge(
+      style: TextStyle(fontSize: 11, fontWeight: FontWeight.w500, color: scheme.onSurfaceVariant),
+      child: Row(children: children),
+    ),
+  );
+}
+
+/// 隔行底色
+Color _zebra(BuildContext context, int index) {
+  final scheme = Theme.of(context).colorScheme;
+  return index.isOdd ? scheme.surfaceContainerLow : scheme.surface;
+}
+
+/// 放整段语句的框：内容区底色、细边框
+BoxDecoration _codeBox(BuildContext context) {
+  final scheme = Theme.of(context).colorScheme;
+  return BoxDecoration(
+    color: scheme.surface,
+    border: Border.all(color: scheme.outlineVariant),
+    borderRadius: BorderRadius.circular(5),
+  );
+}
+
 /// NULL、二进制、解码失败画成斜体灰字，和内容恰好是这些字的文本区分开
-Widget _cell(BuildContext context, DisplayCell cell, {double? width, int? maxLines = 1, bool selectable = false}) {
+///
+/// selected 是画在系统蓝选中底上：真值白字，占位半透明白字
+Widget _cell(
+  BuildContext context,
+  DisplayCell cell, {
+  double? width,
+  int? maxLines = 1,
+  bool selectable = false,
+  bool selected = false,
+}) {
   final scheme = Theme.of(context).colorScheme;
   final style = cell.placeholder
-      ? _mono.copyWith(color: scheme.onSurfaceVariant, fontStyle: FontStyle.italic)
-      : _mono.copyWith(color: scheme.onSurface);
+      ? _mono.copyWith(color: selected ? Colors.white70 : scheme.onSurfaceVariant, fontStyle: FontStyle.italic)
+      : _mono.copyWith(color: selected ? scheme.onPrimary : scheme.onSurface);
   final Widget text = selectable
-      ? SelectableText(cell.text, style: style, maxLines: maxLines)
+      // minLines 1：多行上限的 SelectableText 默认按上限定高，短值也会撑出两行
+      ? SelectableText(cell.text, style: style, minLines: 1, maxLines: maxLines)
       : Text(cell.text, style: style, maxLines: maxLines, overflow: maxLines == null ? null : TextOverflow.ellipsis);
   if (width == null) return text;
   return SizedBox(width: width, child: text);
@@ -112,8 +184,11 @@ class _Banner extends StatelessWidget {
     };
     return Container(
       width: double.infinity,
-      color: background,
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: background,
+        border: Border(bottom: BorderSide(color: scheme.outlineVariant)),
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
       child: SelectableText(text, style: TextStyle(fontSize: 12, color: foreground)),
     );
   }
@@ -130,15 +205,11 @@ class _RefreshPicker extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return DropdownButton<int>(
+    return MacPopupButton<int>(
       key: ValueKey('$keyPrefix-auto'),
       value: seconds,
-      isDense: true,
-      items: [
-        for (final choice in _refreshChoices)
-          DropdownMenuItem(value: choice, child: Text(choice == 0 ? '不自动刷新' : '每 $choice 秒刷新')),
-      ],
-      onChanged: (choice) => onChanged(choice!),
+      items: {for (final choice in _refreshChoices) choice: choice == 0 ? '不自动刷新' : '每 $choice 秒刷新'},
+      onChanged: onChanged,
     );
   }
 }
@@ -256,70 +327,64 @@ class _ProcessesPageState extends State<_ProcessesPage> with _Polling {
     final scheme = Theme.of(context).colorScheme;
     final list = _list;
     final selected = _selected;
-    final header = TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: scheme.onSurfaceVariant);
+    final hint = TextStyle(fontSize: 11, color: scheme.onSurfaceVariant);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          child: Row(
-            children: [
-              OutlinedButton.icon(
-                key: const ValueKey('processes-refresh'),
-                onPressed: loading ? null : refresh,
-                icon: const Icon(Icons.refresh, size: 16),
-                label: Text(loading ? '加载中…' : '刷新'),
-              ),
-              const SizedBox(width: 12),
-              _RefreshPicker(keyPrefix: 'processes', seconds: intervalSeconds, onChanged: setInterval),
-              const Spacer(),
-              if (list != null) Text('${list.processes.length} 个线程', style: header),
-            ],
+        _pageBar(context, [
+          OutlinedButton.icon(
+            key: const ValueKey('processes-refresh'),
+            onPressed: loading ? null : refresh,
+            icon: const Icon(Icons.refresh, size: 14),
+            label: Text(loading ? '加载中…' : '刷新'),
           ),
-        ),
+          const SizedBox(width: 8),
+          _RefreshPicker(keyPrefix: 'processes', seconds: intervalSeconds, onChanged: setInterval),
+          const Spacer(),
+          if (list != null) Text('${list.processes.length} 个线程', style: hint),
+        ]),
         if (list?.notice != null) _Banner(list!.notice!, kind: _BannerKind.warning),
         if (list?.truncated == true) const _Banner(_truncatedText, kind: _BannerKind.warning),
         if (_error != null) _Banner('读不到进程列表：$_error', kind: _BannerKind.error),
         if (_message != null) _Banner(_message!),
         if (_killError != null) _Banner(_killError!, kind: _BannerKind.error),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
-          child: Row(
-            children: [
-              SizedBox(width: _idWidth, child: Text('Id', style: header)),
-              SizedBox(width: _userWidth, child: Text('用户', style: header)),
-              SizedBox(width: _hostWidth, child: Text('主机', style: header)),
-              SizedBox(width: _dbWidth, child: Text('库', style: header)),
-              SizedBox(width: _commandWidth, child: Text('命令', style: header)),
-              SizedBox(width: _timeWidth, child: Text('秒', style: header)),
-              SizedBox(width: _stateWidth, child: Text('状态', style: header)),
-              Expanded(child: Text('语句', style: header)),
-            ],
-          ),
-        ),
-        const Divider(height: 1),
+        _tableHeader(context, const [
+          SizedBox(width: _idWidth, child: Text('Id')),
+          SizedBox(width: _userWidth, child: Text('用户')),
+          SizedBox(width: _hostWidth, child: Text('主机')),
+          SizedBox(width: _dbWidth, child: Text('库')),
+          SizedBox(width: _commandWidth, child: Text('命令')),
+          SizedBox(width: _timeWidth, child: Text('秒')),
+          SizedBox(width: _stateWidth, child: Text('状态')),
+          Expanded(child: Text('语句')),
+        ]),
         Expanded(
           child: list == null
               ? const SizedBox.shrink()
               : ListView.builder(
                   itemCount: list.processes.length,
+                  itemExtent: 22,
                   itemBuilder: (context, index) {
                     final process = list.processes[index];
                     final isSelected = process.id == _selectedId;
-                    return InkWell(
+                    return GestureDetector(
                       key: ValueKey('process-${process.id}'),
+                      behavior: HitTestBehavior.opaque,
                       onTap: () => setState(() => _selectedId = process.id),
                       child: Container(
-                        color: isSelected ? scheme.primaryContainer : null,
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                        color: isSelected ? scheme.primary : _zebra(context, index),
+                        padding: const EdgeInsets.symmetric(horizontal: 10),
                         child: Row(
                           children: [
                             SizedBox(
                               width: _idWidth,
                               child: Row(
                                 children: [
-                                  Text('${process.id}', style: _mono),
+                                  Text(
+                                    '${process.id}',
+                                    style: _mono.copyWith(color: isSelected ? scheme.onPrimary : scheme.onSurface),
+                                  ),
                                   if (process.isOwn) ...[
                                     const SizedBox(width: 4),
                                     _OwnBadge(key: ValueKey('process-own-${process.id}')),
@@ -327,13 +392,13 @@ class _ProcessesPageState extends State<_ProcessesPage> with _Polling {
                                 ],
                               ),
                             ),
-                            _cell(context, process.user, width: _userWidth),
-                            _cell(context, process.host, width: _hostWidth),
-                            _cell(context, process.db, width: _dbWidth),
-                            _cell(context, process.command, width: _commandWidth),
-                            _cell(context, process.time, width: _timeWidth),
-                            _cell(context, process.state, width: _stateWidth),
-                            Expanded(child: _cell(context, process.info)),
+                            _cell(context, process.user, width: _userWidth, selected: isSelected),
+                            _cell(context, process.host, width: _hostWidth, selected: isSelected),
+                            _cell(context, process.db, width: _dbWidth, selected: isSelected),
+                            _cell(context, process.command, width: _commandWidth, selected: isSelected),
+                            _cell(context, process.time, width: _timeWidth, selected: isSelected),
+                            _cell(context, process.state, width: _stateWidth, selected: isSelected),
+                            Expanded(child: _cell(context, process.info, selected: isSelected)),
                           ],
                         ),
                       ),
@@ -341,7 +406,7 @@ class _ProcessesPageState extends State<_ProcessesPage> with _Polling {
                   },
                 ),
         ),
-        const Divider(height: 1),
+        Divider(height: 1, color: scheme.outlineVariant),
         _ProcessDetail(
           selectedId: _selectedId,
           process: selected,
@@ -381,10 +446,10 @@ class _ProcessDetail extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final process = this.process;
-    final hint = TextStyle(fontSize: 12, color: scheme.onSurfaceVariant);
+    final hint = TextStyle(fontSize: 11, color: scheme.onSurfaceVariant);
     if (process == null) {
       return Padding(
-        padding: const EdgeInsets.all(12),
+        padding: const EdgeInsets.all(10),
         child: Text(
           selectedId == null ? '点一行查看完整语句，或者 KILL 它' : '线程 $selectedId 已经不在列表里了（可能已经结束）',
           style: hint,
@@ -392,8 +457,9 @@ class _ProcessDetail extends StatelessWidget {
       );
     }
 
-    return Padding(
-      padding: const EdgeInsets.all(12),
+    return Container(
+      color: scheme.surfaceContainer,
+      padding: const EdgeInsets.all(10),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -403,7 +469,7 @@ class _ProcessDetail extends StatelessWidget {
             key: const ValueKey('process-detail-sql'),
             constraints: const BoxConstraints(maxHeight: 120),
             padding: const EdgeInsets.all(8),
-            color: scheme.surfaceContainerHighest,
+            decoration: _codeBox(context),
             child: SingleChildScrollView(child: _cell(context, process.info, maxLines: null, selectable: true)),
           ),
           const SizedBox(height: 8),
@@ -414,6 +480,7 @@ class _ProcessDetail extends StatelessWidget {
             )
           else
             Row(
+              mainAxisAlignment: MainAxisAlignment.end,
               children: [
                 OutlinedButton(
                   key: const ValueKey('process-kill-query'),
@@ -454,7 +521,15 @@ class _KillConfirmDialog extends StatelessWidget {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            SizedBox(width: 56, child: Text(name, style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant))),
+            SizedBox(
+              width: 48,
+              child: Text(
+                '$name：',
+                textAlign: TextAlign.right,
+                style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
+              ),
+            ),
+            const SizedBox(width: 6),
             Expanded(child: _cell(context, value)),
           ],
         ),
@@ -479,7 +554,7 @@ class _KillConfirmDialog extends StatelessWidget {
               Container(
                 constraints: const BoxConstraints(maxHeight: 140),
                 padding: const EdgeInsets.all(8),
-                color: scheme.surfaceContainerHighest,
+                decoration: _codeBox(context),
                 child: SingleChildScrollView(child: _cell(context, target.info, maxLines: null, selectable: true)),
               ),
               const SizedBox(height: 12),
@@ -539,12 +614,19 @@ class _VariablesPageState extends State<_VariablesPage> {
   VariableList? _list;
   String? _error;
   String _search = '';
+  final _searchController = TextEditingController();
   bool _loading = false;
 
   @override
   void initState() {
     super.initState();
     _load();
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
   }
 
   Future<void> _load() async {
@@ -595,52 +677,49 @@ class _VariablesPageState extends State<_VariablesPage> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          child: Row(
-            children: [
-              SegmentedButton<VariableScope>(
-                key: const ValueKey('variables-scope'),
-                segments: const [
-                  ButtonSegment(value: VariableScope.global, label: Text('全局 GLOBAL')),
-                  ButtonSegment(value: VariableScope.session, label: Text('会话 SESSION')),
-                ],
-                selected: {_scope},
-                onSelectionChanged: (selection) {
-                  setState(() {
-                    _scope = selection.first;
-                    _list = null;
-                  });
-                  _load();
-                },
-              ),
-              const SizedBox(width: 12),
-              SizedBox(
-                width: 260,
-                child: TextField(
-                  key: const ValueKey('variables-search'),
-                  decoration: const InputDecoration(
-                    isDense: true,
-                    prefixIcon: Icon(Icons.search, size: 16),
-                    hintText: '按名字搜索',
-                  ),
-                  onChanged: (text) => setState(() => _search = text),
-                ),
-              ),
-              const SizedBox(width: 12),
-              OutlinedButton.icon(
-                key: const ValueKey('variables-refresh'),
-                onPressed: _loading ? null : _load,
-                icon: const Icon(Icons.refresh, size: 16),
-                label: Text(_loading ? '加载中…' : '刷新'),
-              ),
-              const Spacer(),
-              if (list != null)
-                Text('${visible.length} / ${list.variables.length}',
-                    style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant)),
+        _pageBar(context, [
+          SegmentedButton<VariableScope>(
+            key: const ValueKey('variables-scope'),
+            showSelectedIcon: false,
+            segments: const [
+              ButtonSegment(value: VariableScope.global, label: Text('全局 GLOBAL')),
+              ButtonSegment(value: VariableScope.session, label: Text('会话 SESSION')),
             ],
+            selected: {_scope},
+            onSelectionChanged: (selection) {
+              setState(() {
+                _scope = selection.first;
+                _list = null;
+              });
+              _load();
+            },
           ),
-        ),
+          const SizedBox(width: 8),
+          OutlinedButton.icon(
+            key: const ValueKey('variables-refresh'),
+            onPressed: _loading ? null : _load,
+            icon: const Icon(Icons.refresh, size: 14),
+            label: Text(_loading ? '加载中…' : '刷新'),
+          ),
+          const Spacer(),
+          if (list != null)
+            Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: Text(
+                '${visible.length} / ${list.variables.length}',
+                style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant),
+              ),
+            ),
+          SizedBox(
+            width: 220,
+            child: MacSearchField(
+              key: const ValueKey('variables-search'),
+              controller: _searchController,
+              hint: '按名字搜索',
+              onChanged: (text) => setState(() => _search = text),
+            ),
+          ),
+        ]),
         if (isGlobal)
           const _Banner('点右侧的笔可以改全局值（SET GLOBAL），会先预览语句、说明影响，再确认执行。')
         else
@@ -652,14 +731,21 @@ class _VariablesPageState extends State<_VariablesPage> {
           ),
         if (list?.truncated == true) const _Banner(_truncatedText, kind: _BannerKind.warning),
         if (_error != null) _Banner('读不到变量：$_error', kind: _BannerKind.error),
+        _tableHeader(context, [
+          const SizedBox(width: 320, child: Text('变量')),
+          const Expanded(child: Text('值')),
+          if (isGlobal) const SizedBox(width: 26),
+        ]),
         Expanded(
           child: ListView.builder(
             itemCount: visible.length,
             itemBuilder: (context, index) {
               final variable = visible[index];
-              return Padding(
+              return Container(
                 key: ValueKey('variable-${variable.name}'),
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+                color: _zebra(context, index),
+                constraints: const BoxConstraints(minHeight: 22),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 1),
                 child: Row(
                   children: [
                     SizedBox(width: 320, child: SelectableText(variable.name, style: _mono, maxLines: 1)),
@@ -668,9 +754,10 @@ class _VariablesPageState extends State<_VariablesPage> {
                       IconButton(
                         key: ValueKey('variable-edit-${variable.name}'),
                         tooltip: '修改全局值…',
-                        iconSize: 16,
-                        visualDensity: VisualDensity.compact,
-                        icon: const Icon(Icons.edit),
+                        iconSize: 14,
+                        constraints: const BoxConstraints.tightFor(width: 26, height: 20),
+                        style: IconButton.styleFrom(minimumSize: const Size(26, 20), padding: EdgeInsets.zero),
+                        icon: const Icon(Icons.edit_outlined),
                         onPressed: () => _edit(variable),
                       ),
                   ],
@@ -772,28 +859,33 @@ class _SetGlobalDialogState extends State<_SetGlobalDialog> {
 
     final children = <Widget>[];
     if (plan == null) {
-      children.add(TextField(
-        key: const ValueKey('set-global-value'),
-        controller: _value,
-        style: _mono,
-        decoration: const InputDecoration(labelText: '新的全局值'),
-        onChanged: (_) => setState(() {}),
+      children.add(FormRow(
+        label: '新的全局值',
+        labelWidth: 80,
+        child: TextField(
+          key: const ValueKey('set-global-value'),
+          controller: _value,
+          style: _mono,
+          onChanged: (_) => setState(() {}),
+        ),
       ));
-      children.add(const SizedBox(height: 8));
-      children.add(Text('纯数字按数值发送，其余（ON / OFF、枚举值、路径）按字符串发送，转义由 core 负责。', style: hint));
+      children.add(Padding(
+        padding: const EdgeInsets.only(left: 88, top: 2),
+        child: Text('纯数字按数值发送，其余（ON / OFF、枚举值、路径）按字符串发送，转义由 core 负责。', style: hint),
+      ));
     } else {
       children.add(Text('将要执行：', style: hint));
       children.add(Container(
         margin: const EdgeInsets.only(top: 4, bottom: 8),
         padding: const EdgeInsets.all(8),
-        color: scheme.surfaceContainerHighest,
+        decoration: _codeBox(context),
         child: SelectableText(plan.statement, key: const ValueKey('set-global-statement'), style: _mono),
       ));
       children.add(Row(children: [Text('现在的值：', style: hint), Expanded(child: _cell(context, plan.currentValue))]));
       children.add(const SizedBox(height: 8));
       children.add(Container(
         padding: const EdgeInsets.all(8),
-        decoration: BoxDecoration(color: scheme.errorContainer, borderRadius: BorderRadius.circular(4)),
+        decoration: BoxDecoration(color: scheme.errorContainer, borderRadius: BorderRadius.circular(5)),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -875,11 +967,18 @@ class _StatusPageState extends State<_StatusPage> with _Polling {
   StatusSnapshot? _snapshot;
   String? _error;
   String _search = '';
+  final _searchController = TextEditingController();
 
   @override
   void initState() {
     super.initState();
     refresh();
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
   }
 
   @override
@@ -902,7 +1001,6 @@ class _StatusPageState extends State<_StatusPage> with _Polling {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
     final snapshot = _snapshot;
     final needle = _search.toLowerCase();
     final visible = <StatusCounter>[];
@@ -911,62 +1009,48 @@ class _StatusPageState extends State<_StatusPage> with _Polling {
         if (counter.name.toLowerCase().contains(needle)) visible.add(counter);
       }
     }
-    final header = TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: scheme.onSurfaceVariant);
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          child: Row(
-            children: [
-              OutlinedButton.icon(
-                key: const ValueKey('status-refresh'),
-                onPressed: loading ? null : refresh,
-                icon: const Icon(Icons.refresh, size: 16),
-                label: Text(loading ? '加载中…' : '刷新'),
-              ),
-              const SizedBox(width: 12),
-              _RefreshPicker(keyPrefix: 'status', seconds: intervalSeconds, onChanged: setInterval),
-              const SizedBox(width: 12),
-              SizedBox(
-                width: 260,
-                child: TextField(
-                  key: const ValueKey('status-search'),
-                  decoration: const InputDecoration(
-                    isDense: true,
-                    prefixIcon: Icon(Icons.search, size: 16),
-                    hintText: '按名字搜索，比如 Threads',
-                  ),
-                  onChanged: (text) => setState(() => _search = text),
-                ),
-              ),
-            ],
+        _pageBar(context, [
+          OutlinedButton.icon(
+            key: const ValueKey('status-refresh'),
+            onPressed: loading ? null : refresh,
+            icon: const Icon(Icons.refresh, size: 14),
+            label: Text(loading ? '加载中…' : '刷新'),
           ),
-        ),
+          const SizedBox(width: 8),
+          _RefreshPicker(keyPrefix: 'status', seconds: intervalSeconds, onChanged: setInterval),
+          const Spacer(),
+          SizedBox(
+            width: 240,
+            child: MacSearchField(
+              key: const ValueKey('status-search'),
+              controller: _searchController,
+              hint: '按名字搜索，比如 Threads',
+              onChanged: (text) => setState(() => _search = text),
+            ),
+          ),
+        ]),
         const _Banner('SHOW GLOBAL STATUS。差值和每秒是和上一次刷新比的，第一次刷新没有；瞬时值（Threads_running 这类）只给差值。'),
         if (snapshot?.truncated == true) const _Banner(_truncatedText, kind: _BannerKind.warning),
         if (_error != null) _Banner('读不到状态：$_error', kind: _BannerKind.error),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
-          child: Row(
-            children: [
-              SizedBox(width: 360, child: Text('名字', style: header)),
-              Expanded(child: Text('值', style: header)),
-              SizedBox(width: 140, child: Text('差值', style: header)),
-              SizedBox(width: 140, child: Text('每秒', style: header)),
-            ],
-          ),
-        ),
-        const Divider(height: 1),
+        _tableHeader(context, const [
+          SizedBox(width: 360, child: Text('名字')),
+          Expanded(child: Text('值')),
+          SizedBox(width: 140, child: Text('差值')),
+          SizedBox(width: 140, child: Text('每秒')),
+        ]),
         Expanded(
           child: ListView.builder(
             itemCount: visible.length,
+            itemExtent: 22,
             itemBuilder: (context, index) {
               final counter = visible[index];
-              return Padding(
+              return Container(
                 key: ValueKey('status-${counter.name}'),
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+                color: _zebra(context, index),
+                padding: const EdgeInsets.symmetric(horizontal: 10),
                 child: Row(
                   children: [
                     SizedBox(width: 360, child: Text(counter.name, style: _mono)),
@@ -1056,7 +1140,11 @@ class _SlowLogPageState extends State<_SlowLogPage> {
         padding: const EdgeInsets.only(bottom: 2),
         child: Row(
           children: [
-            SizedBox(width: 160, child: Text(name, style: _mono.copyWith(color: scheme.onSurfaceVariant))),
+            SizedBox(
+              width: 160,
+              child: Text('$name：', textAlign: TextAlign.right, style: _mono.copyWith(color: scheme.onSurfaceVariant)),
+            ),
+            const SizedBox(width: 8),
             Expanded(child: _cell(context, value, selectable: true)),
           ],
         ),
@@ -1066,45 +1154,39 @@ class _SlowLogPageState extends State<_SlowLogPage> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          child: Row(
-            children: [
-              OutlinedButton.icon(
-                key: const ValueKey('slow-refresh'),
-                onPressed: _loading ? null : _load,
-                icon: const Icon(Icons.refresh, size: 16),
-                label: Text(_loading ? '加载中…' : '刷新'),
-              ),
-              const SizedBox(width: 12),
-              if (config != null)
-                OutlinedButton(
-                  key: const ValueKey('slow-toggle'),
-                  onPressed: () => _toggle(config),
-                  child: Text(config.enabled ? '关闭慢日志…' : '开启慢日志…'),
-                ),
-              const SizedBox(width: 12),
-              if (config != null && config.tableUnavailable == null) ...[
-                Text('最近', style: hint),
-                const SizedBox(width: 6),
-                DropdownButton<int>(
-                  key: const ValueKey('slow-limit'),
-                  value: _limit,
-                  isDense: true,
-                  items: [for (final limit in _slowLogLimits) DropdownMenuItem(value: limit, child: Text('$limit 条'))],
-                  onChanged: (limit) {
-                    setState(() => _limit = limit!);
-                    _load();
-                  },
-                ),
-              ],
-            ],
+        _pageBar(context, [
+          OutlinedButton.icon(
+            key: const ValueKey('slow-refresh'),
+            onPressed: _loading ? null : _load,
+            icon: const Icon(Icons.refresh, size: 14),
+            label: Text(_loading ? '加载中…' : '刷新'),
           ),
-        ),
+          const SizedBox(width: 8),
+          if (config != null)
+            OutlinedButton(
+              key: const ValueKey('slow-toggle'),
+              onPressed: () => _toggle(config),
+              child: Text(config.enabled ? '关闭慢日志…' : '开启慢日志…'),
+            ),
+          const Spacer(),
+          if (config != null && config.tableUnavailable == null) ...[
+            Text('最近', style: hint),
+            const SizedBox(width: 6),
+            MacPopupButton<int>(
+              key: const ValueKey('slow-limit'),
+              value: _limit,
+              items: {for (final limit in _slowLogLimits) limit: '$limit 条'},
+              onChanged: (limit) {
+                setState(() => _limit = limit);
+                _load();
+              },
+            ),
+          ],
+        ]),
         if (_error != null) _Banner('读不到慢日志：$_error', kind: _BannerKind.error),
         if (config != null)
           Padding(
-            padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+            padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -1130,9 +1212,9 @@ class _SlowLogPageState extends State<_SlowLogPage> {
                 final entry = entries[index];
                 return Container(
                   key: ValueKey('slow-entry-$index'),
-                  margin: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+                  margin: const EdgeInsets.fromLTRB(10, 0, 10, 8),
                   padding: const EdgeInsets.all(8),
-                  color: scheme.surfaceContainerHighest,
+                  decoration: _codeBox(context),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [

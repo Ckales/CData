@@ -12,9 +12,11 @@ import 'package:file_selector/file_selector.dart' show XTypeGroup, getSaveLocati
 import 'cell_editors.dart';
 import 'export_dialog.dart';
 import 'insert_row_dialog.dart';
+import 'mac_widgets.dart';
 import 'src/rust/api/db.dart';
 import 'src/rust/api/layouts.dart';
 import 'src/rust/api/value.dart';
+import 'theme.dart';
 
 Future<String?> _systemSavePath(String suggestedName) async {
   final extension = suggestedName.split('.').last;
@@ -26,7 +28,14 @@ Future<String?> _systemSavePath(String suggestedName) async {
 }
 
 /// 行号列的宽度。表头、数据行、总宽三处共用，漏掉任何一处都会让 Row 比容器宽
-const double _rowNumberWidth = 64;
+const double _rowNumberWidth = 48;
+
+/// 表头高度。Querious 的表头很矮，和工具栏一样浅灰
+const double _headerHeight = 22;
+
+/// 单元格和表头的字：系统字体 12px，不用等宽字体（Querious 也是系统字体）
+const _cellStyle = TextStyle(fontSize: 12);
+const _headerStyle = TextStyle(fontSize: 12, fontWeight: FontWeight.w500);
 
 /// 结果网格。
 ///
@@ -74,7 +83,7 @@ class _ResultGridState extends State<ResultGrid> {
   static const double _defaultColumnWidth = 170;
   static const double _minColumnWidth = 48;
   static const double _maxAutoFitWidth = 600;
-  static const double _rowHeight = 30;
+  static const double _rowHeight = 20;
 
   /// 显示顺序：第 n 个位置显示第 _order[n] 列。列下标始终指结果集里的原始位置
   late List<int> _order;
@@ -224,14 +233,11 @@ class _ResultGridState extends State<ResultGrid> {
 
   /// 双击列边：按表头和已取回的行算出刚好放得下的宽度
   void _autoFitColumn(int column) {
-    const headerStyle = TextStyle(fontWeight: FontWeight.w600, fontSize: 12);
-    const cellStyle = TextStyle(fontSize: 12, fontFamily: 'Menlo');
-
-    // 表头右边还要留出排序箭头（12）和拖拽柄（6）
-    var widest = _textWidth(widget.summary.columns[column].name, headerStyle) + 18;
+    // 表头右边还要留出排序箭头（14）和拖拽柄（6）
+    var widest = _textWidth(widget.summary.columns[column].name, _headerStyle) + 20;
     // ponytail: 只量当前窗口（最多 200 行），不为了自适应去扫整个结果集
     for (final row in _windowRows) {
-      widest = math.max(widest, _textWidth(row[column].text, cellStyle));
+      widest = math.max(widest, _textWidth(row[column].text, _cellStyle));
     }
 
     setState(() => _widths[column] = (widest + 16).clamp(_minColumnWidth, _maxAutoFitWidth));
@@ -501,13 +507,10 @@ class _ResultGridState extends State<ResultGrid> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text('删除 ${rows.length} 行？', style: const TextStyle(fontSize: 16)),
-        content: const Text(
-          '直接写入数据库，不能撤销。\n所有行在一个事务里删除，任何一行没删成都会整体回滚。',
-          style: TextStyle(fontSize: 13),
-        ),
+        title: Text('删除 ${rows.length} 行？'),
+        content: const Text('直接写入数据库，不能撤销。\n所有行在一个事务里删除，任何一行没删成都会整体回滚。'),
         actions: [
-          TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('取消')),
+          OutlinedButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('取消')),
           FilledButton(
             style: FilledButton.styleFrom(
               backgroundColor: Theme.of(context).colorScheme.error,
@@ -867,15 +870,14 @@ class _ResultGridState extends State<ResultGrid> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text('粘贴 $rowCount 行 × $columnCount 列？', style: const TextStyle(fontSize: 16)),
+        title: Text('粘贴 $rowCount 行 × $columnCount 列？'),
         content: Text(
           '从第 ${range.top + 1} 行的 $firstColumn 列开始覆盖，直接写入数据库，不能撤销。\n'
           '所有格子在一个事务里写入，任何一格没写成都会整体回滚。\n'
           '不带引号的 NULL 写成 NULL，空格子写成空字符串。',
-          style: const TextStyle(fontSize: 13),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('取消')),
+          OutlinedButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('取消')),
           FilledButton(onPressed: () => Navigator.of(context).pop(true), child: const Text('粘贴')),
         ],
       ),
@@ -1034,6 +1036,7 @@ class _ResultGridState extends State<ResultGrid> {
                               selected: _selected.contains(index),
                               onTapRowNumber: () => _toggleSelected(index),
                               cells: cells,
+                              columns: columns,
                               order: _order,
                               widths: _widths,
                               editingColumn: editing != null && editing.row == index
@@ -1080,13 +1083,21 @@ class _TruncationBanner extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     return Container(
       width: double.infinity,
-      // 截断是警告不是错误，要和 errorContainer 的错误横幅分得开；这套 seed 的 tertiaryContainer
-      // 是粉色，浅色下和 errorContainer 几乎一样，所以沿用琥珀色，按比例叠在 surface 上适配深浅两种背景
+      // 截断是警告不是错误，要和 errorContainer 的错误横幅分得开，所以用琥珀色，
+      // 按比例叠在 surface 上适配深浅两种背景
       color: Color.alphaBlend(Colors.amber.withValues(alpha: 0.3), scheme.surface),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      child: Text(
-        '结果已截断：实际行数超过上限，下面显示的不是全部数据。请加 LIMIT 或缩小条件。',
-        style: TextStyle(fontSize: 12, color: scheme.onSurface),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      child: Row(
+        children: [
+          Icon(Icons.warning_amber_rounded, size: 14, color: scheme.onSurface),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              '结果已截断：实际行数超过上限，下面显示的不是全部数据。请加 LIMIT 或缩小条件。',
+              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: scheme.onSurface),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -1119,30 +1130,34 @@ class _HeaderRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final mac = MacColors.of(context);
     return Container(
-      height: 32,
+      height: _headerHeight,
       decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surfaceContainerHighest,
-        border: Border(bottom: BorderSide(color: Theme.of(context).colorScheme.outline)),
+        color: mac.toolbar,
+        border: Border(bottom: BorderSide(color: mac.separator)),
       ),
       child: Row(
         children: [
-          const SizedBox(width: _rowNumberWidth),
+          Container(
+            width: _rowNumberWidth,
+            decoration: BoxDecoration(border: Border(right: BorderSide(color: mac.separator))),
+          ),
           for (var position = 0; position < order.length; position++)
-            _cell(context, position, order[position]),
+            _cell(context, mac, position, order[position]),
         ],
       ),
     );
   }
 
   /// 一个列头：左边拖动换位置、点击排序，右边的窄条拖动改宽度、双击自适应
-  Widget _cell(BuildContext context, int position, int index) {
+  Widget _cell(BuildContext context, MacColors mac, int position, int index) {
     final column = columns[index];
     final label = Text(
       column.name,
       maxLines: 1,
       overflow: TextOverflow.ellipsis,
-      style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 12),
+      style: _headerStyle.copyWith(color: mac.text),
     );
 
     return SizedBox(
@@ -1161,10 +1176,10 @@ class _HeaderRow extends StatelessWidget {
                   elevation: 4,
                   child: Container(
                     width: widths[index],
-                    height: 32,
+                    height: _headerHeight,
                     alignment: Alignment.centerLeft,
-                    padding: const EdgeInsets.symmetric(horizontal: 8),
-                    color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                    padding: const EdgeInsets.symmetric(horizontal: 6),
+                    color: mac.toolbar,
                     child: label,
                   ),
                 ),
@@ -1172,27 +1187,20 @@ class _HeaderRow extends StatelessWidget {
                 child: DecoratedBox(
                   // 拖到这一列上时画左边线，表示会插到这里
                   decoration: BoxDecoration(
-                    border: candidates.isEmpty
-                        ? null
-                        : Border(
-                            left: BorderSide(
-                              color: Theme.of(context).colorScheme.primary,
-                              width: 2,
-                            ),
-                          ),
+                    border: candidates.isEmpty ? null : Border(left: BorderSide(color: mac.accent, width: 2)),
                   ),
                   child: InkWell(
                     onTap: onSortColumn == null ? null : () => onSortColumn!(column.name),
                     child: Padding(
-                      padding: const EdgeInsets.only(left: 8),
+                      padding: const EdgeInsets.only(left: 6),
                       child: Row(
                         children: [
                           Expanded(child: label),
                           if (sortColumn == column.name)
                             Icon(
-                              sortAscending ? Icons.arrow_upward : Icons.arrow_downward,
-                              size: 12,
-                              color: Theme.of(context).colorScheme.onSurfaceVariant,
+                              sortAscending ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down,
+                              size: 14,
+                              color: mac.secondaryText,
                             ),
                         ],
                       ),
@@ -1212,15 +1220,13 @@ class _HeaderRow extends StatelessWidget {
               onHorizontalDragUpdate: (details) => onResize(index, details.delta.dx),
               onHorizontalDragEnd: (_) => onResizeEnd(),
               onDoubleTap: () => onAutoFit(index),
+              // 竖线贴在列的右边缘，和下面数据格的竖线对齐
               child: SizedBox(
                 width: 6,
-                height: 32,
-                child: Center(
-                  child: SizedBox(
-                    width: 1,
-                    height: 16,
-                    child: ColoredBox(color: Theme.of(context).colorScheme.outline),
-                  ),
+                height: _headerHeight,
+                child: Align(
+                  alignment: Alignment.centerRight,
+                  child: SizedBox(width: 1, height: _headerHeight, child: ColoredBox(color: mac.separator)),
                 ),
               ),
             ),
@@ -1236,6 +1242,7 @@ class _DataRow extends StatelessWidget {
   final bool selected;
   final VoidCallback onTapRowNumber;
   final List<DisplayCell>? cells;
+  final List<ColumnMeta> columns;
   final List<int> order;
   final List<double> widths;
 
@@ -1255,6 +1262,7 @@ class _DataRow extends StatelessWidget {
     required this.selected,
     required this.onTapRowNumber,
     required this.cells,
+    required this.columns,
     required this.order,
     required this.widths,
     required this.selectedPositions,
@@ -1270,15 +1278,16 @@ class _DataRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
+    final mac = MacColors.of(context);
+    final gridLine = Border(right: BorderSide(color: mac.separator));
     return DecoratedBox(
+      // 没有横线，只靠斑马纹分行；点行号选中的整行叠一层浅系统蓝
       decoration: BoxDecoration(
         color: selected
-            ? scheme.primary.withValues(alpha: 0.12)
+            ? mac.accent.withValues(alpha: 0.16)
             : rowNumber.isEven
-            ? scheme.onSurface.withValues(alpha: 0.02)
+            ? mac.zebra
             : null,
-        border: Border(bottom: BorderSide(color: scheme.outlineVariant)),
       ),
       child: Row(
         children: [
@@ -1286,66 +1295,66 @@ class _DataRow extends StatelessWidget {
             key: ValueKey('row-number-${rowNumber - 1}'),
             behavior: HitTestBehavior.opaque,
             onTap: onTapRowNumber,
-            child: SizedBox(
+            child: Container(
               width: _rowNumberWidth,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 8),
-                child: Align(
-                  alignment: Alignment.centerRight,
-                  child: Text(
-                    '$rowNumber',
-                    style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant),
-                  ),
-                ),
+              padding: const EdgeInsets.symmetric(horizontal: 6),
+              alignment: Alignment.centerRight,
+              decoration: BoxDecoration(border: gridLine),
+              // 行号不抢眼：小一号、三级文字色
+              child: Text(
+                '$rowNumber',
+                style: TextStyle(fontSize: 10, color: selected ? mac.accent : mac.tertiaryText),
               ),
             ),
           ),
           for (var position = 0; position < order.length; position++)
-            _cell(context, position, order[position]),
+            _cell(mac, gridLine, position, order[position]),
         ],
       ),
     );
   }
 
-  Widget _cell(BuildContext context, int position, int i) {
+  Widget _cell(MacColors mac, Border gridLine, int position, int i) {
     final range = selectedPositions;
     final inRange = range != null && position >= range.left && position <= range.right;
+    // 数值右对齐，位数一眼能比；只看列元数据，不看值长得像不像数字
+    final alignment = columns[i].kind == ColumnKind.number ? Alignment.centerRight : Alignment.centerLeft;
 
-    return SizedBox(
-      // 行号列和数据列可能显示一样的文本，测试要靠 key 才能精确定位。
-      // i 是结果集里的原始列下标，和显示顺序无关
-      key: ValueKey('cell-${rowNumber - 1}-$i'),
-      width: widths[i],
-      child: editingColumn == i
-          ? _CellEditor(
-              controller: editController,
-              focusNode: editFocus,
-              onCommit: onCommit,
-              onSetNull: onSetNull,
-              onCancel: onCancel,
-            )
-          // 按下就选中。用 Listener 而不是 onTap：onTap 要等双击判定超时才触发，点了会慢半拍
-          : Listener(
-              onPointerDown: (event) {
-                if (event.buttons == kPrimaryButton) onPointerDownCell(event, position);
-              },
-              child: GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onDoubleTap: () => onDoubleTapCell(i),
-                child: ColoredBox(
-                  color: inRange
-                      ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.18)
-                      : Colors.transparent,
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 8),
-                    child: Align(
-                      alignment: Alignment.centerLeft,
-                      child: _CellText(cell: cells?[i]),
+    return DecoratedBox(
+      // 列之间 1px 竖线。画在前景，选区的底色不会盖住它
+      position: DecorationPosition.foreground,
+      decoration: BoxDecoration(border: gridLine),
+      child: SizedBox(
+        // 行号列和数据列可能显示一样的文本，测试要靠 key 才能精确定位。
+        // i 是结果集里的原始列下标，和显示顺序无关
+        key: ValueKey('cell-${rowNumber - 1}-$i'),
+        width: widths[i],
+        child: editingColumn == i
+            ? _CellEditor(
+                controller: editController,
+                focusNode: editFocus,
+                onCommit: onCommit,
+                onSetNull: onSetNull,
+                onCancel: onCancel,
+              )
+            // 按下就选中。用 Listener 而不是 onTap：onTap 要等双击判定超时才触发，点了会慢半拍
+            : Listener(
+                onPointerDown: (event) {
+                  if (event.buttons == kPrimaryButton) onPointerDownCell(event, position);
+                },
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onDoubleTap: () => onDoubleTapCell(i),
+                  child: ColoredBox(
+                    color: inRange ? mac.accent.withValues(alpha: 0.24) : Colors.transparent,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 6),
+                      child: Align(alignment: alignment, child: _CellText(cell: cells?[i])),
                     ),
                   ),
                 ),
               ),
-            ),
+      ),
     );
   }
 }
@@ -1381,15 +1390,12 @@ class _CellEditor extends StatelessWidget {
               }
               return KeyEventResult.ignored;
             },
+            // 边框和焦点环沿用主题。紧凑输入框高 10 + 上下内边距，5 正好填满 20px 的行
             child: TextField(
               controller: controller,
               focusNode: focusNode,
-              style: const TextStyle(fontSize: 12, fontFamily: 'Menlo'),
-              decoration: const InputDecoration(
-                isDense: true,
-                border: OutlineInputBorder(),
-                contentPadding: EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-              ),
+              style: _cellStyle,
+              decoration: const InputDecoration(contentPadding: EdgeInsets.symmetric(horizontal: 4, vertical: 5)),
               onSubmitted: onCommit,
             ),
           ),
@@ -1400,10 +1406,7 @@ class _CellEditor extends StatelessWidget {
             onTap: onSetNull,
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 4),
-              child: Text(
-                '∅',
-                style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.onSurfaceVariant),
-              ),
+              child: Text('∅', style: TextStyle(fontSize: 12, color: MacColors.of(context).secondaryText)),
             ),
           ),
         ),
@@ -1423,7 +1426,7 @@ class _CellText extends StatelessWidget {
   Widget build(BuildContext context) {
     final cell = this.cell;
     if (cell == null) {
-      return const Text('', style: TextStyle(fontSize: 12));
+      return const Text('', style: _cellStyle);
     }
 
     final isPlaceholder = cell.placeholder;
@@ -1431,11 +1434,9 @@ class _CellText extends StatelessWidget {
       cell.text,
       maxLines: 1,
       overflow: TextOverflow.ellipsis,
-      style: TextStyle(
-        fontSize: 12,
-        fontFamily: 'Menlo',
+      style: _cellStyle.copyWith(
         // 不用 onSurfaceVariant：它和 onSurface 太接近，占位和真实文本会分不开。
-        // 按 onSurface 的 38% 取色，浅色下和原来的 black38 一样淡，深色下同比例变暗
+        // 按 onSurface 的 38% 取色，深浅两种主题同比例变淡；再加斜体
         color: isPlaceholder ? Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.38) : null,
         fontStyle: isPlaceholder ? FontStyle.italic : null,
       ),
@@ -1475,76 +1476,67 @@ class _StatusBar extends StatelessWidget {
     final message = refusal ?? notice ?? readOnlyReason;
     final scheme = Theme.of(context).colorScheme;
 
-    return Container(
-      height: 26,
-      padding: const EdgeInsets.symmetric(horizontal: 12),
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surfaceContainerHighest,
-        border: Border(top: BorderSide(color: scheme.outline)),
-      ),
-      child: Row(
-        children: [
-          Text('$totalRows 行', style: const TextStyle(fontSize: 11)),
-          const SizedBox(width: 12),
-          if (message != null)
-            Expanded(
-              child: Text(
-                message,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: 11,
-                  color: refusal != null ? scheme.error : scheme.onSurfaceVariant,
-                ),
-              ),
-            )
-          else
-            Expanded(
-              child: Text(
-                '双击或 Enter 编辑，拖动或 Shift+方向键选区域后可复制粘贴，点行号选中行',
-                style: TextStyle(fontSize: 11, color: scheme.outline),
-              ),
+    return MacStatusBar(
+      children: [
+        Text('$totalRows 行'),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Text(
+            message ?? '双击或 Enter 编辑，拖动或 Shift+方向键选区域后可复制粘贴，点行号选中行',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: refusal != null
+                  ? scheme.error
+                  : message != null
+                  ? scheme.onSurfaceVariant
+                  : scheme.outline,
             ),
-          // 刻意不用 CircularProgressIndicator：它是无限动画，会让 pumpAndSettle
-          // 永远等不到"稳定"，测试直接挂死。静态文字一样能表达状态
-          if (loading) Text('加载中…', style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant)),
-          _BarButton(label: '导出', onPressed: onExport),
-          // 只读结果集不给增删入口，原因已经显示在左边
-          if (readOnlyReason == null) ...[
-            if (selectedCount > 0)
-              _BarButton(
-                label: '删除 $selectedCount 行',
-                color: scheme.error,
-                onPressed: onDeleteSelected,
-              ),
-            _BarButton(label: '新增行', onPressed: onInsert),
-          ],
+          ),
+        ),
+        // 刻意不用 CircularProgressIndicator：它是无限动画，会让 pumpAndSettle
+        // 永远等不到"稳定"，测试直接挂死。静态文字一样能表达状态
+        if (loading) const Text('加载中…'),
+        _BarButton(icon: Icons.ios_share, label: '导出', onPressed: onExport),
+        // 只读结果集不给增删入口，原因已经显示在左边
+        if (readOnlyReason == null) ...[
+          if (selectedCount > 0)
+            _BarButton(
+              icon: Icons.remove,
+              label: '删除 $selectedCount 行',
+              color: scheme.error,
+              onPressed: onDeleteSelected,
+            ),
+          _BarButton(icon: Icons.add, label: '新增行', onPressed: onInsert),
         ],
-      ),
+      ],
     );
   }
 }
 
+/// 状态栏里的小按钮：18px 高、11pt 字，放得进 22px 的状态栏
 class _BarButton extends StatelessWidget {
+  final IconData icon;
   final String label;
   final Color? color;
   final VoidCallback onPressed;
 
-  const _BarButton({required this.label, required this.onPressed, this.color});
+  const _BarButton({required this.icon, required this.label, required this.onPressed, this.color});
 
   @override
   Widget build(BuildContext context) {
-    return TextButton(
+    return TextButton.icon(
       style: TextButton.styleFrom(
         foregroundColor: color,
-        padding: const EdgeInsets.symmetric(horizontal: 8),
-        minimumSize: const Size(0, 22),
-        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-        visualDensity: VisualDensity.compact,
-        textStyle: const TextStyle(fontSize: 11),
+        padding: const EdgeInsets.symmetric(horizontal: 6),
+        minimumSize: const Size(0, 18),
+        iconSize: 12,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
       ),
       onPressed: onPressed,
-      child: Text(label),
+      icon: Icon(icon),
+      // 字号写在 Text 上而不是 textStyle：textStyle 会整个替换主题的按钮字体
+      label: Text(label, style: const TextStyle(fontSize: 11)),
     );
   }
 }

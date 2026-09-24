@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'mac_widgets.dart';
 import 'src/rust/api/options.dart';
 
 /// 高级连接选项对话框的结果。
@@ -187,9 +188,9 @@ class _ConnectionOptionsDialogState extends State<_ConnectionOptionsDialog> {
     final colors = Theme.of(context).colorScheme;
 
     return AlertDialog(
-      title: const Text('高级连接选项', style: TextStyle(fontSize: 16)),
+      title: const Text('高级连接选项'),
       content: SizedBox(
-        width: 480,
+        width: 500,
         child: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -210,30 +211,27 @@ class _ConnectionOptionsDialogState extends State<_ConnectionOptionsDialog> {
                 _row('客户端证书', _pathField('ssl-cert', _certPath, '可选，和私钥一起填')),
                 _row('客户端私钥', _pathField('ssl-key', _keyPath, '可选，和证书一起填')),
               ],
-              const SizedBox(height: 8),
               _section('超时'),
               _row('连接（秒）', _textField('connect-timeout', _connectSecs, '留空不限')),
               _row('查询（秒）', _textField('query-timeout', _querySecs, '留空不限；超时后让服务器停止这条语句')),
-              const SizedBox(height: 8),
               _section('SSH 隧道'),
-              _row('启用', _checkbox('ssh-enabled', _useSsh, (value) => _useSsh = value)),
+              _row('启用', _checkbox('ssh-enabled', _useSsh, '经 SSH 隧道连接', (value) => _useSsh = value)),
               if (_useSsh) ...[
                 // 跳板机按连接顺序排在前面，SSH 主机是最后一跳
                 for (var i = 0; i < _jumps.length; i++) ...[
                   _jumpHeader(i, colors),
                   ..._hopFields('jump-$i', _jumps[i]),
                 ],
-                if (_jumps.isNotEmpty)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 4),
-                    child: Text('SSH 主机（最后一跳）', style: TextStyle(fontSize: 12, color: colors.onSurfaceVariant)),
-                  ),
+                if (_jumps.isNotEmpty) _subheader(Text('SSH 主机（最后一跳）', style: _subheaderStyle(colors))),
                 ..._hopFields('ssh', _target),
-                TextButton.icon(
-                  key: const ValueKey('jump-add'),
-                  onPressed: () => setState(() => _jumps.add(_HopInput())),
-                  icon: const Icon(Icons.add, size: 16),
-                  label: Text(_jumps.isEmpty ? '经跳板机' : '再加一台跳板机', style: const TextStyle(fontSize: 12)),
+                Padding(
+                  padding: const EdgeInsets.only(left: _labelWidth + 4),
+                  child: TextButton.icon(
+                    key: const ValueKey('jump-add'),
+                    onPressed: () => setState(() => _jumps.add(_HopInput())),
+                    icon: const Icon(Icons.add, size: 14),
+                    label: Text(_jumps.isEmpty ? '经跳板机' : '再加一台跳板机', style: const TextStyle(fontSize: 12)),
+                  ),
                 ),
               ],
               if (_error != null)
@@ -246,17 +244,31 @@ class _ConnectionOptionsDialogState extends State<_ConnectionOptionsDialog> {
         ),
       ),
       actions: [
-        TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('取消')),
+        OutlinedButton(onPressed: () => Navigator.of(context).pop(), child: const Text('取消')),
         FilledButton(onPressed: _submit, child: const Text('确定')),
       ],
     );
   }
 
+  static const double _labelWidth = 90;
+
+  TextStyle _subheaderStyle(ColorScheme colors) {
+    return TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: colors.onSurfaceVariant);
+  }
+
+  /// 每一跳上面一行小标题，和控件左边对齐
+  Widget _subheader(Widget child) {
+    return Padding(
+      padding: const EdgeInsets.only(left: _labelWidth + 8, top: 6),
+      child: child,
+    );
+  }
+
   Widget _jumpHeader(int index, ColorScheme colors) {
     final order = index == 0 ? '，本机最先连这台' : '';
-    return Row(
+    return _subheader(Row(
       children: [
-        Text('跳板机 ${index + 1}$order', style: TextStyle(fontSize: 12, color: colors.onSurfaceVariant)),
+        Text('跳板机 ${index + 1}$order', style: _subheaderStyle(colors)),
         const Spacer(),
         IconButton(
           key: ValueKey('jump-$index-remove'),
@@ -271,7 +283,7 @@ class _ConnectionOptionsDialogState extends State<_ConnectionOptionsDialog> {
           icon: const Icon(Icons.close),
         ),
       ],
-    );
+    ));
   }
 
   List<Widget> _hopFields(String prefix, _HopInput input) {
@@ -297,22 +309,19 @@ class _ConnectionOptionsDialogState extends State<_ConnectionOptionsDialog> {
     ];
   }
 
+  /// 分组标题：粗体小字，上面留出和上一组的间距，像 macOS 偏好设置里的分组
   Widget _section(String title) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
+      padding: const EdgeInsets.only(top: 10, bottom: 2),
       child: Text(title, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
     );
   }
 
   Widget _row(String label, Widget field) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        children: [
-          SizedBox(width: 90, child: Text(label, style: const TextStyle(fontSize: 12))),
-          Expanded(child: Align(alignment: Alignment.centerLeft, child: field)),
-        ],
-      ),
+    return FormRow(
+      label: label,
+      labelWidth: _labelWidth,
+      child: Align(alignment: Alignment.centerLeft, child: field),
     );
   }
 
@@ -321,12 +330,7 @@ class _ConnectionOptionsDialogState extends State<_ConnectionOptionsDialog> {
       key: ValueKey(key),
       controller: controller,
       obscureText: obscure,
-      style: const TextStyle(fontSize: 12),
-      decoration: InputDecoration(
-        isDense: true,
-        border: const OutlineInputBorder(),
-        hintText: hint,
-      ),
+      decoration: InputDecoration(hintText: hint),
     );
   }
 
@@ -336,38 +340,51 @@ class _ConnectionOptionsDialogState extends State<_ConnectionOptionsDialog> {
       children: [
         Expanded(child: _textField(key, controller, hint)),
         if (pickFile != null)
-          TextButton(
-            key: ValueKey('$key-pick'),
-            onPressed: () async {
-              final path = await pickFile();
-              if (path != null && mounted) setState(() => controller.text = path);
-            },
-            child: const Text('选择…', style: TextStyle(fontSize: 12)),
+          Padding(
+            padding: const EdgeInsets.only(left: 6),
+            child: OutlinedButton(
+              key: ValueKey('$key-pick'),
+              onPressed: () async {
+                final path = await pickFile();
+                if (path != null && mounted) setState(() => controller.text = path);
+              },
+              child: const Text('选择…'),
+            ),
           ),
       ],
     );
   }
 
-  Widget _checkbox(String key, bool value, void Function(bool value) onChanged) {
-    return Checkbox(
-      key: ValueKey(key),
-      value: value,
-      onChanged: (checked) => setState(() => onChanged(checked ?? false)),
+  /// 勾选框和它的说明文字一起可点
+  Widget _checkbox(String key, bool value, String label, void Function(bool value) onChanged) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(4),
+      onTap: () => setState(() => onChanged(!value)),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SizedBox(
+            width: 20,
+            height: 20,
+            child: Checkbox(
+              key: ValueKey(key),
+              value: value,
+              onChanged: (checked) => setState(() => onChanged(checked ?? false)),
+            ),
+          ),
+          const SizedBox(width: 6),
+          Text(label, style: const TextStyle(fontSize: 13)),
+        ],
+      ),
     );
   }
 
   Widget _dropdown<T>(String key, T value, Map<T, String> items, void Function(T value) onChanged) {
-    return DropdownButton<T>(
+    return MacPopupButton<T>(
       key: ValueKey(key),
       value: value,
-      isDense: true,
-      style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurface),
-      items: [
-        for (final entry in items.entries) DropdownMenuItem(value: entry.key, child: Text(entry.value)),
-      ],
-      onChanged: (selected) {
-        if (selected != null) setState(() => onChanged(selected));
-      },
+      items: items,
+      onChanged: (selected) => setState(() => onChanged(selected)),
     );
   }
 }
