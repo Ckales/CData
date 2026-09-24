@@ -7,6 +7,7 @@ use flutter_rust_bridge::frb;
 
 // 按裸名导入，生成的代码会把镜像类型引用为 crate::api::value::<Name>
 pub use cdata_core::CellValue;
+pub use cdata_core::value::DisplayCell;
 
 #[frb(mirror(CellValue))]
 pub enum _CellValue {
@@ -17,6 +18,12 @@ pub enum _CellValue {
     Text(String),
     Bytes(Vec<u8>),
     InvalidText(Vec<u8>),
+}
+
+#[frb(mirror(DisplayCell))]
+pub struct _DisplayCell {
+    pub text: String,
+    pub placeholder: bool,
 }
 
 /// 格式化 JSON，同时校验。不合法返回带行列号的错误

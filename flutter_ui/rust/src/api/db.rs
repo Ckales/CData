@@ -14,6 +14,9 @@ pub use cdata_core::export::{ExportEncoding, ExportFormat, ExportOptions, Export
 pub use cdata_core::session::QuerySummary;
 pub use cdata_core::sql::{FilterCondition, FilterOp};
 pub use cdata_core::CellValue;
+use cdata_core::value::DisplayCell;
+
+use crate::api::options::{ConnectionOptions, HostKeyIssue};
 
 #[frb(mirror(ConnectionConfig))]
 pub struct _ConnectionConfig {
@@ -22,6 +25,20 @@ pub struct _ConnectionConfig {
     pub user: String,
     pub password: String,
     pub database: Option<String>,
+    pub options: ConnectionOptions,
+    pub ssh_secrets: Vec<Option<String>>,
+    pub saved_id: Option<String>,
+}
+
+/// 开会话失败。主机密钥没通过校验时带着 host_key，界面据此问用户要不要信任；
+/// 其余情况只有 message
+#[frb(dart_code = "
+  @override
+  String toString() => message;
+")]
+pub struct OpenSessionError {
+    pub message: String,
+    pub host_key: Option<HostKeyIssue>,
 }
 
 #[frb(mirror(ColumnMeta))]
@@ -155,9 +172,17 @@ pub(crate) fn to_message(err: cdata_core::session::Error) -> String {
     err.to_string()
 }
 
-/// 开会话，返回会话 id。此时还没有真正连上，第一次查询才建立 TCP 连接
-pub fn open_session(config: ConnectionConfig) -> u64 {
-    cdata_core::session::open_session(&config)
+/// 开会话，返回会话 id。直连时还没有真正连上，第一次查询才建立 TCP 连接；
+/// 走 SSH 时当场建隧道，未知主机、密钥不符、认证失败在这里就报出来
+pub async fn open_session(config: ConnectionConfig) -> std::result::Result<u64, OpenSessionError> {
+    runtime()
+        .spawn(async move { cdata_core::session::open_session(&config).await })
+        .await
+        .map_err(|err| OpenSessionError { message: format!("任务没能跑完：{err}"), host_key: None })?
+        .map_err(|err| OpenSessionError {
+            host_key: err.host_key_issue().cloned(),
+            message: err.to_string(),
+        })
 }
 
 /// 跑查询，结果留在 Rust 侧，只回概况
@@ -195,7 +220,7 @@ pub async fn execute_view(
 }
 
 /// 取可视区的显示文本，网格渲染走这条。整个结果集不跨 FFI，界面滚到哪取到哪
-pub fn fetch_window_text(session_id: u64, offset: u64, limit: u64) -> Result<Vec<Vec<String>>> {
+pub fn fetch_window_text(session_id: u64, offset: u64, limit: u64) -> Result<Vec<Vec<DisplayCell>>> {
     cdata_core::session::fetch_window_text(session_id, offset, limit).map_err(to_message)
 }
 

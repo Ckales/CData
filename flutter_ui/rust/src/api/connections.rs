@@ -8,6 +8,7 @@ use flutter_rust_bridge::frb;
 pub use cdata_core::connections::SavedConnection;
 
 use crate::api::db::Result;
+use crate::api::options::{ConnectionOptions, SshHop};
 
 #[frb(mirror(SavedConnection))]
 pub struct _SavedConnection {
@@ -17,6 +18,7 @@ pub struct _SavedConnection {
     pub port: u16,
     pub user: String,
     pub database: Option<String>,
+    pub options: ConnectionOptions,
 }
 
 fn to_message(err: cdata_core::connections::Error) -> String {
@@ -41,4 +43,10 @@ pub fn delete_connection(id: String) -> Result<()> {
 /// 从钥匙串取密码。没存过返回 null，界面据此提示用户输一次
 pub fn load_password(id: String) -> Result<Option<String>> {
     cdata_core::connections::load_password(&id).map_err(to_message)
+}
+
+/// 保存某一跳的 SSH 密码或私钥口令，只进钥匙串。
+/// 没有对应的读取接口：连接时 core 按 ConnectionConfig.saved_id 自己去取，界面拿不到
+pub fn save_ssh_secret(id: String, hop: SshHop, secret: String) -> Result<()> {
+    cdata_core::connections::save_ssh_secret(&id, &hop, &secret).map_err(to_message)
 }
