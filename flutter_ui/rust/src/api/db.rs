@@ -8,8 +8,9 @@ use std::sync::OnceLock;
 use flutter_rust_bridge::frb;
 use tokio::runtime::Runtime;
 
-pub use cdata_core::db::{ColumnMeta, ConnectionConfig};
+pub use cdata_core::db::{ColumnKind, ColumnMeta, ConnectionConfig};
 pub use cdata_core::edit::{Editability, EditTarget};
+pub use cdata_core::export::{ExportEncoding, ExportFormat, ExportOptions, ExportSummary};
 pub use cdata_core::session::QuerySummary;
 pub use cdata_core::sql::{FilterCondition, FilterOp};
 pub use cdata_core::CellValue;
@@ -30,6 +31,20 @@ pub struct _ColumnMeta {
     pub org_table: String,
     pub schema: String,
     pub is_binary: bool,
+    pub kind: ColumnKind,
+}
+
+#[frb(mirror(ColumnKind))]
+pub enum _ColumnKind {
+    Text,
+    Number,
+    Json,
+    Date,
+    DateTime,
+    Time,
+    Enum,
+    Set,
+    Binary,
 }
 
 #[frb(mirror(EditTarget))]
@@ -75,6 +90,35 @@ pub struct _FilterCondition {
     pub column: String,
     pub op: FilterOp,
     pub value: String,
+}
+
+#[frb(mirror(ExportFormat))]
+pub enum _ExportFormat {
+    Csv,
+    SqlInsert,
+}
+
+#[frb(mirror(ExportEncoding))]
+pub enum _ExportEncoding {
+    Utf8,
+    Utf8Bom,
+    Gbk,
+}
+
+#[frb(mirror(ExportOptions))]
+pub struct _ExportOptions {
+    pub format: ExportFormat,
+    pub encoding: ExportEncoding,
+    pub delimiter: String,
+    pub header: bool,
+    pub null_text: String,
+    pub table_name: String,
+}
+
+#[frb(mirror(ExportSummary))]
+pub struct _ExportSummary {
+    pub rows_written: u64,
+    pub source_truncated: bool,
 }
 
 pub(crate) fn runtime() -> &'static Runtime {
@@ -211,6 +255,25 @@ pub async fn paste_cells(
         cdata_core::session::paste_cells(session_id, row_start, column_indexes, values).await
     })
     .await
+}
+
+/// 结果集某一列的 ENUM / SET 可选值，按定义顺序
+pub async fn column_choices(session_id: u64, column_index: u64) -> Result<Vec<String>> {
+    on_runtime(async move { cdata_core::session::column_choices(session_id, column_index).await })
+        .await
+}
+
+/// 把结果集的一段写成文件，row_count 为 null 表示到末尾。行不经过 FFI
+pub fn export_rows(
+    session_id: u64,
+    path: String,
+    row_start: u64,
+    row_count: Option<u64>,
+    column_indexes: Vec<u64>,
+    options: ExportOptions,
+) -> Result<ExportSummary> {
+    cdata_core::session::export_rows(session_id, &path, row_start, row_count, column_indexes, &options)
+        .map_err(to_message)
 }
 
 /// 关会话并断开连接池

@@ -5,6 +5,7 @@
 //
 // 运行：见 integration_test/all_test.dart
 
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:cdata_flutter/data_source.dart';
@@ -138,6 +139,49 @@ void main() {
 
     final rows = await fetchWindowText(sessionId: sessionId, offset: BigInt.zero, limit: BigInt.one);
     expect(rows.first.first, '3', reason: '降序后第一行是 3');
+    await closeSession(sessionId: sessionId);
+  });
+
+  test('导出穿过 FFI 写出的文件和选项一致', () async {
+    if (_host.isEmpty) {
+      markTestSkipped('未通过 --dart-define 提供连接信息');
+      return;
+    }
+
+    final sessionId = await openSession(
+      config: ConnectionConfig(host: _host, port: int.parse(_port), user: _user, password: _password, database: _db),
+    );
+    final summary = await executeView(
+      sessionId: sessionId,
+      sql: 'SELECT id, name FROM big_rows',
+      conditions: const [FilterCondition(column: 'id', op: FilterOp.ltEq, value: '2')],
+      matchAll: true,
+      sortColumn: 'id',
+      sortAscending: true,
+      maxRows: BigInt.from(100),
+    );
+    final source = RustGridSource(sessionId: sessionId, summary: summary);
+
+    final dir = await Directory.systemTemp.createTemp('cdata-export');
+    final path = '${dir.path}/rows.tsv';
+    final result = await source.exportRows(
+      path,
+      0,
+      null,
+      [1, 0],
+      const ExportOptions(
+        format: ExportFormat.csv,
+        encoding: ExportEncoding.utf8,
+        delimiter: '\t',
+        header: true,
+        nullText: 'NULL',
+        tableName: '',
+      ),
+    );
+    expect(result.rowsWritten, BigInt.from(2));
+    expect(File(path).readAsStringSync(), 'name\tid\r\n用户1\t1\r\n用户2\t2\r\n');
+
+    await dir.delete(recursive: true);
     await closeSession(sessionId: sessionId);
   });
 }

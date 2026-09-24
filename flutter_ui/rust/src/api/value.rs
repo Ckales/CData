@@ -19,6 +19,16 @@ pub enum _CellValue {
     InvalidText(Vec<u8>),
 }
 
+/// 格式化 JSON，同时校验。不合法返回带行列号的错误
+pub fn format_json(text: String) -> Result<String, String> {
+    cdata_core::value::format_json(&text)
+}
+
+/// 二进制内容的十六进制视图，超过 limit 字节只显示前面并注明总长
+pub fn hex_dump(bytes: Vec<u8>, limit: u64) -> String {
+    cdata_core::value::hex_dump(&bytes, limit as usize)
+}
+
 /// 单元格在网格里的显示文本
 pub fn display_text(value: CellValue) -> String {
     cdata_core::display_text(&value)

@@ -11,6 +11,7 @@ import 'dart:ui' as ui;
 import 'package:cdata_flutter/query_page.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
@@ -90,5 +91,38 @@ void main() {
     expect(find.text('big_rows'), findsWidgets, reason: '侧栏没列出表');
 
     await savePng('main');
+
+    // 第二个标签有自己的会话，跑别的查询不影响第一个标签的结果
+    await tester.tap(find.byTooltip('新标签'));
+    await settle(tester, rounds: 1);
+    await tester.enterText(find.byKey(const ValueKey('sql-editor')), 'SELECT id, name FROM edit_target ORDER BY id');
+    await settle(tester, rounds: 1);
+    await tester.tap(find.text('运行'));
+    await settleUntil(tester, find.text('第二行'));
+    expect(find.text('第二行'), findsOneWidget, reason: '第二个标签没查到数据');
+    expect(find.text('用户1'), findsNothing, reason: '第一个标签的结果不该显示在第二个标签里');
+
+    await tester.tap(find.byKey(const ValueKey('tab-1')));
+    await settleUntil(tester, find.text('用户1'));
+    expect(find.text('用户1'), findsOneWidget, reason: '切回第一个标签，结果要还在');
+
+    await savePng('tabs');
+
+    // 补全：目录是查询成功后从真库读的，候选要带上真实的表名
+    await tester.enterText(find.byKey(const ValueKey('sql-editor')), 'SELECT * FROM big');
+    final popupItem = find.descendant(
+      of: find.byKey(const ValueKey('completion-popup')),
+      matching: find.text('big_rows'),
+    );
+    await settleUntil(tester, popupItem);
+    expect(popupItem, findsOneWidget, reason: '补全没列出真库里的表');
+    await savePng('completion');
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await settle(tester, rounds: 1);
+    final editor = tester.widget<TextField>(
+      find.descendant(of: find.byKey(const ValueKey('sql-editor')), matching: find.byType(TextField)),
+    );
+    expect(editor.controller!.text, 'SELECT * FROM big_rows');
   });
 }

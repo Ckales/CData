@@ -39,7 +39,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.13.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 790518486;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -1168807469;
 
 // Section: executor
 
@@ -47,6 +47,39 @@ flutter_rust_bridge::frb_generated_default_handler!();
 
 // Section: wire_funcs
 
+fn wire__crate__api__editor__add_history_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "add_history",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_sql = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, String>((move || {
+                    let output_ok = crate::api::editor::add_history(api_sql)?;
+                    std::result::Result::Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
 fn wire__crate__api__db__apply_edit_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
@@ -161,6 +194,78 @@ fn wire__crate__api__db__close_session_impl(
         },
     )
 }
+fn wire__crate__api__db__column_choices_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "column_choices",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_session_id = <u64>::sse_decode(&mut deserializer);
+            let api_column_index = <u64>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| async move {
+                transform_result_sse::<_, String>(
+                    (move || async move {
+                        let output_ok =
+                            crate::api::db::column_choices(api_session_id, api_column_index)
+                                .await?;
+                        std::result::Result::Ok(output_ok)
+                    })()
+                    .await,
+                )
+            }
+        },
+    )
+}
+fn wire__crate__api__editor__complete_sql_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "complete_sql",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_session_id = <u64>::sse_decode(&mut deserializer);
+            let api_sql = <String>::sse_decode(&mut deserializer);
+            let api_cursor = <u32>::sse_decode(&mut deserializer);
+            deserializer.end();
+            transform_result_sse::<_, String>((move || {
+                let output_ok =
+                    crate::api::editor::complete_sql(api_session_id, api_sql, api_cursor)?;
+                std::result::Result::Ok(output_ok)
+            })())
+        },
+    )
+}
 fn wire__crate__api__db__copy_range_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
@@ -229,6 +334,39 @@ fn wire__crate__api__connections__delete_connection_impl(
             move |context| {
                 transform_result_sse::<_, String>((move || {
                     let output_ok = crate::api::connections::delete_connection(api_id)?;
+                    std::result::Result::Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
+fn wire__crate__api__editor__delete_favorite_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "delete_favorite",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_id = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, String>((move || {
+                    let output_ok = crate::api::editor::delete_favorite(api_id)?;
                     std::result::Result::Ok(output_ok)
                 })())
             }
@@ -397,6 +535,51 @@ fn wire__crate__api__db__execute_view_impl(
         },
     )
 }
+fn wire__crate__api__db__export_rows_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "export_rows",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_session_id = <u64>::sse_decode(&mut deserializer);
+            let api_path = <String>::sse_decode(&mut deserializer);
+            let api_row_start = <u64>::sse_decode(&mut deserializer);
+            let api_row_count = <Option<u64>>::sse_decode(&mut deserializer);
+            let api_column_indexes = <Vec<u64>>::sse_decode(&mut deserializer);
+            let api_options = <crate::api::db::ExportOptions>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, String>((move || {
+                    let output_ok = crate::api::db::export_rows(
+                        api_session_id,
+                        api_path,
+                        api_row_start,
+                        api_row_count,
+                        api_column_indexes,
+                        api_options,
+                    )?;
+                    std::result::Result::Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
 fn wire__crate__api__db__fetch_window_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
@@ -463,6 +646,73 @@ fn wire__crate__api__db__fetch_window_text_impl(
                 transform_result_sse::<_, String>((move || {
                     let output_ok =
                         crate::api::db::fetch_window_text(api_session_id, api_offset, api_limit)?;
+                    std::result::Result::Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
+fn wire__crate__api__value__format_json_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "format_json",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_text = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, String>((move || {
+                    let output_ok = crate::api::value::format_json(api_text)?;
+                    std::result::Result::Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
+fn wire__crate__api__value__hex_dump_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "hex_dump",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_bytes = <Vec<u8>>::sse_decode(&mut deserializer);
+            let api_limit = <u64>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, ()>((move || {
+                    let output_ok = Ok::<_, ()>(crate::api::value::hex_dump(api_bytes, api_limit))?;
                     std::result::Result::Ok(output_ok)
                 })())
             }
@@ -610,6 +860,70 @@ fn wire__crate__api__schema__list_databases_impl(
         },
     )
 }
+fn wire__crate__api__editor__list_favorites_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "list_favorites",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, String>((move || {
+                    let output_ok = crate::api::editor::list_favorites()?;
+                    std::result::Result::Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
+fn wire__crate__api__editor__list_history_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "list_history",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, String>((move || {
+                    let output_ok = crate::api::editor::list_history()?;
+                    std::result::Result::Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
 fn wire__crate__api__schema__list_tables_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
@@ -640,6 +954,44 @@ fn wire__crate__api__schema__list_tables_impl(
                     (move || async move {
                         let output_ok =
                             crate::api::schema::list_tables(api_session_id, api_database).await?;
+                        std::result::Result::Ok(output_ok)
+                    })()
+                    .await,
+                )
+            }
+        },
+    )
+}
+fn wire__crate__api__editor__load_catalog_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "load_catalog",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_session_id = <u64>::sse_decode(&mut deserializer);
+            let api_database = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| async move {
+                transform_result_sse::<_, String>(
+                    (move || async move {
+                        let output_ok =
+                            crate::api::editor::load_catalog(api_session_id, api_database).await?;
                         std::result::Result::Ok(output_ok)
                     })()
                     .await,
@@ -862,6 +1214,40 @@ fn wire__crate__api__connections__save_connection_impl(
         },
     )
 }
+fn wire__crate__api__editor__save_favorite_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "save_favorite",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_name = <String>::sse_decode(&mut deserializer);
+            let api_sql = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, String>((move || {
+                    let output_ok = crate::api::editor::save_favorite(api_name, api_sql)?;
+                    std::result::Result::Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
 fn wire__crate__api__layouts__save_layout_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
@@ -897,6 +1283,79 @@ fn wire__crate__api__layouts__save_layout_impl(
         },
     )
 }
+fn wire__crate__api__schema__table_structure_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "table_structure",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_session_id = <u64>::sse_decode(&mut deserializer);
+            let api_database = <String>::sse_decode(&mut deserializer);
+            let api_table = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| async move {
+                transform_result_sse::<_, String>(
+                    (move || async move {
+                        let output_ok = crate::api::schema::table_structure(
+                            api_session_id,
+                            api_database,
+                            api_table,
+                        )
+                        .await?;
+                        std::result::Result::Ok(output_ok)
+                    })()
+                    .await,
+                )
+            }
+        },
+    )
+}
+fn wire__crate__api__editor__tokenize_sql_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "tokenize_sql",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_sql = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            transform_result_sse::<_, ()>((move || {
+                let output_ok = Ok::<_, ()>(crate::api::editor::tokenize_sql(api_sql))?;
+                std::result::Result::Ok(output_ok)
+            })())
+        },
+    )
+}
 
 // Section: static_checks
 
@@ -924,6 +1383,16 @@ const _: fn() = || {
         }
     }
     {
+        let ColumnDef = None::<crate::api::schema::ColumnDef>.unwrap();
+        let _: String = ColumnDef.name;
+        let _: String = ColumnDef.column_type;
+        let _: bool = ColumnDef.nullable;
+        let _: crate::api::schema::DefaultValue = ColumnDef.default;
+        let _: String = ColumnDef.extra;
+        let _: String = ColumnDef.comment;
+        let _: Option<String> = ColumnDef.collation;
+    }
+    {
         let ColumnLayout = None::<crate::api::layouts::ColumnLayout>.unwrap();
         let _: String = ColumnLayout.name;
         let _: f64 = ColumnLayout.width;
@@ -935,6 +1404,20 @@ const _: fn() = || {
         let _: String = ColumnMeta.org_table;
         let _: String = ColumnMeta.schema;
         let _: bool = ColumnMeta.is_binary;
+        let _: crate::api::db::ColumnKind = ColumnMeta.kind;
+    }
+    {
+        let Completion = None::<crate::api::editor::Completion>.unwrap();
+        let _: u32 = Completion.replace_start;
+        let _: u32 = Completion.replace_end;
+        let _: Vec<crate::api::editor::CompletionItem> = Completion.items;
+    }
+    {
+        let CompletionItem = None::<crate::api::editor::CompletionItem>.unwrap();
+        let _: String = CompletionItem.label;
+        let _: String = CompletionItem.insert_text;
+        let _: crate::api::editor::CompletionKind = CompletionItem.kind;
+        let _: String = CompletionItem.detail;
     }
     {
         let ConnectionConfig = None::<crate::api::db::ConnectionConfig>.unwrap();
@@ -943,6 +1426,16 @@ const _: fn() = || {
         let _: String = ConnectionConfig.user;
         let _: String = ConnectionConfig.password;
         let _: Option<String> = ConnectionConfig.database;
+    }
+    match None::<crate::api::schema::DefaultValue>.unwrap() {
+        crate::api::schema::DefaultValue::NoDefault => {}
+        crate::api::schema::DefaultValue::Null => {}
+        crate::api::schema::DefaultValue::Literal(field0) => {
+            let _: String = field0;
+        }
+        crate::api::schema::DefaultValue::Expression(field0) => {
+            let _: String = field0;
+        }
     }
     {
         let EditTarget = None::<crate::api::db::EditTarget>.unwrap();
@@ -959,10 +1452,53 @@ const _: fn() = || {
         }
     }
     {
+        let ExportOptions = None::<crate::api::db::ExportOptions>.unwrap();
+        let _: crate::api::db::ExportFormat = ExportOptions.format;
+        let _: crate::api::db::ExportEncoding = ExportOptions.encoding;
+        let _: String = ExportOptions.delimiter;
+        let _: bool = ExportOptions.header;
+        let _: String = ExportOptions.null_text;
+        let _: String = ExportOptions.table_name;
+    }
+    {
+        let ExportSummary = None::<crate::api::db::ExportSummary>.unwrap();
+        let _: u64 = ExportSummary.rows_written;
+        let _: bool = ExportSummary.source_truncated;
+    }
+    {
+        let Favorite = None::<crate::api::editor::Favorite>.unwrap();
+        let _: String = Favorite.id;
+        let _: String = Favorite.name;
+        let _: String = Favorite.sql;
+    }
+    {
         let FilterCondition = None::<crate::api::db::FilterCondition>.unwrap();
         let _: String = FilterCondition.column;
         let _: crate::api::db::FilterOp = FilterCondition.op;
         let _: String = FilterCondition.value;
+    }
+    {
+        let ForeignKeyDef = None::<crate::api::schema::ForeignKeyDef>.unwrap();
+        let _: String = ForeignKeyDef.name;
+        let _: Vec<String> = ForeignKeyDef.columns;
+        let _: String = ForeignKeyDef.referenced_schema;
+        let _: String = ForeignKeyDef.referenced_table;
+        let _: Vec<String> = ForeignKeyDef.referenced_columns;
+        let _: String = ForeignKeyDef.on_update;
+        let _: String = ForeignKeyDef.on_delete;
+    }
+    {
+        let HistoryEntry = None::<crate::api::editor::HistoryEntry>.unwrap();
+        let _: String = HistoryEntry.sql;
+        let _: i64 = HistoryEntry.executed_at;
+    }
+    {
+        let IndexDef = None::<crate::api::schema::IndexDef>.unwrap();
+        let _: String = IndexDef.name;
+        let _: bool = IndexDef.unique;
+        let _: Vec<String> = IndexDef.columns;
+        let _: String = IndexDef.index_type;
+        let _: String = IndexDef.comment;
     }
     {
         let QuerySummary = None::<crate::api::db::QuerySummary>.unwrap();
@@ -982,10 +1518,23 @@ const _: fn() = || {
         let _: Option<String> = SavedConnection.database;
     }
     {
+        let SqlToken = None::<crate::api::editor::SqlToken>.unwrap();
+        let _: crate::api::editor::SqlTokenKind = SqlToken.kind;
+        let _: u32 = SqlToken.start;
+        let _: u32 = SqlToken.end;
+    }
+    {
         let TableInfo = None::<crate::api::schema::TableInfo>.unwrap();
         let _: String = TableInfo.name;
         let _: u64 = TableInfo.estimated_rows;
         let _: bool = TableInfo.is_view;
+    }
+    {
+        let TableStructure = None::<crate::api::schema::TableStructure>.unwrap();
+        let _: Vec<crate::api::schema::ColumnDef> = TableStructure.columns;
+        let _: Vec<crate::api::schema::IndexDef> = TableStructure.indexes;
+        let _: Vec<crate::api::schema::ForeignKeyDef> = TableStructure.foreign_keys;
+        let _: String = TableStructure.create_sql;
     }
 };
 
@@ -1045,6 +1594,47 @@ impl SseDecode for crate::api::value::CellValue {
     }
 }
 
+impl SseDecode for crate::api::schema::ColumnDef {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_name = <String>::sse_decode(deserializer);
+        let mut var_columnType = <String>::sse_decode(deserializer);
+        let mut var_nullable = <bool>::sse_decode(deserializer);
+        let mut var_default_ = <crate::api::schema::DefaultValue>::sse_decode(deserializer);
+        let mut var_extra = <String>::sse_decode(deserializer);
+        let mut var_comment = <String>::sse_decode(deserializer);
+        let mut var_collation = <Option<String>>::sse_decode(deserializer);
+        return crate::api::schema::ColumnDef {
+            name: var_name,
+            column_type: var_columnType,
+            nullable: var_nullable,
+            default: var_default_,
+            extra: var_extra,
+            comment: var_comment,
+            collation: var_collation,
+        };
+    }
+}
+
+impl SseDecode for crate::api::db::ColumnKind {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut inner = <i32>::sse_decode(deserializer);
+        return match inner {
+            0 => crate::api::db::ColumnKind::Text,
+            1 => crate::api::db::ColumnKind::Number,
+            2 => crate::api::db::ColumnKind::Json,
+            3 => crate::api::db::ColumnKind::Date,
+            4 => crate::api::db::ColumnKind::DateTime,
+            5 => crate::api::db::ColumnKind::Time,
+            6 => crate::api::db::ColumnKind::Enum,
+            7 => crate::api::db::ColumnKind::Set,
+            8 => crate::api::db::ColumnKind::Binary,
+            _ => unreachable!("Invalid variant for ColumnKind: {}", inner),
+        };
+    }
+}
+
 impl SseDecode for crate::api::layouts::ColumnLayout {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -1065,12 +1655,58 @@ impl SseDecode for crate::api::db::ColumnMeta {
         let mut var_orgTable = <String>::sse_decode(deserializer);
         let mut var_schema = <String>::sse_decode(deserializer);
         let mut var_isBinary = <bool>::sse_decode(deserializer);
+        let mut var_kind = <crate::api::db::ColumnKind>::sse_decode(deserializer);
         return crate::api::db::ColumnMeta {
             name: var_name,
             org_name: var_orgName,
             org_table: var_orgTable,
             schema: var_schema,
             is_binary: var_isBinary,
+            kind: var_kind,
+        };
+    }
+}
+
+impl SseDecode for crate::api::editor::Completion {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_replaceStart = <u32>::sse_decode(deserializer);
+        let mut var_replaceEnd = <u32>::sse_decode(deserializer);
+        let mut var_items = <Vec<crate::api::editor::CompletionItem>>::sse_decode(deserializer);
+        return crate::api::editor::Completion {
+            replace_start: var_replaceStart,
+            replace_end: var_replaceEnd,
+            items: var_items,
+        };
+    }
+}
+
+impl SseDecode for crate::api::editor::CompletionItem {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_label = <String>::sse_decode(deserializer);
+        let mut var_insertText = <String>::sse_decode(deserializer);
+        let mut var_kind = <crate::api::editor::CompletionKind>::sse_decode(deserializer);
+        let mut var_detail = <String>::sse_decode(deserializer);
+        return crate::api::editor::CompletionItem {
+            label: var_label,
+            insert_text: var_insertText,
+            kind: var_kind,
+            detail: var_detail,
+        };
+    }
+}
+
+impl SseDecode for crate::api::editor::CompletionKind {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut inner = <i32>::sse_decode(deserializer);
+        return match inner {
+            0 => crate::api::editor::CompletionKind::Table,
+            1 => crate::api::editor::CompletionKind::Column,
+            2 => crate::api::editor::CompletionKind::Alias,
+            3 => crate::api::editor::CompletionKind::Keyword,
+            _ => unreachable!("Invalid variant for CompletionKind: {}", inner),
         };
     }
 }
@@ -1090,6 +1726,32 @@ impl SseDecode for crate::api::db::ConnectionConfig {
             password: var_password,
             database: var_database,
         };
+    }
+}
+
+impl SseDecode for crate::api::schema::DefaultValue {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut tag_ = <i32>::sse_decode(deserializer);
+        match tag_ {
+            0 => {
+                return crate::api::schema::DefaultValue::NoDefault;
+            }
+            1 => {
+                return crate::api::schema::DefaultValue::Null;
+            }
+            2 => {
+                let mut var_field0 = <String>::sse_decode(deserializer);
+                return crate::api::schema::DefaultValue::Literal(var_field0);
+            }
+            3 => {
+                let mut var_field0 = <String>::sse_decode(deserializer);
+                return crate::api::schema::DefaultValue::Expression(var_field0);
+            }
+            _ => {
+                unimplemented!("");
+            }
+        }
     }
 }
 
@@ -1127,10 +1789,81 @@ impl SseDecode for crate::api::db::Editability {
     }
 }
 
+impl SseDecode for crate::api::db::ExportEncoding {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut inner = <i32>::sse_decode(deserializer);
+        return match inner {
+            0 => crate::api::db::ExportEncoding::Utf8,
+            1 => crate::api::db::ExportEncoding::Utf8Bom,
+            2 => crate::api::db::ExportEncoding::Gbk,
+            _ => unreachable!("Invalid variant for ExportEncoding: {}", inner),
+        };
+    }
+}
+
+impl SseDecode for crate::api::db::ExportFormat {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut inner = <i32>::sse_decode(deserializer);
+        return match inner {
+            0 => crate::api::db::ExportFormat::Csv,
+            1 => crate::api::db::ExportFormat::SqlInsert,
+            _ => unreachable!("Invalid variant for ExportFormat: {}", inner),
+        };
+    }
+}
+
+impl SseDecode for crate::api::db::ExportOptions {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_format = <crate::api::db::ExportFormat>::sse_decode(deserializer);
+        let mut var_encoding = <crate::api::db::ExportEncoding>::sse_decode(deserializer);
+        let mut var_delimiter = <String>::sse_decode(deserializer);
+        let mut var_header = <bool>::sse_decode(deserializer);
+        let mut var_nullText = <String>::sse_decode(deserializer);
+        let mut var_tableName = <String>::sse_decode(deserializer);
+        return crate::api::db::ExportOptions {
+            format: var_format,
+            encoding: var_encoding,
+            delimiter: var_delimiter,
+            header: var_header,
+            null_text: var_nullText,
+            table_name: var_tableName,
+        };
+    }
+}
+
+impl SseDecode for crate::api::db::ExportSummary {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_rowsWritten = <u64>::sse_decode(deserializer);
+        let mut var_sourceTruncated = <bool>::sse_decode(deserializer);
+        return crate::api::db::ExportSummary {
+            rows_written: var_rowsWritten,
+            source_truncated: var_sourceTruncated,
+        };
+    }
+}
+
 impl SseDecode for f64 {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         deserializer.cursor.read_f64::<NativeEndian>().unwrap()
+    }
+}
+
+impl SseDecode for crate::api::editor::Favorite {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_id = <String>::sse_decode(deserializer);
+        let mut var_name = <String>::sse_decode(deserializer);
+        let mut var_sql = <String>::sse_decode(deserializer);
+        return crate::api::editor::Favorite {
+            id: var_id,
+            name: var_name,
+            sql: var_sql,
+        };
     }
 }
 
@@ -1170,6 +1903,40 @@ impl SseDecode for crate::api::db::FilterOp {
     }
 }
 
+impl SseDecode for crate::api::schema::ForeignKeyDef {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_name = <String>::sse_decode(deserializer);
+        let mut var_columns = <Vec<String>>::sse_decode(deserializer);
+        let mut var_referencedSchema = <String>::sse_decode(deserializer);
+        let mut var_referencedTable = <String>::sse_decode(deserializer);
+        let mut var_referencedColumns = <Vec<String>>::sse_decode(deserializer);
+        let mut var_onUpdate = <String>::sse_decode(deserializer);
+        let mut var_onDelete = <String>::sse_decode(deserializer);
+        return crate::api::schema::ForeignKeyDef {
+            name: var_name,
+            columns: var_columns,
+            referenced_schema: var_referencedSchema,
+            referenced_table: var_referencedTable,
+            referenced_columns: var_referencedColumns,
+            on_update: var_onUpdate,
+            on_delete: var_onDelete,
+        };
+    }
+}
+
+impl SseDecode for crate::api::editor::HistoryEntry {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_sql = <String>::sse_decode(deserializer);
+        let mut var_executedAt = <i64>::sse_decode(deserializer);
+        return crate::api::editor::HistoryEntry {
+            sql: var_sql,
+            executed_at: var_executedAt,
+        };
+    }
+}
+
 impl SseDecode for i32 {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -1181,6 +1948,24 @@ impl SseDecode for i64 {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         deserializer.cursor.read_i64::<NativeEndian>().unwrap()
+    }
+}
+
+impl SseDecode for crate::api::schema::IndexDef {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_name = <String>::sse_decode(deserializer);
+        let mut var_unique = <bool>::sse_decode(deserializer);
+        let mut var_columns = <Vec<String>>::sse_decode(deserializer);
+        let mut var_indexType = <String>::sse_decode(deserializer);
+        let mut var_comment = <String>::sse_decode(deserializer);
+        return crate::api::schema::IndexDef {
+            name: var_name,
+            unique: var_unique,
+            columns: var_columns,
+            index_type: var_indexType,
+            comment: var_comment,
+        };
     }
 }
 
@@ -1203,6 +1988,18 @@ impl SseDecode for Vec<crate::api::value::CellValue> {
         let mut ans_ = Vec::with_capacity(len_ as usize);
         for idx_ in 0..len_ {
             ans_.push(<crate::api::value::CellValue>::sse_decode(deserializer));
+        }
+        return ans_;
+    }
+}
+
+impl SseDecode for Vec<crate::api::schema::ColumnDef> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<crate::api::schema::ColumnDef>::sse_decode(deserializer));
         }
         return ans_;
     }
@@ -1234,6 +2031,32 @@ impl SseDecode for Vec<crate::api::db::ColumnMeta> {
     }
 }
 
+impl SseDecode for Vec<crate::api::editor::CompletionItem> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<crate::api::editor::CompletionItem>::sse_decode(
+                deserializer,
+            ));
+        }
+        return ans_;
+    }
+}
+
+impl SseDecode for Vec<crate::api::editor::Favorite> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<crate::api::editor::Favorite>::sse_decode(deserializer));
+        }
+        return ans_;
+    }
+}
+
 impl SseDecode for Vec<crate::api::db::FilterCondition> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -1241,6 +2064,44 @@ impl SseDecode for Vec<crate::api::db::FilterCondition> {
         let mut ans_ = Vec::with_capacity(len_ as usize);
         for idx_ in 0..len_ {
             ans_.push(<crate::api::db::FilterCondition>::sse_decode(deserializer));
+        }
+        return ans_;
+    }
+}
+
+impl SseDecode for Vec<crate::api::schema::ForeignKeyDef> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<crate::api::schema::ForeignKeyDef>::sse_decode(
+                deserializer,
+            ));
+        }
+        return ans_;
+    }
+}
+
+impl SseDecode for Vec<crate::api::editor::HistoryEntry> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<crate::api::editor::HistoryEntry>::sse_decode(deserializer));
+        }
+        return ans_;
+    }
+}
+
+impl SseDecode for Vec<crate::api::schema::IndexDef> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<crate::api::schema::IndexDef>::sse_decode(deserializer));
         }
         return ans_;
     }
@@ -1336,6 +2197,18 @@ impl SseDecode for Vec<crate::api::connections::SavedConnection> {
     }
 }
 
+impl SseDecode for Vec<crate::api::editor::SqlToken> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<crate::api::editor::SqlToken>::sse_decode(deserializer));
+        }
+        return ans_;
+    }
+}
+
 impl SseDecode for Vec<crate::api::schema::TableInfo> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -1364,6 +2237,17 @@ impl SseDecode for Option<crate::api::value::CellValue> {
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         if (<bool>::sse_decode(deserializer)) {
             return Some(<crate::api::value::CellValue>::sse_decode(deserializer));
+        } else {
+            return None;
+        }
+    }
+}
+
+impl SseDecode for Option<u64> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        if (<bool>::sse_decode(deserializer)) {
+            return Some(<u64>::sse_decode(deserializer));
         } else {
             return None;
         }
@@ -1408,6 +2292,39 @@ impl SseDecode for crate::api::connections::SavedConnection {
     }
 }
 
+impl SseDecode for crate::api::editor::SqlToken {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_kind = <crate::api::editor::SqlTokenKind>::sse_decode(deserializer);
+        let mut var_start = <u32>::sse_decode(deserializer);
+        let mut var_end = <u32>::sse_decode(deserializer);
+        return crate::api::editor::SqlToken {
+            kind: var_kind,
+            start: var_start,
+            end: var_end,
+        };
+    }
+}
+
+impl SseDecode for crate::api::editor::SqlTokenKind {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut inner = <i32>::sse_decode(deserializer);
+        return match inner {
+            0 => crate::api::editor::SqlTokenKind::Keyword,
+            1 => crate::api::editor::SqlTokenKind::Identifier,
+            2 => crate::api::editor::SqlTokenKind::QuotedIdentifier,
+            3 => crate::api::editor::SqlTokenKind::String,
+            4 => crate::api::editor::SqlTokenKind::Number,
+            5 => crate::api::editor::SqlTokenKind::Comment,
+            6 => crate::api::editor::SqlTokenKind::Variable,
+            7 => crate::api::editor::SqlTokenKind::Operator,
+            8 => crate::api::editor::SqlTokenKind::Punctuation,
+            _ => unreachable!("Invalid variant for SqlTokenKind: {}", inner),
+        };
+    }
+}
+
 impl SseDecode for crate::api::schema::TableInfo {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -1422,10 +2339,34 @@ impl SseDecode for crate::api::schema::TableInfo {
     }
 }
 
+impl SseDecode for crate::api::schema::TableStructure {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_columns = <Vec<crate::api::schema::ColumnDef>>::sse_decode(deserializer);
+        let mut var_indexes = <Vec<crate::api::schema::IndexDef>>::sse_decode(deserializer);
+        let mut var_foreignKeys =
+            <Vec<crate::api::schema::ForeignKeyDef>>::sse_decode(deserializer);
+        let mut var_createSql = <String>::sse_decode(deserializer);
+        return crate::api::schema::TableStructure {
+            columns: var_columns,
+            indexes: var_indexes,
+            foreign_keys: var_foreignKeys,
+            create_sql: var_createSql,
+        };
+    }
+}
+
 impl SseDecode for u16 {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         deserializer.cursor.read_u16::<NativeEndian>().unwrap()
+    }
+}
+
+impl SseDecode for u32 {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        deserializer.cursor.read_u32::<NativeEndian>().unwrap()
     }
 }
 
@@ -1464,35 +2405,46 @@ fn pde_ffi_dispatcher_primary_impl(
 ) {
     // Codec=Pde (Serialization + dispatch), see doc to use other codecs
     match func_id {
-        1 => wire__crate__api__db__apply_edit_impl(port, ptr, rust_vec_len, data_len),
-        2 => wire__crate__api__schema__browse_sql_impl(port, ptr, rust_vec_len, data_len),
-        3 => wire__crate__api__db__close_session_impl(port, ptr, rust_vec_len, data_len),
-        4 => wire__crate__api__db__copy_range_impl(port, ptr, rust_vec_len, data_len),
-        5 => {
+        1 => wire__crate__api__editor__add_history_impl(port, ptr, rust_vec_len, data_len),
+        2 => wire__crate__api__db__apply_edit_impl(port, ptr, rust_vec_len, data_len),
+        3 => wire__crate__api__schema__browse_sql_impl(port, ptr, rust_vec_len, data_len),
+        4 => wire__crate__api__db__close_session_impl(port, ptr, rust_vec_len, data_len),
+        5 => wire__crate__api__db__column_choices_impl(port, ptr, rust_vec_len, data_len),
+        7 => wire__crate__api__db__copy_range_impl(port, ptr, rust_vec_len, data_len),
+        8 => {
             wire__crate__api__connections__delete_connection_impl(port, ptr, rust_vec_len, data_len)
         }
-        6 => wire__crate__api__db__delete_rows_impl(port, ptr, rust_vec_len, data_len),
-        7 => wire__crate__api__value__display_text_impl(port, ptr, rust_vec_len, data_len),
-        8 => wire__crate__api__db__execute_impl(port, ptr, rust_vec_len, data_len),
-        9 => wire__crate__api__db__execute_view_impl(port, ptr, rust_vec_len, data_len),
-        10 => wire__crate__api__db__fetch_window_impl(port, ptr, rust_vec_len, data_len),
-        11 => wire__crate__api__db__fetch_window_text_impl(port, ptr, rust_vec_len, data_len),
-        12 => wire__crate__api__init_app_impl(port, ptr, rust_vec_len, data_len),
-        13 => wire__crate__api__db__insert_row_impl(port, ptr, rust_vec_len, data_len),
-        14 => {
+        9 => wire__crate__api__editor__delete_favorite_impl(port, ptr, rust_vec_len, data_len),
+        10 => wire__crate__api__db__delete_rows_impl(port, ptr, rust_vec_len, data_len),
+        11 => wire__crate__api__value__display_text_impl(port, ptr, rust_vec_len, data_len),
+        12 => wire__crate__api__db__execute_impl(port, ptr, rust_vec_len, data_len),
+        13 => wire__crate__api__db__execute_view_impl(port, ptr, rust_vec_len, data_len),
+        14 => wire__crate__api__db__export_rows_impl(port, ptr, rust_vec_len, data_len),
+        15 => wire__crate__api__db__fetch_window_impl(port, ptr, rust_vec_len, data_len),
+        16 => wire__crate__api__db__fetch_window_text_impl(port, ptr, rust_vec_len, data_len),
+        17 => wire__crate__api__value__format_json_impl(port, ptr, rust_vec_len, data_len),
+        18 => wire__crate__api__value__hex_dump_impl(port, ptr, rust_vec_len, data_len),
+        19 => wire__crate__api__init_app_impl(port, ptr, rust_vec_len, data_len),
+        20 => wire__crate__api__db__insert_row_impl(port, ptr, rust_vec_len, data_len),
+        21 => {
             wire__crate__api__connections__list_connections_impl(port, ptr, rust_vec_len, data_len)
         }
-        15 => wire__crate__api__schema__list_databases_impl(port, ptr, rust_vec_len, data_len),
-        16 => wire__crate__api__schema__list_tables_impl(port, ptr, rust_vec_len, data_len),
-        17 => wire__crate__api__layouts__load_layout_impl(port, ptr, rust_vec_len, data_len),
-        18 => wire__crate__api__connections__load_password_impl(port, ptr, rust_vec_len, data_len),
-        19 => wire__crate__api__db__open_session_impl(port, ptr, rust_vec_len, data_len),
-        20 => wire__crate__api__db__parse_clipboard_impl(port, ptr, rust_vec_len, data_len),
-        21 => wire__crate__api__db__paste_cells_impl(port, ptr, rust_vec_len, data_len),
-        22 => {
+        22 => wire__crate__api__schema__list_databases_impl(port, ptr, rust_vec_len, data_len),
+        23 => wire__crate__api__editor__list_favorites_impl(port, ptr, rust_vec_len, data_len),
+        24 => wire__crate__api__editor__list_history_impl(port, ptr, rust_vec_len, data_len),
+        25 => wire__crate__api__schema__list_tables_impl(port, ptr, rust_vec_len, data_len),
+        26 => wire__crate__api__editor__load_catalog_impl(port, ptr, rust_vec_len, data_len),
+        27 => wire__crate__api__layouts__load_layout_impl(port, ptr, rust_vec_len, data_len),
+        28 => wire__crate__api__connections__load_password_impl(port, ptr, rust_vec_len, data_len),
+        29 => wire__crate__api__db__open_session_impl(port, ptr, rust_vec_len, data_len),
+        30 => wire__crate__api__db__parse_clipboard_impl(port, ptr, rust_vec_len, data_len),
+        31 => wire__crate__api__db__paste_cells_impl(port, ptr, rust_vec_len, data_len),
+        32 => {
             wire__crate__api__connections__save_connection_impl(port, ptr, rust_vec_len, data_len)
         }
-        23 => wire__crate__api__layouts__save_layout_impl(port, ptr, rust_vec_len, data_len),
+        33 => wire__crate__api__editor__save_favorite_impl(port, ptr, rust_vec_len, data_len),
+        34 => wire__crate__api__layouts__save_layout_impl(port, ptr, rust_vec_len, data_len),
+        35 => wire__crate__api__schema__table_structure_impl(port, ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -1505,6 +2457,8 @@ fn pde_ffi_dispatcher_sync_impl(
 ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
     // Codec=Pde (Serialization + dispatch), see doc to use other codecs
     match func_id {
+        6 => wire__crate__api__editor__complete_sql_impl(ptr, rust_vec_len, data_len),
+        36 => wire__crate__api__editor__tokenize_sql_impl(ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -1552,6 +2506,60 @@ impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<crate::api::value::CellValue>>
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::schema::ColumnDef> {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.0.name.into_into_dart().into_dart(),
+            self.0.column_type.into_into_dart().into_dart(),
+            self.0.nullable.into_into_dart().into_dart(),
+            self.0.default.into_into_dart().into_dart(),
+            self.0.extra.into_into_dart().into_dart(),
+            self.0.comment.into_into_dart().into_dart(),
+            self.0.collation.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for FrbWrapper<crate::api::schema::ColumnDef>
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<crate::api::schema::ColumnDef>>
+    for crate::api::schema::ColumnDef
+{
+    fn into_into_dart(self) -> FrbWrapper<crate::api::schema::ColumnDef> {
+        self.into()
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::db::ColumnKind> {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        match self.0 {
+            crate::api::db::ColumnKind::Text => 0.into_dart(),
+            crate::api::db::ColumnKind::Number => 1.into_dart(),
+            crate::api::db::ColumnKind::Json => 2.into_dart(),
+            crate::api::db::ColumnKind::Date => 3.into_dart(),
+            crate::api::db::ColumnKind::DateTime => 4.into_dart(),
+            crate::api::db::ColumnKind::Time => 5.into_dart(),
+            crate::api::db::ColumnKind::Enum => 6.into_dart(),
+            crate::api::db::ColumnKind::Set => 7.into_dart(),
+            crate::api::db::ColumnKind::Binary => 8.into_dart(),
+            _ => unreachable!(),
+        }
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for FrbWrapper<crate::api::db::ColumnKind>
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<crate::api::db::ColumnKind>>
+    for crate::api::db::ColumnKind
+{
+    fn into_into_dart(self) -> FrbWrapper<crate::api::db::ColumnKind> {
+        self.into()
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::layouts::ColumnLayout> {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
@@ -1581,6 +2589,7 @@ impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::db::ColumnMeta> {
             self.0.org_table.into_into_dart().into_dart(),
             self.0.schema.into_into_dart().into_dart(),
             self.0.is_binary.into_into_dart().into_dart(),
+            self.0.kind.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -1593,6 +2602,74 @@ impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<crate::api::db::ColumnMeta>>
     for crate::api::db::ColumnMeta
 {
     fn into_into_dart(self) -> FrbWrapper<crate::api::db::ColumnMeta> {
+        self.into()
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::editor::Completion> {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.0.replace_start.into_into_dart().into_dart(),
+            self.0.replace_end.into_into_dart().into_dart(),
+            self.0.items.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for FrbWrapper<crate::api::editor::Completion>
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<crate::api::editor::Completion>>
+    for crate::api::editor::Completion
+{
+    fn into_into_dart(self) -> FrbWrapper<crate::api::editor::Completion> {
+        self.into()
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::editor::CompletionItem> {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.0.label.into_into_dart().into_dart(),
+            self.0.insert_text.into_into_dart().into_dart(),
+            self.0.kind.into_into_dart().into_dart(),
+            self.0.detail.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for FrbWrapper<crate::api::editor::CompletionItem>
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<crate::api::editor::CompletionItem>>
+    for crate::api::editor::CompletionItem
+{
+    fn into_into_dart(self) -> FrbWrapper<crate::api::editor::CompletionItem> {
+        self.into()
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::editor::CompletionKind> {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        match self.0 {
+            crate::api::editor::CompletionKind::Table => 0.into_dart(),
+            crate::api::editor::CompletionKind::Column => 1.into_dart(),
+            crate::api::editor::CompletionKind::Alias => 2.into_dart(),
+            crate::api::editor::CompletionKind::Keyword => 3.into_dart(),
+            _ => unreachable!(),
+        }
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for FrbWrapper<crate::api::editor::CompletionKind>
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<crate::api::editor::CompletionKind>>
+    for crate::api::editor::CompletionKind
+{
+    fn into_into_dart(self) -> FrbWrapper<crate::api::editor::CompletionKind> {
         self.into()
     }
 }
@@ -1617,6 +2694,35 @@ impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<crate::api::db::ConnectionConf
     for crate::api::db::ConnectionConfig
 {
     fn into_into_dart(self) -> FrbWrapper<crate::api::db::ConnectionConfig> {
+        self.into()
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::schema::DefaultValue> {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        match self.0 {
+            crate::api::schema::DefaultValue::NoDefault => [0.into_dart()].into_dart(),
+            crate::api::schema::DefaultValue::Null => [1.into_dart()].into_dart(),
+            crate::api::schema::DefaultValue::Literal(field0) => {
+                [2.into_dart(), field0.into_into_dart().into_dart()].into_dart()
+            }
+            crate::api::schema::DefaultValue::Expression(field0) => {
+                [3.into_dart(), field0.into_into_dart().into_dart()].into_dart()
+            }
+            _ => {
+                unimplemented!("");
+            }
+        }
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for FrbWrapper<crate::api::schema::DefaultValue>
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<crate::api::schema::DefaultValue>>
+    for crate::api::schema::DefaultValue
+{
+    fn into_into_dart(self) -> FrbWrapper<crate::api::schema::DefaultValue> {
         self.into()
     }
 }
@@ -1666,6 +2772,117 @@ impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<crate::api::db::Editability>>
     for crate::api::db::Editability
 {
     fn into_into_dart(self) -> FrbWrapper<crate::api::db::Editability> {
+        self.into()
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::db::ExportEncoding> {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        match self.0 {
+            crate::api::db::ExportEncoding::Utf8 => 0.into_dart(),
+            crate::api::db::ExportEncoding::Utf8Bom => 1.into_dart(),
+            crate::api::db::ExportEncoding::Gbk => 2.into_dart(),
+            _ => unreachable!(),
+        }
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for FrbWrapper<crate::api::db::ExportEncoding>
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<crate::api::db::ExportEncoding>>
+    for crate::api::db::ExportEncoding
+{
+    fn into_into_dart(self) -> FrbWrapper<crate::api::db::ExportEncoding> {
+        self.into()
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::db::ExportFormat> {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        match self.0 {
+            crate::api::db::ExportFormat::Csv => 0.into_dart(),
+            crate::api::db::ExportFormat::SqlInsert => 1.into_dart(),
+            _ => unreachable!(),
+        }
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for FrbWrapper<crate::api::db::ExportFormat>
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<crate::api::db::ExportFormat>>
+    for crate::api::db::ExportFormat
+{
+    fn into_into_dart(self) -> FrbWrapper<crate::api::db::ExportFormat> {
+        self.into()
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::db::ExportOptions> {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.0.format.into_into_dart().into_dart(),
+            self.0.encoding.into_into_dart().into_dart(),
+            self.0.delimiter.into_into_dart().into_dart(),
+            self.0.header.into_into_dart().into_dart(),
+            self.0.null_text.into_into_dart().into_dart(),
+            self.0.table_name.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for FrbWrapper<crate::api::db::ExportOptions>
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<crate::api::db::ExportOptions>>
+    for crate::api::db::ExportOptions
+{
+    fn into_into_dart(self) -> FrbWrapper<crate::api::db::ExportOptions> {
+        self.into()
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::db::ExportSummary> {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.0.rows_written.into_into_dart().into_dart(),
+            self.0.source_truncated.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for FrbWrapper<crate::api::db::ExportSummary>
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<crate::api::db::ExportSummary>>
+    for crate::api::db::ExportSummary
+{
+    fn into_into_dart(self) -> FrbWrapper<crate::api::db::ExportSummary> {
+        self.into()
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::editor::Favorite> {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.0.id.into_into_dart().into_dart(),
+            self.0.name.into_into_dart().into_dart(),
+            self.0.sql.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for FrbWrapper<crate::api::editor::Favorite>
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<crate::api::editor::Favorite>>
+    for crate::api::editor::Favorite
+{
+    fn into_into_dart(self) -> FrbWrapper<crate::api::editor::Favorite> {
         self.into()
     }
 }
@@ -1723,6 +2940,77 @@ impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<crate::api::db::FilterOp>>
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::schema::ForeignKeyDef> {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.0.name.into_into_dart().into_dart(),
+            self.0.columns.into_into_dart().into_dart(),
+            self.0.referenced_schema.into_into_dart().into_dart(),
+            self.0.referenced_table.into_into_dart().into_dart(),
+            self.0.referenced_columns.into_into_dart().into_dart(),
+            self.0.on_update.into_into_dart().into_dart(),
+            self.0.on_delete.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for FrbWrapper<crate::api::schema::ForeignKeyDef>
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<crate::api::schema::ForeignKeyDef>>
+    for crate::api::schema::ForeignKeyDef
+{
+    fn into_into_dart(self) -> FrbWrapper<crate::api::schema::ForeignKeyDef> {
+        self.into()
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::editor::HistoryEntry> {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.0.sql.into_into_dart().into_dart(),
+            self.0.executed_at.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for FrbWrapper<crate::api::editor::HistoryEntry>
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<crate::api::editor::HistoryEntry>>
+    for crate::api::editor::HistoryEntry
+{
+    fn into_into_dart(self) -> FrbWrapper<crate::api::editor::HistoryEntry> {
+        self.into()
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::schema::IndexDef> {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.0.name.into_into_dart().into_dart(),
+            self.0.unique.into_into_dart().into_dart(),
+            self.0.columns.into_into_dart().into_dart(),
+            self.0.index_type.into_into_dart().into_dart(),
+            self.0.comment.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for FrbWrapper<crate::api::schema::IndexDef>
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<crate::api::schema::IndexDef>>
+    for crate::api::schema::IndexDef
+{
+    fn into_into_dart(self) -> FrbWrapper<crate::api::schema::IndexDef> {
+        self.into()
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::db::QuerySummary> {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
@@ -1772,6 +3060,56 @@ impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<crate::api::connections::Saved
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::editor::SqlToken> {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.0.kind.into_into_dart().into_dart(),
+            self.0.start.into_into_dart().into_dart(),
+            self.0.end.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for FrbWrapper<crate::api::editor::SqlToken>
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<crate::api::editor::SqlToken>>
+    for crate::api::editor::SqlToken
+{
+    fn into_into_dart(self) -> FrbWrapper<crate::api::editor::SqlToken> {
+        self.into()
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::editor::SqlTokenKind> {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        match self.0 {
+            crate::api::editor::SqlTokenKind::Keyword => 0.into_dart(),
+            crate::api::editor::SqlTokenKind::Identifier => 1.into_dart(),
+            crate::api::editor::SqlTokenKind::QuotedIdentifier => 2.into_dart(),
+            crate::api::editor::SqlTokenKind::String => 3.into_dart(),
+            crate::api::editor::SqlTokenKind::Number => 4.into_dart(),
+            crate::api::editor::SqlTokenKind::Comment => 5.into_dart(),
+            crate::api::editor::SqlTokenKind::Variable => 6.into_dart(),
+            crate::api::editor::SqlTokenKind::Operator => 7.into_dart(),
+            crate::api::editor::SqlTokenKind::Punctuation => 8.into_dart(),
+            _ => unreachable!(),
+        }
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for FrbWrapper<crate::api::editor::SqlTokenKind>
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<crate::api::editor::SqlTokenKind>>
+    for crate::api::editor::SqlTokenKind
+{
+    fn into_into_dart(self) -> FrbWrapper<crate::api::editor::SqlTokenKind> {
+        self.into()
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::schema::TableInfo> {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
@@ -1790,6 +3128,29 @@ impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<crate::api::schema::TableInfo>
     for crate::api::schema::TableInfo
 {
     fn into_into_dart(self) -> FrbWrapper<crate::api::schema::TableInfo> {
+        self.into()
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::schema::TableStructure> {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.0.columns.into_into_dart().into_dart(),
+            self.0.indexes.into_into_dart().into_dart(),
+            self.0.foreign_keys.into_into_dart().into_dart(),
+            self.0.create_sql.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for FrbWrapper<crate::api::schema::TableStructure>
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<crate::api::schema::TableStructure>>
+    for crate::api::schema::TableStructure
+{
+    fn into_into_dart(self) -> FrbWrapper<crate::api::schema::TableStructure> {
         self.into()
     }
 }
@@ -1846,6 +3207,42 @@ impl SseEncode for crate::api::value::CellValue {
     }
 }
 
+impl SseEncode for crate::api::schema::ColumnDef {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.name, serializer);
+        <String>::sse_encode(self.column_type, serializer);
+        <bool>::sse_encode(self.nullable, serializer);
+        <crate::api::schema::DefaultValue>::sse_encode(self.default, serializer);
+        <String>::sse_encode(self.extra, serializer);
+        <String>::sse_encode(self.comment, serializer);
+        <Option<String>>::sse_encode(self.collation, serializer);
+    }
+}
+
+impl SseEncode for crate::api::db::ColumnKind {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(
+            match self {
+                crate::api::db::ColumnKind::Text => 0,
+                crate::api::db::ColumnKind::Number => 1,
+                crate::api::db::ColumnKind::Json => 2,
+                crate::api::db::ColumnKind::Date => 3,
+                crate::api::db::ColumnKind::DateTime => 4,
+                crate::api::db::ColumnKind::Time => 5,
+                crate::api::db::ColumnKind::Enum => 6,
+                crate::api::db::ColumnKind::Set => 7,
+                crate::api::db::ColumnKind::Binary => 8,
+                _ => {
+                    unimplemented!("");
+                }
+            },
+            serializer,
+        );
+    }
+}
+
 impl SseEncode for crate::api::layouts::ColumnLayout {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -1862,6 +3259,44 @@ impl SseEncode for crate::api::db::ColumnMeta {
         <String>::sse_encode(self.org_table, serializer);
         <String>::sse_encode(self.schema, serializer);
         <bool>::sse_encode(self.is_binary, serializer);
+        <crate::api::db::ColumnKind>::sse_encode(self.kind, serializer);
+    }
+}
+
+impl SseEncode for crate::api::editor::Completion {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <u32>::sse_encode(self.replace_start, serializer);
+        <u32>::sse_encode(self.replace_end, serializer);
+        <Vec<crate::api::editor::CompletionItem>>::sse_encode(self.items, serializer);
+    }
+}
+
+impl SseEncode for crate::api::editor::CompletionItem {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.label, serializer);
+        <String>::sse_encode(self.insert_text, serializer);
+        <crate::api::editor::CompletionKind>::sse_encode(self.kind, serializer);
+        <String>::sse_encode(self.detail, serializer);
+    }
+}
+
+impl SseEncode for crate::api::editor::CompletionKind {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(
+            match self {
+                crate::api::editor::CompletionKind::Table => 0,
+                crate::api::editor::CompletionKind::Column => 1,
+                crate::api::editor::CompletionKind::Alias => 2,
+                crate::api::editor::CompletionKind::Keyword => 3,
+                _ => {
+                    unimplemented!("");
+                }
+            },
+            serializer,
+        );
     }
 }
 
@@ -1873,6 +3308,31 @@ impl SseEncode for crate::api::db::ConnectionConfig {
         <String>::sse_encode(self.user, serializer);
         <String>::sse_encode(self.password, serializer);
         <Option<String>>::sse_encode(self.database, serializer);
+    }
+}
+
+impl SseEncode for crate::api::schema::DefaultValue {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        match self {
+            crate::api::schema::DefaultValue::NoDefault => {
+                <i32>::sse_encode(0, serializer);
+            }
+            crate::api::schema::DefaultValue::Null => {
+                <i32>::sse_encode(1, serializer);
+            }
+            crate::api::schema::DefaultValue::Literal(field0) => {
+                <i32>::sse_encode(2, serializer);
+                <String>::sse_encode(field0, serializer);
+            }
+            crate::api::schema::DefaultValue::Expression(field0) => {
+                <i32>::sse_encode(3, serializer);
+                <String>::sse_encode(field0, serializer);
+            }
+            _ => {
+                unimplemented!("");
+            }
+        }
     }
 }
 
@@ -1904,10 +3364,72 @@ impl SseEncode for crate::api::db::Editability {
     }
 }
 
+impl SseEncode for crate::api::db::ExportEncoding {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(
+            match self {
+                crate::api::db::ExportEncoding::Utf8 => 0,
+                crate::api::db::ExportEncoding::Utf8Bom => 1,
+                crate::api::db::ExportEncoding::Gbk => 2,
+                _ => {
+                    unimplemented!("");
+                }
+            },
+            serializer,
+        );
+    }
+}
+
+impl SseEncode for crate::api::db::ExportFormat {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(
+            match self {
+                crate::api::db::ExportFormat::Csv => 0,
+                crate::api::db::ExportFormat::SqlInsert => 1,
+                _ => {
+                    unimplemented!("");
+                }
+            },
+            serializer,
+        );
+    }
+}
+
+impl SseEncode for crate::api::db::ExportOptions {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <crate::api::db::ExportFormat>::sse_encode(self.format, serializer);
+        <crate::api::db::ExportEncoding>::sse_encode(self.encoding, serializer);
+        <String>::sse_encode(self.delimiter, serializer);
+        <bool>::sse_encode(self.header, serializer);
+        <String>::sse_encode(self.null_text, serializer);
+        <String>::sse_encode(self.table_name, serializer);
+    }
+}
+
+impl SseEncode for crate::api::db::ExportSummary {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <u64>::sse_encode(self.rows_written, serializer);
+        <bool>::sse_encode(self.source_truncated, serializer);
+    }
+}
+
 impl SseEncode for f64 {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         serializer.cursor.write_f64::<NativeEndian>(self).unwrap();
+    }
+}
+
+impl SseEncode for crate::api::editor::Favorite {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.id, serializer);
+        <String>::sse_encode(self.name, serializer);
+        <String>::sse_encode(self.sql, serializer);
     }
 }
 
@@ -1946,6 +3468,27 @@ impl SseEncode for crate::api::db::FilterOp {
     }
 }
 
+impl SseEncode for crate::api::schema::ForeignKeyDef {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.name, serializer);
+        <Vec<String>>::sse_encode(self.columns, serializer);
+        <String>::sse_encode(self.referenced_schema, serializer);
+        <String>::sse_encode(self.referenced_table, serializer);
+        <Vec<String>>::sse_encode(self.referenced_columns, serializer);
+        <String>::sse_encode(self.on_update, serializer);
+        <String>::sse_encode(self.on_delete, serializer);
+    }
+}
+
+impl SseEncode for crate::api::editor::HistoryEntry {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.sql, serializer);
+        <i64>::sse_encode(self.executed_at, serializer);
+    }
+}
+
 impl SseEncode for i32 {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -1957,6 +3500,17 @@ impl SseEncode for i64 {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         serializer.cursor.write_i64::<NativeEndian>(self).unwrap();
+    }
+}
+
+impl SseEncode for crate::api::schema::IndexDef {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.name, serializer);
+        <bool>::sse_encode(self.unique, serializer);
+        <Vec<String>>::sse_encode(self.columns, serializer);
+        <String>::sse_encode(self.index_type, serializer);
+        <String>::sse_encode(self.comment, serializer);
     }
 }
 
@@ -1976,6 +3530,16 @@ impl SseEncode for Vec<crate::api::value::CellValue> {
         <i32>::sse_encode(self.len() as _, serializer);
         for item in self {
             <crate::api::value::CellValue>::sse_encode(item, serializer);
+        }
+    }
+}
+
+impl SseEncode for Vec<crate::api::schema::ColumnDef> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::api::schema::ColumnDef>::sse_encode(item, serializer);
         }
     }
 }
@@ -2000,12 +3564,62 @@ impl SseEncode for Vec<crate::api::db::ColumnMeta> {
     }
 }
 
+impl SseEncode for Vec<crate::api::editor::CompletionItem> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::api::editor::CompletionItem>::sse_encode(item, serializer);
+        }
+    }
+}
+
+impl SseEncode for Vec<crate::api::editor::Favorite> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::api::editor::Favorite>::sse_encode(item, serializer);
+        }
+    }
+}
+
 impl SseEncode for Vec<crate::api::db::FilterCondition> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         <i32>::sse_encode(self.len() as _, serializer);
         for item in self {
             <crate::api::db::FilterCondition>::sse_encode(item, serializer);
+        }
+    }
+}
+
+impl SseEncode for Vec<crate::api::schema::ForeignKeyDef> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::api::schema::ForeignKeyDef>::sse_encode(item, serializer);
+        }
+    }
+}
+
+impl SseEncode for Vec<crate::api::editor::HistoryEntry> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::api::editor::HistoryEntry>::sse_encode(item, serializer);
+        }
+    }
+}
+
+impl SseEncode for Vec<crate::api::schema::IndexDef> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::api::schema::IndexDef>::sse_encode(item, serializer);
         }
     }
 }
@@ -2080,6 +3694,16 @@ impl SseEncode for Vec<crate::api::connections::SavedConnection> {
     }
 }
 
+impl SseEncode for Vec<crate::api::editor::SqlToken> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::api::editor::SqlToken>::sse_encode(item, serializer);
+        }
+    }
+}
+
 impl SseEncode for Vec<crate::api::schema::TableInfo> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -2110,6 +3734,16 @@ impl SseEncode for Option<crate::api::value::CellValue> {
     }
 }
 
+impl SseEncode for Option<u64> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <bool>::sse_encode(self.is_some(), serializer);
+        if let Some(value) = self {
+            <u64>::sse_encode(value, serializer);
+        }
+    }
+}
+
 impl SseEncode for crate::api::db::QuerySummary {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -2133,6 +3767,38 @@ impl SseEncode for crate::api::connections::SavedConnection {
     }
 }
 
+impl SseEncode for crate::api::editor::SqlToken {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <crate::api::editor::SqlTokenKind>::sse_encode(self.kind, serializer);
+        <u32>::sse_encode(self.start, serializer);
+        <u32>::sse_encode(self.end, serializer);
+    }
+}
+
+impl SseEncode for crate::api::editor::SqlTokenKind {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(
+            match self {
+                crate::api::editor::SqlTokenKind::Keyword => 0,
+                crate::api::editor::SqlTokenKind::Identifier => 1,
+                crate::api::editor::SqlTokenKind::QuotedIdentifier => 2,
+                crate::api::editor::SqlTokenKind::String => 3,
+                crate::api::editor::SqlTokenKind::Number => 4,
+                crate::api::editor::SqlTokenKind::Comment => 5,
+                crate::api::editor::SqlTokenKind::Variable => 6,
+                crate::api::editor::SqlTokenKind::Operator => 7,
+                crate::api::editor::SqlTokenKind::Punctuation => 8,
+                _ => {
+                    unimplemented!("");
+                }
+            },
+            serializer,
+        );
+    }
+}
+
 impl SseEncode for crate::api::schema::TableInfo {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -2142,10 +3808,27 @@ impl SseEncode for crate::api::schema::TableInfo {
     }
 }
 
+impl SseEncode for crate::api::schema::TableStructure {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <Vec<crate::api::schema::ColumnDef>>::sse_encode(self.columns, serializer);
+        <Vec<crate::api::schema::IndexDef>>::sse_encode(self.indexes, serializer);
+        <Vec<crate::api::schema::ForeignKeyDef>>::sse_encode(self.foreign_keys, serializer);
+        <String>::sse_encode(self.create_sql, serializer);
+    }
+}
+
 impl SseEncode for u16 {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         serializer.cursor.write_u16::<NativeEndian>(self).unwrap();
+    }
+}
+
+impl SseEncode for u32 {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        serializer.cursor.write_u32::<NativeEndian>(self).unwrap();
     }
 }
 
