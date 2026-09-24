@@ -4,6 +4,7 @@
 // ignore_for_file: invalid_use_of_internal_member, unused_import, unnecessary_import
 
 import '../frb_generated.dart';
+import 'db.dart';
 
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
@@ -47,6 +48,36 @@ Future<String> saveFavorite({required String name, required String sql}) =>
 
 Future<void> deleteFavorite({required String id}) =>
     RustLib.instance.api.crateApiEditorDeleteFavorite(id: id);
+
+/// 编辑器里有几条语句。界面据此决定走单条（能筛选排序）还是多条脚本
+List<String> splitStatements({required String sql}) =>
+    RustLib.instance.api.crateApiEditorSplitStatements(sql: sql);
+
+/// 多条语句按顺序在同一条连接上跑，每个结果集一个子会话
+Future<ScriptSummary> executeScript({
+  required BigInt sessionId,
+  required String sql,
+  required BigInt maxRows,
+}) => RustLib.instance.api.crateApiEditorExecuteScript(
+  sessionId: sessionId,
+  sql: sql,
+  maxRows: maxRows,
+);
+
+/// 执行计划，结果放进一个子会话
+Future<StatementOutcome> explain({
+  required BigInt sessionId,
+  required String sql,
+  required BigInt maxRows,
+}) => RustLib.instance.api.crateApiEditorExplain(
+  sessionId: sessionId,
+  sql: sql,
+  maxRows: maxRows,
+);
+
+/// 新一轮运行前关掉上一轮的子结果
+Future<void> dropChildResults({required BigInt sessionId}) =>
+    RustLib.instance.api.crateApiEditorDropChildResults(sessionId: sessionId);
 
 class Completion {
   final int replaceStart;
@@ -141,6 +172,24 @@ class HistoryEntry {
           executedAt == other.executedAt;
 }
 
+class ScriptSummary {
+  final List<StatementOutcome> outcomes;
+  final StatementFailure? failure;
+
+  const ScriptSummary({required this.outcomes, this.failure});
+
+  @override
+  int get hashCode => outcomes.hashCode ^ failure.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ScriptSummary &&
+          runtimeType == other.runtimeType &&
+          outcomes == other.outcomes &&
+          failure == other.failure;
+}
+
 class SqlToken {
   final SqlTokenKind kind;
   final int start;
@@ -171,4 +220,59 @@ enum SqlTokenKind {
   variable,
   operator_,
   punctuation,
+}
+
+class StatementFailure {
+  final int index;
+  final String sql;
+  final String message;
+
+  const StatementFailure({
+    required this.index,
+    required this.sql,
+    required this.message,
+  });
+
+  @override
+  int get hashCode => index.hashCode ^ sql.hashCode ^ message.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is StatementFailure &&
+          runtimeType == other.runtimeType &&
+          index == other.index &&
+          sql == other.sql &&
+          message == other.message;
+}
+
+class StatementOutcome {
+  final String sql;
+  final BigInt? sessionId;
+  final QuerySummary? summary;
+  final BigInt affectedRows;
+
+  const StatementOutcome({
+    required this.sql,
+    this.sessionId,
+    this.summary,
+    required this.affectedRows,
+  });
+
+  @override
+  int get hashCode =>
+      sql.hashCode ^
+      sessionId.hashCode ^
+      summary.hashCode ^
+      affectedRows.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is StatementOutcome &&
+          runtimeType == other.runtimeType &&
+          sql == other.sql &&
+          sessionId == other.sessionId &&
+          summary == other.summary &&
+          affectedRows == other.affectedRows;
 }

@@ -9,6 +9,42 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
 part 'schema.freezed.dart';
 
+/// 读到的结构转成可编辑的草稿，哪些列、索引锁住由 core 判定
+TableDraft tableDraft({required TableStructure structure}) =>
+    RustLib.instance.api.crateApiSchemaTableDraft(structure: structure);
+
+/// 预览一批结构改动：语句、危险操作、执行须知
+Future<AlterPlan> previewAlter({
+  required BigInt sessionId,
+  required String database,
+  required String table,
+  required TableStructure original,
+  required TableDraft draft,
+}) => RustLib.instance.api.crateApiSchemaPreviewAlter(
+  sessionId: sessionId,
+  database: database,
+  table: table,
+  original: original,
+  draft: draft,
+);
+
+/// 执行预览过的改动。statements 是预览时拿到的语句，重新生成的不一致就不执行
+Future<void> applyAlter({
+  required BigInt sessionId,
+  required String database,
+  required String table,
+  required TableStructure original,
+  required TableDraft draft,
+  required List<String> statements,
+}) => RustLib.instance.api.crateApiSchemaApplyAlter(
+  sessionId: sessionId,
+  database: database,
+  table: table,
+  original: original,
+  draft: draft,
+  statements: statements,
+);
+
 /// 一张表的列、索引、外键和建表语句，结构页一次取齐
 Future<TableStructure> tableStructure({
   required BigInt sessionId,
@@ -36,6 +72,30 @@ Future<List<TableInfo>> listTables({
 /// 浏览整张表的 SQL。标识符转义在 core 里做，界面不要自己拼
 Future<String> browseSql({required String table}) =>
     RustLib.instance.api.crateApiSchemaBrowseSql(table: table);
+
+class AlterPlan {
+  final List<String> statements;
+  final List<String> dangers;
+  final List<String> notes;
+
+  const AlterPlan({
+    required this.statements,
+    required this.dangers,
+    required this.notes,
+  });
+
+  @override
+  int get hashCode => statements.hashCode ^ dangers.hashCode ^ notes.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is AlterPlan &&
+          runtimeType == other.runtimeType &&
+          statements == other.statements &&
+          dangers == other.dangers &&
+          notes == other.notes;
+}
 
 class ColumnDef {
   final String name;
@@ -78,6 +138,61 @@ class ColumnDef {
           extra == other.extra &&
           comment == other.comment &&
           collation == other.collation;
+}
+
+class ColumnDraft {
+  final String? originalName;
+  final String name;
+  final String columnType;
+  final bool nullable;
+  final DefaultValue default_;
+  final bool autoIncrement;
+  final String? onUpdate;
+  final String comment;
+  final String? collation;
+  final String? locked;
+
+  const ColumnDraft({
+    this.originalName,
+    required this.name,
+    required this.columnType,
+    required this.nullable,
+    required this.default_,
+    required this.autoIncrement,
+    this.onUpdate,
+    required this.comment,
+    this.collation,
+    this.locked,
+  });
+
+  @override
+  int get hashCode =>
+      originalName.hashCode ^
+      name.hashCode ^
+      columnType.hashCode ^
+      nullable.hashCode ^
+      default_.hashCode ^
+      autoIncrement.hashCode ^
+      onUpdate.hashCode ^
+      comment.hashCode ^
+      collation.hashCode ^
+      locked.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ColumnDraft &&
+          runtimeType == other.runtimeType &&
+          originalName == other.originalName &&
+          name == other.name &&
+          columnType == other.columnType &&
+          nullable == other.nullable &&
+          default_ == other.default_ &&
+          autoIncrement == other.autoIncrement &&
+          onUpdate == other.onUpdate &&
+          comment == other.comment &&
+          collation == other.collation &&
+          locked == other.locked;
 }
 
 @freezed
@@ -134,10 +249,58 @@ class ForeignKeyDef {
           onDelete == other.onDelete;
 }
 
+class ForeignKeyDraft {
+  final String? originalName;
+  final String name;
+  final List<String> columns;
+  final String referencedSchema;
+  final String referencedTable;
+  final List<String> referencedColumns;
+  final String onUpdate;
+  final String onDelete;
+
+  const ForeignKeyDraft({
+    this.originalName,
+    required this.name,
+    required this.columns,
+    required this.referencedSchema,
+    required this.referencedTable,
+    required this.referencedColumns,
+    required this.onUpdate,
+    required this.onDelete,
+  });
+
+  @override
+  int get hashCode =>
+      originalName.hashCode ^
+      name.hashCode ^
+      columns.hashCode ^
+      referencedSchema.hashCode ^
+      referencedTable.hashCode ^
+      referencedColumns.hashCode ^
+      onUpdate.hashCode ^
+      onDelete.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ForeignKeyDraft &&
+          runtimeType == other.runtimeType &&
+          originalName == other.originalName &&
+          name == other.name &&
+          columns == other.columns &&
+          referencedSchema == other.referencedSchema &&
+          referencedTable == other.referencedTable &&
+          referencedColumns == other.referencedColumns &&
+          onUpdate == other.onUpdate &&
+          onDelete == other.onDelete;
+}
+
 class IndexDef {
   final String name;
   final bool unique;
   final List<String> columns;
+  final List<IndexPart> parts;
   final String indexType;
   final String comment;
 
@@ -145,6 +308,7 @@ class IndexDef {
     required this.name,
     required this.unique,
     required this.columns,
+    required this.parts,
     required this.indexType,
     required this.comment,
   });
@@ -154,6 +318,7 @@ class IndexDef {
       name.hashCode ^
       unique.hashCode ^
       columns.hashCode ^
+      parts.hashCode ^
       indexType.hashCode ^
       comment.hashCode;
 
@@ -165,8 +330,95 @@ class IndexDef {
           name == other.name &&
           unique == other.unique &&
           columns == other.columns &&
+          parts == other.parts &&
           indexType == other.indexType &&
           comment == other.comment;
+}
+
+class IndexDraft {
+  final String? originalName;
+  final String name;
+  final IndexKind kind;
+  final List<IndexPart> parts;
+  final String comment;
+  final String? locked;
+
+  const IndexDraft({
+    this.originalName,
+    required this.name,
+    required this.kind,
+    required this.parts,
+    required this.comment,
+    this.locked,
+  });
+
+  @override
+  int get hashCode =>
+      originalName.hashCode ^
+      name.hashCode ^
+      kind.hashCode ^
+      parts.hashCode ^
+      comment.hashCode ^
+      locked.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is IndexDraft &&
+          runtimeType == other.runtimeType &&
+          originalName == other.originalName &&
+          name == other.name &&
+          kind == other.kind &&
+          parts == other.parts &&
+          comment == other.comment &&
+          locked == other.locked;
+}
+
+enum IndexKind { primary, unique, normal, fulltext, spatial }
+
+class IndexPart {
+  final String? column;
+  final int? prefix;
+  final bool descending;
+
+  const IndexPart({this.column, this.prefix, required this.descending});
+
+  @override
+  int get hashCode => column.hashCode ^ prefix.hashCode ^ descending.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is IndexPart &&
+          runtimeType == other.runtimeType &&
+          column == other.column &&
+          prefix == other.prefix &&
+          descending == other.descending;
+}
+
+class TableDraft {
+  final List<ColumnDraft> columns;
+  final List<IndexDraft> indexes;
+  final List<ForeignKeyDraft> foreignKeys;
+
+  const TableDraft({
+    required this.columns,
+    required this.indexes,
+    required this.foreignKeys,
+  });
+
+  @override
+  int get hashCode =>
+      columns.hashCode ^ indexes.hashCode ^ foreignKeys.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is TableDraft &&
+          runtimeType == other.runtimeType &&
+          columns == other.columns &&
+          indexes == other.indexes &&
+          foreignKeys == other.foreignKeys;
 }
 
 class TableInfo {
@@ -198,12 +450,14 @@ class TableStructure {
   final List<IndexDef> indexes;
   final List<ForeignKeyDef> foreignKeys;
   final String createSql;
+  final String? tableCollation;
 
   const TableStructure({
     required this.columns,
     required this.indexes,
     required this.foreignKeys,
     required this.createSql,
+    this.tableCollation,
   });
 
   @override
@@ -211,7 +465,8 @@ class TableStructure {
       columns.hashCode ^
       indexes.hashCode ^
       foreignKeys.hashCode ^
-      createSql.hashCode;
+      createSql.hashCode ^
+      tableCollation.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -221,5 +476,6 @@ class TableStructure {
           columns == other.columns &&
           indexes == other.indexes &&
           foreignKeys == other.foreignKeys &&
-          createSql == other.createSql;
+          createSql == other.createSql &&
+          tableCollation == other.tableCollation;
 }

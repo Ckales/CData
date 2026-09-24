@@ -92,6 +92,8 @@ pub struct ResultSet {
     pub rows: Vec<Vec<CellValue>>,
     /// 达到 max_rows 被截断。界面必须显式提示，不能静默丢数据
     pub truncated: bool,
+    /// INSERT / UPDATE / DELETE 等影响的行数。截断时没读到结尾，是 0
+    pub affected_rows: u64,
 }
 
 /// 连接池加上它的超时设置和 SSH 隧道。
@@ -345,14 +347,61 @@ pub async fn run_query_with_params(
     max_rows: usize,
 ) -> Result<ResultSet, mysql_async::Error> {
     let mut conn = pool.get_conn().await?;
+    let (result, usable) = run_on_conn(pool, &mut conn, sql, params, max_rows).await;
+    if !usable {
+        // 状态不明的连接不还回池里，下一次操作换一条新的
+        let _ = conn.disconnect().await;
+    }
+    result
+}
+
+/// 一段脚本的执行结果。failure 是第几条（从 0 数）失败和原因，它之前的语句都已经执行了
+pub struct ScriptRun {
+    pub results: Vec<ResultSet>,
+    pub failure: Option<(usize, mysql_async::Error)>,
+}
+
+/// 多条语句按顺序在**同一条连接**上跑：SET @x、临时表、前面建后面用，都要同一个会话才成立。
+/// 遇到第一条失败就停，不继续执行后面的 —— 后面的语句多半依赖前面的结果
+pub async fn run_script(
+    pool: &DbPool,
+    statements: &[String],
+    max_rows: usize,
+) -> Result<ScriptRun, mysql_async::Error> {
+    let mut conn = pool.get_conn().await?;
+    let mut results = Vec::with_capacity(statements.len());
+
+    for (index, sql) in statements.iter().enumerate() {
+        let (result, usable) = run_on_conn(pool, &mut conn, sql, Vec::new(), max_rows).await;
+        match result {
+            Ok(result) => results.push(result),
+            Err(err) => {
+                if !usable {
+                    let _ = conn.disconnect().await;
+                }
+                return Ok(ScriptRun { results, failure: Some((index, err)) });
+            }
+        }
+    }
+    Ok(ScriptRun { results, failure: None })
+}
+
+/// 在给定连接上跑一条，带查询超时。第二项为 false 表示连接状态不明，调用方必须丢掉它
+async fn run_on_conn(
+    pool: &DbPool,
+    conn: &mut Conn,
+    sql: &str,
+    params: Vec<Value>,
+    max_rows: usize,
+) -> (Result<ResultSet, mysql_async::Error>, bool) {
     let Some(limit) = pool.query_timeout else {
-        return read_result(&mut conn, sql, params, max_rows).await;
+        return (read_result(conn, sql, params, max_rows).await, true);
     };
 
     let connection_id = conn.id();
-    let mut running = Box::pin(read_result(&mut conn, sql, params, max_rows));
+    let mut running = Box::pin(read_result(conn, sql, params, max_rows));
     if let Ok(result) = tokio::time::timeout(limit, &mut running).await {
-        return result;
+        return (result, true);
     }
 
     // 服务器已经卡死时 KILL 本身也可能挂住，同样要有时限
@@ -368,16 +417,13 @@ pub async fn run_query_with_params(
         Ok(Err(_)) | Err(_) => false,
     };
     drop(running);
-    if !finished {
-        // 状态不明的连接不还回池里，下一次操作换一条新的
-        let _ = conn.disconnect().await;
-    }
 
-    Err(mysql_async::Error::Other(Box::new(QueryTimedOut {
+    let err = mysql_async::Error::Other(Box::new(QueryTimedOut {
         seconds: limit.as_secs(),
         confirmed_stopped: kill_error.is_none() && finished,
         kill_error,
-    })))
+    }));
+    (Err(err), finished)
 }
 
 async fn read_result(
@@ -406,14 +452,18 @@ async fn read_result(
     }
 
     // 截断时剩余的行必须读完或丢弃，否则连接状态不干净、无法复用
-    if truncated {
+    let affected_rows = if truncated {
         result.drop_result().await?;
-    }
+        0
+    } else {
+        result.affected_rows()
+    };
 
     Ok(ResultSet {
         columns,
         rows,
         truncated,
+        affected_rows,
     })
 }
 

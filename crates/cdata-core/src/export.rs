@@ -83,7 +83,7 @@ pub fn write_file(
     }
 }
 
-fn temp_path(path: &Path) -> PathBuf {
+pub(crate) fn temp_path(path: &Path) -> PathBuf {
     let mut name = path.file_name().map(|n| n.to_os_string()).unwrap_or_default();
     name.push(".cdata-part");
     path.with_file_name(name)
@@ -112,13 +112,13 @@ fn write_to(
 }
 
 /// 按目标编码写文本。GBK 表示不了的字符报错并带上位置，不替换成 ?
-struct Encoder {
-    writer: BufWriter<File>,
-    encoding: ExportEncoding,
+pub(crate) struct Encoder {
+    pub(crate) writer: BufWriter<File>,
+    pub(crate) encoding: ExportEncoding,
 }
 
 impl Encoder {
-    fn text(&mut self, text: &str, location: &str) -> Result<(), String> {
+    pub(crate) fn text(&mut self, text: &str, location: &str) -> Result<(), String> {
         match self.encoding {
             ExportEncoding::Utf8 | ExportEncoding::Utf8Bom => self.raw(text.as_bytes()),
             ExportEncoding::Gbk => {
@@ -131,7 +131,7 @@ impl Encoder {
         }
     }
 
-    fn raw(&mut self, bytes: &[u8]) -> Result<(), String> {
+    pub(crate) fn raw(&mut self, bytes: &[u8]) -> Result<(), String> {
         self.writer.write_all(bytes).map_err(|e| format!("写文件失败：{e}"))
     }
 }
@@ -180,7 +180,7 @@ fn write_csv(
 }
 
 /// RFC 4180 的引号规则，外加一条：和 NULL 的写法撞车的文本也加引号（空串就写成 ""）
-fn csv_quote(text: &str, delimiter: char, null_text: &str) -> String {
+pub(crate) fn csv_quote(text: &str, delimiter: char, null_text: &str) -> String {
     let needs_quotes = text == null_text
         || text.contains(delimiter)
         || text.contains(['"', '\r', '\n']);

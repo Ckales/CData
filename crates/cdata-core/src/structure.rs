@@ -1,7 +1,7 @@
 //! 表结构：列定义、索引、外键、建表语句。结构查看、类型编辑器、补全都从这里取列信息。
 
 use mysql_async::prelude::*;
-use mysql_async::Row;
+use mysql_async::{Conn, Row};
 use serde::{Deserialize, Serialize};
 
 use crate::db::DbPool;
@@ -38,10 +38,21 @@ pub struct ColumnDef {
 pub struct IndexDef {
     pub name: String,
     pub unique: bool,
-    /// 按顺序的列。前缀索引写成 `title(10)`，函数索引读不到列名时写成 `<表达式>`
+    /// 按顺序的列，给人看的。前缀索引写成 `title(10)`，降序带 ` DESC`，函数索引写成 `<表达式>`
     pub columns: Vec<String>,
+    /// 和 columns 一一对应的结构化信息，改索引时按它重建，不去解析上面的显示文本
+    pub parts: Vec<IndexPart>,
     pub index_type: String,
     pub comment: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct IndexPart {
+    /// 函数索引的这一段没有列名
+    pub column: Option<String>,
+    /// 前缀长度，`title(10)` 的 10
+    pub prefix: Option<u32>,
+    pub descending: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -63,6 +74,8 @@ pub struct TableStructure {
     pub foreign_keys: Vec<ForeignKeyDef>,
     /// SHOW CREATE 的原文。视图也能拿到（CREATE VIEW …）
     pub create_sql: String,
+    /// 表的默认排序规则。列的排序规则和它相同时，改列不写 COLLATE，免得列变成「显式指定」。视图没有
+    pub table_collation: Option<String>,
 }
 
 pub async fn table_structure(
@@ -70,12 +83,22 @@ pub async fn table_structure(
     schema: &str,
     table: &str,
 ) -> Result<TableStructure, mysql_async::Error> {
-    let columns = table_columns(pool, schema, table).await?;
-
     let mut conn = pool.get_conn().await?;
-    let index_rows: Vec<(String, i64, Option<String>, Option<i64>, String, String)> = conn
+    read_structure(&mut conn, schema, table).await
+}
+
+/// 在给定连接上读结构。改结构时读结构、查 sql_mode、执行 ALTER 要在同一条连接上
+pub async fn read_structure(
+    conn: &mut Conn,
+    schema: &str,
+    table: &str,
+) -> Result<TableStructure, mysql_async::Error> {
+    let columns = read_columns(conn, schema, table).await?;
+
+    // COLLATION 是 A / D / NULL：D 是降序（MySQL 8），重建索引时不能丢
+    let index_rows: Vec<(String, i64, Option<String>, Option<i64>, Option<String>, String, String)> = conn
         .exec(
-            "SELECT INDEX_NAME, NON_UNIQUE, COLUMN_NAME, SUB_PART, INDEX_TYPE, INDEX_COMMENT \
+            "SELECT INDEX_NAME, NON_UNIQUE, COLUMN_NAME, SUB_PART, COLLATION, INDEX_TYPE, INDEX_COMMENT \
              FROM information_schema.STATISTICS \
              WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? \
              ORDER BY INDEX_NAME = 'PRIMARY' DESC, INDEX_NAME, SEQ_IN_INDEX",
@@ -84,18 +107,30 @@ pub async fn table_structure(
         .await?;
 
     let mut indexes: Vec<IndexDef> = Vec::new();
-    for (name, non_unique, column, sub_part, index_type, comment) in index_rows {
+    for (name, non_unique, column, sub_part, collation, index_type, comment) in index_rows {
+        let part = IndexPart {
+            column,
+            prefix: sub_part.map(|length| length as u32),
+            descending: collation.as_deref() == Some("D"),
+        };
         // 函数索引（MySQL 8.0.13+）没有列名；表达式本身在建表语句里看
-        let mut part = column.unwrap_or_else(|| "<表达式>".to_string());
-        if let Some(length) = sub_part {
-            part = format!("{part}({length})");
+        let mut label = part.column.clone().unwrap_or_else(|| "<表达式>".to_string());
+        if let Some(length) = part.prefix {
+            label = format!("{label}({length})");
+        }
+        if part.descending {
+            label.push_str(" DESC");
         }
         match indexes.last_mut() {
-            Some(last) if last.name == name => last.columns.push(part),
+            Some(last) if last.name == name => {
+                last.columns.push(label);
+                last.parts.push(part);
+            }
             _ => indexes.push(IndexDef {
                 name,
                 unique: non_unique == 0,
-                columns: vec![part],
+                columns: vec![label],
+                parts: vec![part],
                 index_type,
                 comment,
             }),
@@ -144,7 +179,14 @@ pub async fn table_structure(
         .and_then(|row| row.get::<String, usize>(1))
         .unwrap_or_default();
 
-    Ok(TableStructure { columns, indexes, foreign_keys, create_sql })
+    let table_collation: Option<Option<String>> = conn
+        .exec_first(
+            "SELECT TABLE_COLLATION FROM information_schema.TABLES WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?",
+            (schema, table),
+        )
+        .await?;
+
+    Ok(TableStructure { columns, indexes, foreign_keys, create_sql, table_collation: table_collation.flatten() })
 }
 
 /// 一张表的列定义，按表里的顺序
@@ -154,6 +196,10 @@ pub async fn table_columns(
     table: &str,
 ) -> Result<Vec<ColumnDef>, mysql_async::Error> {
     let mut conn = pool.get_conn().await?;
+    read_columns(&mut conn, schema, table).await
+}
+
+async fn read_columns(conn: &mut Conn, schema: &str, table: &str) -> Result<Vec<ColumnDef>, mysql_async::Error> {
     let rows: Vec<Row> = conn
         .exec(
             "SELECT COLUMN_NAME, COLUMN_TYPE, IS_NULLABLE, COLUMN_DEFAULT, EXTRA, \

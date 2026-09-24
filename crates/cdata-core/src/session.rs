@@ -10,7 +10,7 @@ use mysql_async::prelude::Queryable;
 use mysql_async::TxOpts;
 
 use crate::db::{
-    open_pool, run_query_with_params, ColumnMeta, ConnectFailed, ConnectionConfig, DbPool, OpenError,
+    open_pool, run_query_with_params, run_script, ColumnMeta, ConnectFailed, ConnectionConfig, DbPool, OpenError,
     QueryTimedOut, ResultSet,
 };
 use crate::sql::{build_view, FilterCondition};
@@ -78,7 +78,7 @@ impl Error {
 
 /// 服务器主动断开连接时发来的错误码：
 /// 1053 服务器正在关闭，4031 闲置太久被服务器断开，3169 会话被 KILL（MySQL 8），1927 连接被 KILL（MariaDB）
-const CONNECTION_GONE_CODES: [u16; 4] = [1053, 4031, 3169, 1927];
+pub(crate) const CONNECTION_GONE_CODES: [u16; 4] = [1053, 4031, 3169, 1927];
 
 impl From<mysql_async::Error> for Error {
     /// 按「语句有没有可能执行」分类：取连接时的失败、执行中断线、超时、其余的 MySQL 错误
@@ -138,6 +138,35 @@ struct Session {
     editability: Option<Editability>,
     /// 补全用的库表列目录。load_catalog 之后才有
     catalog: crate::complete::Catalog,
+    /// 多语句脚本和执行计划的每个结果集各放一个子会话，和父会话共用连接池。
+    /// 这样取行、编辑、导出、复制都按会话 id 走原来的接口，不用再加一个「第几个结果」的参数
+    children: Vec<u64>,
+    /// 子会话的父会话。子会话不拥有连接池，关的时候不断开
+    parent: Option<u64>,
+}
+
+/// 脚本里一条语句的结果
+#[derive(Debug, Clone)]
+pub struct StatementOutcome {
+    pub sql: String,
+    /// 有结果集的语句：结果在这个子会话里。INSERT / UPDATE 这类没有结果集，是 None
+    pub session_id: Option<u64>,
+    pub summary: Option<QuerySummary>,
+    pub affected_rows: u64,
+}
+
+/// 脚本在第几条（从 0 数）失败。它前面的语句都已经执行，DDL 和自动提交的写入撤不回来
+#[derive(Debug, Clone)]
+pub struct StatementFailure {
+    pub index: u32,
+    pub sql: String,
+    pub message: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct ScriptSummary {
+    pub outcomes: Vec<StatementOutcome>,
+    pub failure: Option<StatementFailure>,
 }
 
 struct Store {
@@ -177,9 +206,115 @@ pub async fn open_session(config: &ConnectionConfig) -> Result<u64> {
             result: None,
             editability: None,
             catalog: crate::complete::Catalog::default(),
+            children: Vec::new(),
+            parent: None,
         },
     );
     Ok(id)
+}
+
+/// 按顺序跑一段多语句 SQL，全部在同一条连接上。先清掉这个会话上一轮的子结果
+pub async fn execute_script(session_id: u64, sql: &str, max_rows: usize) -> Result<ScriptSummary> {
+    let statements = crate::script::split_statements(sql).map_err(Error::BadInput)?;
+    if statements.is_empty() {
+        return Err(Error::BadInput("没有可执行的语句".to_string()));
+    }
+
+    drop_child_results(session_id)?;
+    let (pool, server) = session_pool(session_id)?;
+    let run = run_script(&pool, &statements, max_rows).await?;
+
+    let mut outcomes = Vec::with_capacity(run.results.len());
+    for (index, result) in run.results.into_iter().enumerate() {
+        outcomes.push(add_outcome(session_id, &pool, &server, statements[index].clone(), result).await?);
+    }
+
+    let failure = run.failure.map(|(index, err)| StatementFailure {
+        index: index as u32,
+        sql: statements[index].clone(),
+        message: Error::from(err).to_string(),
+    });
+    Ok(ScriptSummary { outcomes, failure })
+}
+
+/// 看一条语句的执行计划，结果作为一个子结果。普通 EXPLAIN 不执行语句本身
+pub async fn explain(session_id: u64, sql: &str, max_rows: usize) -> Result<StatementOutcome> {
+    let statement = crate::script::explain_sql(sql).map_err(Error::BadInput)?;
+    let (pool, server) = session_pool(session_id)?;
+    let result = run_query_with_params(&pool, &statement, Vec::new(), max_rows).await?;
+    add_outcome(session_id, &pool, &server, statement, result).await
+}
+
+/// 关掉这个会话挂着的子结果。界面开始新一轮运行时调，旧的结果标签随之作废
+pub fn drop_child_results(session_id: u64) -> Result<()> {
+    let mut guard = store().lock().unwrap();
+    let session = guard
+        .sessions
+        .get_mut(&session_id)
+        .ok_or(Error::NoSuchSession(session_id))?;
+    let children = std::mem::take(&mut session.children);
+    for child in children {
+        guard.sessions.remove(&child);
+    }
+    Ok(())
+}
+
+fn session_pool(session_id: u64) -> Result<(DbPool, String)> {
+    let guard = store().lock().unwrap();
+    let session = guard
+        .sessions
+        .get(&session_id)
+        .ok_or(Error::NoSuchSession(session_id))?;
+    Ok((session.pool.clone(), session.server.clone()))
+}
+
+/// 有结果集的放进一个新的子会话；没有结果集的只记影响行数
+async fn add_outcome(
+    parent_id: u64,
+    pool: &DbPool,
+    server: &str,
+    sql: String,
+    result: ResultSet,
+) -> Result<StatementOutcome> {
+    let affected_rows = result.affected_rows;
+    if result.columns.is_empty() {
+        return Ok(StatementOutcome { sql, session_id: None, summary: None, affected_rows });
+    }
+
+    let (summary, editability) = summarize(pool, server, &result).await;
+    let mut guard = store().lock().unwrap();
+    // 父会话在执行期间被关掉了，结果没处挂，直接报错
+    if !guard.sessions.contains_key(&parent_id) {
+        return Err(Error::NoSuchSession(parent_id));
+    }
+    let id = guard.next_id;
+    guard.next_id += 1;
+    guard.sessions.insert(
+        id,
+        Session {
+            pool: pool.clone(),
+            server: server.to_string(),
+            result: Some(result),
+            editability: Some(editability),
+            catalog: crate::complete::Catalog::default(),
+            children: Vec::new(),
+            parent: Some(parent_id),
+        },
+    );
+    guard.sessions.get_mut(&parent_id).unwrap().children.push(id);
+    Ok(StatementOutcome { sql, session_id: Some(id), summary: Some(summary), affected_rows })
+}
+
+async fn summarize(pool: &DbPool, server: &str, result: &ResultSet) -> (QuerySummary, Editability) {
+    let editability = detect_editability(pool, &result.columns).await;
+    let summary = QuerySummary {
+        columns: result.columns.clone(),
+        total_rows: result.rows.len() as u64,
+        truncated: result.truncated,
+        editability: editability.clone(),
+        layout_key: crate::layouts::layout_key(server, &result.columns),
+    };
+    (summary, editability)
 }
 
 /// 跑查询并把结果留在会话里，只回概况
@@ -207,25 +342,10 @@ async fn execute_statement(
     max_rows: usize,
 ) -> Result<QuerySummary> {
     // 先把池克隆出来再释放锁，避免把锁持过 await
-    let (pool, server) = {
-        let guard = store().lock().unwrap();
-        let session = guard
-            .sessions
-            .get(&session_id)
-            .ok_or(Error::NoSuchSession(session_id))?;
-        (session.pool.clone(), session.server.clone())
-    };
+    let (pool, server) = session_pool(session_id)?;
 
     let result = run_query_with_params(&pool, sql, params, max_rows).await?;
-    let editability = detect_editability(&pool, &result.columns).await;
-
-    let summary = QuerySummary {
-        columns: result.columns.clone(),
-        total_rows: result.rows.len() as u64,
-        truncated: result.truncated,
-        editability: editability.clone(),
-        layout_key: crate::layouts::layout_key(&server, &result.columns),
-    };
+    let (summary, editability) = summarize(&pool, &server, &result).await;
 
     let mut guard = store().lock().unwrap();
     let session = guard
@@ -410,6 +530,123 @@ pub async fn table_structure(
 ) -> Result<crate::structure::TableStructure> {
     let pool = pool_of(session_id)?;
     Ok(crate::structure::table_structure(&pool, database, table).await?)
+}
+
+/// 预览一批表结构改动：生成的语句、危险操作、执行须知。
+///
+/// 可空改成 NOT NULL 的列当场数一次现有的 NULL，数出来的行数放进危险提示
+pub async fn preview_alter(
+    session_id: u64,
+    database: &str,
+    table: &str,
+    original: &crate::structure::TableStructure,
+    draft: &crate::alter::TableDraft,
+) -> Result<crate::alter::AlterPlan> {
+    let pool = pool_of(session_id)?;
+    let mut conn = pool.get_conn().await?;
+    let (mut plan, not_null_columns) = plan_alter_on(&mut conn, database, table, original, draft).await?;
+
+    for column in not_null_columns {
+        let sql = format!(
+            "SELECT COUNT(*) FROM {}.{} WHERE {} IS NULL",
+            crate::sql::quote_ident(database),
+            crate::sql::quote_ident(table),
+            crate::sql::quote_ident(&column)
+        );
+        let nulls: u64 = conn.query_first(sql).await?.unwrap_or(0);
+        if nulls > 0 {
+            plan.dangers.push(format!(
+                "列 {column} 改成 NOT NULL，现有 {nulls} 行是 NULL：严格模式下这次 ALTER 会失败；\
+                 非严格模式下这些 NULL 会被改成该类型的零值（0、''、零日期）"
+            ));
+        } else {
+            plan.notes.push(format!("列 {column} 改成 NOT NULL：刚查过，现在没有 NULL 值"));
+        }
+    }
+    Ok(plan)
+}
+
+/// 执行预览过的改动。在同一条连接上重新核对结构、按这条连接的 sql_mode 重新生成，
+/// 和预览时的语句不一致就不执行
+pub async fn apply_alter(
+    session_id: u64,
+    database: &str,
+    table: &str,
+    original: &crate::structure::TableStructure,
+    draft: &crate::alter::TableDraft,
+    previewed: &[String],
+) -> Result<()> {
+    let pool = pool_of(session_id)?;
+    let mut conn = pool.get_conn().await?;
+    let (plan, _) = plan_alter_on(&mut conn, database, table, original, draft).await?;
+    if plan.statements != previewed {
+        return Err(Error::BadInput(
+            "要执行的语句和预览时不一样了（表结构或 sql_mode 变了），请重新预览".to_string(),
+        ));
+    }
+
+    let total = plan.statements.len();
+    crate::alter::run_statements(&mut conn, &plan.statements).await.map_err(|(index, err)| {
+        let err = Error::from(err);
+        let this_one = if matches!(err, Error::ConnectionLost(_)) {
+            "这一条可能已经生效也可能没有，请重新读取结构确认"
+        } else {
+            "这一条没有生效"
+        };
+        let before = if index == 0 {
+            "前面没有已执行的语句".to_string()
+        } else {
+            format!("前 {index} 条已经生效，不会回滚")
+        };
+        Error::EditFailed(format!("第 {} 条（共 {total} 条）执行失败：{err}。{this_one}；{before}", index + 1))
+    })
+}
+
+/// 核对版本和结构，读这条连接的 sql_mode，生成语句
+async fn plan_alter_on(
+    conn: &mut mysql_async::Conn,
+    database: &str,
+    table: &str,
+    original: &crate::structure::TableStructure,
+    draft: &crate::alter::TableDraft,
+) -> Result<(crate::alter::AlterPlan, Vec<String>)> {
+    let version: String = conn.query_first("SELECT VERSION()").await?.unwrap_or_default();
+    if !crate::alter::supports_alter(&version) {
+        return Err(Error::BadInput(format!(
+            "结构编辑只支持 MySQL 8.0.13 及以上（当前 {version}）：更早的版本和 MariaDB 读出来的默认值规则不同，\
+             没法保证改列时原样带上原有定义"
+        )));
+    }
+
+    // 编辑器打开之后别人改过表的话，照旧草稿 MODIFY 会把别人的改动覆盖回去
+    let fresh = crate::structure::read_structure(conn, database, table).await?;
+    if !fresh.create_sql.starts_with("CREATE TABLE") {
+        return Err(Error::BadInput("只有普通表能用结构编辑器修改，视图请直接写 SQL".to_string()));
+    }
+    if fresh.columns != original.columns
+        || fresh.indexes != original.indexes
+        || fresh.foreign_keys != original.foreign_keys
+    {
+        return Err(Error::BadInput(
+            "表结构在打开编辑器之后被改过，请关掉编辑器重新打开，免得把别人的改动覆盖回去".to_string(),
+        ));
+    }
+
+    let sql_mode: String = conn.query_first("SELECT @@SESSION.sql_mode").await?.unwrap_or_default();
+    let no_backslash_escapes = sql_mode.split(',').any(|mode| mode == "NO_BACKSLASH_ESCAPES");
+    crate::alter::plan_alter(database, table, &fresh, draft, no_backslash_escapes).map_err(Error::BadInput)
+}
+
+/// 导入前读目标表：列能不能写、要不要必填，以及当前 sql_mode 是不是 strict
+pub async fn prepare_import(session_id: u64, database: &str, table: &str) -> Result<crate::import::ImportTarget> {
+    let pool = pool_of(session_id)?;
+    crate::import::prepare(&pool, database, table).await
+}
+
+/// 在后台开始导入，返回任务 id。进度和结果用 import::status 取
+pub async fn start_import(session_id: u64, request: crate::import::ImportRequest) -> Result<u64> {
+    let pool = pool_of(session_id)?;
+    crate::import::start(pool, request).await
 }
 
 /// 取会话的连接池并立刻释放锁，不把锁持过 await
@@ -823,12 +1060,24 @@ fn edit_target(session: &Session, session_id: u64) -> Result<EditTarget> {
 pub async fn close_session(session_id: u64) -> Result<()> {
     let session = {
         let mut guard = store().lock().unwrap();
-        guard
+        let session = guard
             .sessions
             .remove(&session_id)
-            .ok_or(Error::NoSuchSession(session_id))?
+            .ok_or(Error::NoSuchSession(session_id))?;
+        for child in &session.children {
+            guard.sessions.remove(child);
+        }
+        if let Some(parent) = session.parent {
+            if let Some(parent) = guard.sessions.get_mut(&parent) {
+                parent.children.retain(|id| *id != session_id);
+            }
+        }
+        session
     };
 
-    session.pool.disconnect().await?;
+    // 子会话和父会话共用连接池，只有父会话关的时候才断开
+    if session.parent.is_none() {
+        session.pool.disconnect().await?;
+    }
     Ok(())
 }
