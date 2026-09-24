@@ -1,0 +1,41 @@
+# 构建产物
+crates/*/target/
+flutter_ui/rust/target/
+flutter_ui/macos/Pods/
+flutter_ui/macos/Flutter/ephemeral/
+flutter_ui/windows/flutter/ephemeral/
+
+# AI 指令与本地开发文档，不进开源仓库
+AGENTS.md
+CLAUDE.md
+DEV_NOTES.md
+ROADMAP.md
+
+# 凭据与连接配置 —— 绝不入库
+# 连接信息存在系统钥匙串和用户数据目录，仓库里不该出现任何一份
+*.local.toml
+*.local.json
+*.local.yaml
+connections.json
+.env
+.env.*
+*.pem
+*.key
+*.p12
+id_rsa*
+id_ed25519*
+
+# 业务数据 —— 导入导出的结果很容易顺手 commit 进来
+*.sql
+*.csv
+*.tsv
+*.dump
+*.sql.gz
+
+# 本地工具日志
+.setting
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
