@@ -5,6 +5,7 @@ import 'package:file_selector/file_selector.dart' show openFile;
 
 import 'connection_options.dart';
 import 'data_source.dart';
+import 'import_dialog.dart';
 import 'preferences_dialog.dart';
 import 'query_tab.dart';
 import 'sql_library.dart';
@@ -550,6 +551,16 @@ class _QueryPageState extends State<QueryPage> {
                         onShowStructure: (table) => showTableStructure(
                           context,
                           source: schema.source,
+                          database: database ?? '',
+                          table: table,
+                          // 改表不增删表，侧栏清单不用刷；列变了，补全目录要重读
+                          onAltered: () => _loadCatalog(schema, entry.config!),
+                        ),
+                        // 导入用侧栏的会话开自己独占的连接，不占标签的会话。
+                        // 导完不自动重跑当前标签：标签里的 SQL 不一定和这张表有关，结果在对话框里看
+                        onImport: (table) => showImportDialog(
+                          context,
+                          source: RustImportSource(schema.id),
                           database: database ?? '',
                           table: table,
                         ),

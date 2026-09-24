@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 
 import 'data_source.dart';
 import 'src/rust/api/schema.dart';
+import 'structure_editor.dart';
 
 /// 表结构对话框：列 / 索引 / 外键 / 建表语句四页
 Future<void> showTableStructure(
@@ -10,10 +11,11 @@ Future<void> showTableStructure(
   required SchemaSource source,
   required String database,
   required String table,
+  VoidCallback? onAltered,
 }) {
   return showDialog<void>(
     context: context,
-    builder: (context) => _StructureDialog(source: source, database: database, table: table),
+    builder: (context) => _StructureDialog(source: source, database: database, table: table, onAltered: onAltered),
   );
 }
 
@@ -22,7 +24,10 @@ class _StructureDialog extends StatefulWidget {
   final String database;
   final String table;
 
-  const _StructureDialog({required this.source, required this.database, required this.table});
+  /// 结构改动执行成功后立刻调（不等关窗），调用方据此刷新补全目录等
+  final VoidCallback? onAltered;
+
+  const _StructureDialog({required this.source, required this.database, required this.table, this.onAltered});
 
   @override
   State<_StructureDialog> createState() => _StructureDialogState();
@@ -48,6 +53,27 @@ class _StructureDialogState extends State<_StructureDialog> {
     }
   }
 
+  /// 改完重读，页面上显示的永远是库里现在的结构
+  Future<void> _edit() async {
+    final structure = _structure;
+    if (structure == null) return;
+    final applied = await showStructureEditor(
+      context,
+      source: widget.source,
+      database: widget.database,
+      table: widget.table,
+      structure: structure,
+    );
+    if (!applied) return;
+    widget.onAltered?.call();
+    if (!mounted) return;
+    setState(() {
+      _structure = null;
+      _error = null;
+    });
+    await _load();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Dialog(
@@ -66,6 +92,12 @@ class _StructureDialogState extends State<_StructureDialog> {
                     style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
                   ),
                   const Spacer(),
+                  if (_structure != null)
+                    TextButton.icon(
+                      onPressed: _edit,
+                      icon: const Icon(Icons.edit_outlined, size: 16),
+                      label: const Text('编辑', style: TextStyle(fontSize: 12)),
+                    ),
                   IconButton(
                     tooltip: '关闭',
                     iconSize: 18,

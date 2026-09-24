@@ -13,6 +13,9 @@ class TableSidebar extends StatefulWidget {
   /// 右键菜单里的「查看结构」。null 就不给这一项
   final void Function(String table)? onShowStructure;
 
+  /// 右键菜单里的「导入 CSV」。null 就不给这一项
+  final void Function(String table)? onImport;
+
   const TableSidebar({
     super.key,
     required this.source,
@@ -20,6 +23,7 @@ class TableSidebar extends StatefulWidget {
     required this.onDatabaseChanged,
     required this.onTableSelected,
     this.onShowStructure,
+    this.onImport,
   });
 
   @override
@@ -97,6 +101,7 @@ class _TableSidebarState extends State<TableSidebar> {
   /// 右键菜单，出现在鼠标位置
   Future<void> _showMenu(String table, Offset position) async {
     final onShowStructure = widget.onShowStructure;
+    final onImport = widget.onImport;
     final choice = await showMenu<String>(
       context: context,
       position: RelativeRect.fromLTRB(position.dx, position.dy, position.dx, position.dy),
@@ -112,11 +117,18 @@ class _TableSidebarState extends State<TableSidebar> {
             height: 32,
             child: Text('查看结构', style: TextStyle(fontSize: 12)),
           ),
+        if (onImport != null)
+          const PopupMenuItem(
+            value: 'import',
+            height: 32,
+            child: Text('导入 CSV…', style: TextStyle(fontSize: 12)),
+          ),
       ],
     );
     if (!mounted) return;
     if (choice == 'browse') _browse(table);
     if (choice == 'structure' && onShowStructure != null) onShowStructure(table);
+    if (choice == 'import' && onImport != null) onImport(table);
   }
 
   @override

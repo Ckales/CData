@@ -6,6 +6,9 @@ import 'result_grid.dart';
 import 'sql_editor.dart';
 import 'sql_library.dart';
 import 'src/rust/api/db.dart';
+import 'src/rust/api/editor.dart';
+// 和下面 QueryRunner 的同名方法重名，方法体里直接调会解析成方法自己
+import 'src/rust/api/editor.dart' as editor show explain, dropChildResults;
 import 'src/rust/api/options.dart';
 
 /// 一个标签页跑查询的后端。每个标签一个会话：结果集留在会话里，一个会话只放一份结果
@@ -21,6 +24,21 @@ abstract class QueryRunner {
   /// 这次结果的网格数据源。每次查询完成只建一次 —— 每次重绘都新建的话，
   /// 网格会以为换了结果集，把窗口、选区全部重置
   GridSource gridSource(QuerySummary summary);
+
+  /// 编辑器里的语句，由 core 按分号切。拿不准（DELIMITER、存储过程体）就抛错
+  List<String> split(String sql);
+
+  /// 多条语句按顺序在同一条连接上跑，每个结果集放在一个子会话里
+  Future<ScriptSummary> runScript(String sql);
+
+  /// 执行计划。结果同样放在子会话里
+  Future<StatementOutcome> explain(String sql);
+
+  /// 子结果的网格数据源，和 gridSource 一样每个结果只建一次
+  GridSource childSource(StatementOutcome outcome);
+
+  /// 新一轮运行前关掉上一轮的子结果
+  Future<void> dropChildResults();
 
   /// 关掉会话。之后再 run 会开一个新的
   Future<void> close();
@@ -85,6 +103,32 @@ class RustQueryRunner implements QueryRunner {
   @override
   GridSource gridSource(QuerySummary summary) {
     return RustGridSource(sessionId: _sessionId!, summary: summary);
+  }
+
+  @override
+  List<String> split(String sql) => splitStatements(sql: sql);
+
+  @override
+  Future<ScriptSummary> runScript(String sql) async {
+    final id = _sessionId ??= await _open();
+    return executeScript(sessionId: id, sql: sql, maxRows: maxRows());
+  }
+
+  @override
+  Future<StatementOutcome> explain(String sql) async {
+    final id = _sessionId ??= await _open();
+    return editor.explain(sessionId: id, sql: sql, maxRows: maxRows());
+  }
+
+  @override
+  GridSource childSource(StatementOutcome outcome) {
+    return RustGridSource(sessionId: outcome.sessionId!, summary: outcome.summary!);
+  }
+
+  @override
+  Future<void> dropChildResults() async {
+    final id = _sessionId;
+    if (id != null) await editor.dropChildResults(sessionId: id);
   }
 
   @override
@@ -156,6 +200,15 @@ class QueryTabState extends State<QueryTab> {
   /// 靠它继续显示筛选条，才能把写错的条件改掉或清掉
   List<String> _columns = const [];
 
+  /// 多语句脚本的结果集和执行计划，每个一个结果标签。单条语句的结果还是 _source，筛选排序只对它
+  List<_ExtraResult> _extras = const [];
+
+  /// 在看第几个结果，下标对着 _views
+  int _activeResult = 0;
+
+  /// 脚本跑完的概况，比如执行了几条、影响了多少行
+  String? _scriptNotice;
+
   @override
   void dispose() {
     _sql.dispose();
@@ -168,16 +221,28 @@ class QueryTabState extends State<QueryTab> {
     await run();
   }
 
-  /// 跑编辑器里的 SQL，筛选和排序都清掉
+  /// 跑编辑器里的 SQL，筛选和排序都清掉。一条语句走能筛选排序的单条路径，多条走脚本
   Future<void> run() async {
     if (_busy) return;
     _baseSql = _sql.text;
+
+    final List<String> statements;
+    try {
+      statements = widget.runner.split(_baseSql);
+    } catch (e) {
+      setState(() => _error = '$e');
+      return;
+    }
+
     setState(() {
       _sortColumn = null;
       _sortAscending = true;
       _filters = const [];
       _matchAll = true;
       _columns = const [];
+      _extras = const [];
+      _activeResult = 0;
+      _scriptNotice = null;
     });
     widget.onRan(_baseSql);
 
@@ -188,9 +253,122 @@ class QueryTabState extends State<QueryTab> {
       historyError = '记录历史失败：$e';
     }
 
-    await _runView();
+    try {
+      await widget.runner.dropChildResults();
+    } catch (e) {
+      if (mounted) setState(() => _error = '清理上一轮的结果失败：$e');
+      return;
+    }
+
+    if (statements.length > 1) {
+      await _runScript();
+    } else {
+      await _runView();
+    }
     // 历史没记上不影响查询，但要让人知道
     if (mounted && historyError != null && _error == null) setState(() => _error = historyError);
+  }
+
+  Future<void> _runScript() async {
+    setState(() {
+      _busy = true;
+      _error = null;
+      _source = null;
+    });
+
+    final started = DateTime.now();
+    try {
+      final summary = await widget.runner.runScript(_baseSql);
+      if (!mounted) return;
+
+      final extras = <_ExtraResult>[];
+      var withoutResult = 0;
+      var affected = BigInt.zero;
+      for (final outcome in summary.outcomes) {
+        if (outcome.sessionId == null) {
+          withoutResult++;
+          affected += outcome.affectedRows;
+          continue;
+        }
+        extras.add(
+          _ExtraResult(
+            title: '结果 ${extras.length + 1}',
+            sql: outcome.sql,
+            source: widget.runner.childSource(outcome),
+            isPlan: false,
+          ),
+        );
+      }
+
+      var notice = '执行了 ${summary.outcomes.length} 条语句';
+      if (withoutResult > 0) notice += '，其中 $withoutResult 条没有结果集，共影响 $affected 行';
+
+      final failure = summary.failure;
+      setState(() {
+        _extras = extras;
+        _activeResult = 0;
+        _scriptNotice = notice;
+        _elapsed = DateTime.now().difference(started);
+        if (failure != null) _error = _describeFailure(failure);
+      });
+      widget.onConnected();
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _error = '$e');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  /// 失败之前的语句已经生效：DDL 隐式提交，自动提交下的写入也撤不回来，要说清楚
+  String _describeFailure(StatementFailure failure) {
+    final number = failure.index + 1;
+    final head = failure.index == 0
+        ? '第 1 条语句失败，后面的没有执行。'
+        : '第 $number 条语句失败，后面的没有执行；前面 ${failure.index} 条已经执行，写入和 DDL 撤不回来。';
+    return '$head\n${failure.sql}\n${failure.message}';
+  }
+
+  /// 看当前语句的执行计划，放在一个结果标签里。同时只留一份，再看就替换
+  Future<void> _explain() async {
+    if (_busy) return;
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      final outcome = await widget.runner.explain(_sql.text);
+      if (!mounted) return;
+      final plan = _ExtraResult(
+        title: '执行计划',
+        sql: outcome.sql,
+        source: widget.runner.childSource(outcome),
+        isPlan: true,
+      );
+      setState(() {
+        _extras = [
+          for (final extra in _extras)
+            if (!extra.isPlan) extra,
+          plan,
+        ];
+        _activeResult = _views.length - 1;
+      });
+      widget.onConnected();
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _error = '$e');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  /// 结果标签：单条语句的结果（有的话）在最前，后面是脚本结果和执行计划
+  List<_ResultView> get _views {
+    final source = _source;
+    return [
+      if (source != null) _ResultView(title: '结果', sql: _baseSql, source: source, isMain: true),
+      for (final extra in _extras) _ResultView(title: extra.title, sql: extra.sql, source: extra.source, isMain: false),
+    ];
   }
 
   /// 连接参数变了：关掉会话、清掉结果。下次 run 会按新参数重开
@@ -201,6 +379,9 @@ class QueryTabState extends State<QueryTab> {
       _source = null;
       _error = null;
       _elapsed = null;
+      _extras = const [];
+      _activeResult = 0;
+      _scriptNotice = null;
     });
   }
 
@@ -275,7 +456,10 @@ class QueryTabState extends State<QueryTab> {
 
   @override
   Widget build(BuildContext context) {
-    final source = _source;
+    final views = _views;
+    final active = views.isEmpty ? 0 : _activeResult.clamp(0, views.length - 1);
+    final showingMain = views.isNotEmpty && views[active].isMain;
+    final notice = _scriptNotice;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -285,9 +469,11 @@ class QueryTabState extends State<QueryTab> {
           busy: _busy,
           onRun: _busy ? null : run,
           onOpenLibrary: _openLibrary,
+          onExplain: _busy ? null : _explain,
           fontSize: widget.editorFontSize,
         ),
-        if (_columns.isNotEmpty)
+        // 筛选只作用在单条语句的结果上，看脚本结果和执行计划时不显示
+        if (_columns.isNotEmpty && (views.isEmpty || showingMain))
           FilterBar(
             conditions: _filters,
             matchAll: _matchAll,
@@ -295,26 +481,42 @@ class QueryTabState extends State<QueryTab> {
             onClear: _busy ? null : _clearFilter,
           ),
         if (_error != null) _ErrorBanner(message: _error!),
-        if (_elapsed != null && _error == null)
+        // 脚本失败时也要显示概况：失败之前执行了几条，和错误信息一起看
+        if (_elapsed != null && (_error == null || notice != null))
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
             child: Text(
-              '耗时 ${_elapsed!.inMilliseconds} ms',
+              notice == null ? '耗时 ${_elapsed!.inMilliseconds} ms' : '耗时 ${_elapsed!.inMilliseconds} ms · $notice',
               style: TextStyle(
                 fontSize: 11,
                 color: Theme.of(context).colorScheme.onSurfaceVariant,
               ),
             ),
           ),
+        if (views.length > 1)
+          _ResultStrip(
+            views: views,
+            active: active,
+            onSelect: (index) => setState(() => _activeResult = index),
+          ),
         Expanded(
-          child: source == null
-              ? const Center(child: Text('填好连接信息，运行一条查询'))
-              : ResultGrid(
-                  source: source,
-                  onSortColumn: _sortBy,
-                  sortColumn: _sortColumn,
-                  sortAscending: _sortAscending,
-                  pickSavePath: widget.pickSavePath,
+          child: views.isEmpty
+              ? Center(child: Text(notice == null ? '填好连接信息，运行一条查询' : '这段 SQL 没有返回结果集'))
+              // 不在前台的结果也留着，切回来滚动位置和选区都还在
+              : IndexedStack(
+                  index: active,
+                  children: [
+                    for (final view in views)
+                      ResultGrid(
+                        key: ObjectKey(view.source),
+                        source: view.source,
+                        // 脚本结果和执行计划不能按列重跑：单独重跑一条语句可能拿不到它依赖的会话状态
+                        onSortColumn: view.isMain ? _sortBy : null,
+                        sortColumn: view.isMain ? _sortColumn : null,
+                        sortAscending: _sortAscending,
+                        pickSavePath: widget.pickSavePath,
+                      ),
+                  ],
                 ),
         ),
       ],
@@ -328,6 +530,7 @@ class _SqlBar extends StatelessWidget {
   final bool busy;
   final VoidCallback? onRun;
   final VoidCallback onOpenLibrary;
+  final VoidCallback? onExplain;
   final double fontSize;
 
   const _SqlBar({
@@ -336,6 +539,7 @@ class _SqlBar extends StatelessWidget {
     required this.busy,
     required this.onRun,
     required this.onOpenLibrary,
+    required this.onExplain,
     required this.fontSize,
   });
 
@@ -375,6 +579,11 @@ class _SqlBar extends StatelessWidget {
                   onPressed: onOpenLibrary,
                   child: const Text('历史 / 收藏'),
                 ),
+                const SizedBox(height: 4),
+                Tooltip(
+                  message: 'EXPLAIN：只看计划，不执行语句',
+                  child: OutlinedButton(onPressed: onExplain, child: const Text('执行计划')),
+                ),
               ],
             ),
           ),
@@ -409,6 +618,73 @@ class _ErrorBanner extends StatelessWidget {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _ExtraResult {
+  final String title;
+  final String sql;
+  final GridSource source;
+  final bool isPlan;
+
+  const _ExtraResult({required this.title, required this.sql, required this.source, required this.isPlan});
+}
+
+class _ResultView {
+  final String title;
+  final String sql;
+  final GridSource source;
+
+  /// 单条语句的结果，能筛选排序
+  final bool isMain;
+
+  const _ResultView({required this.title, required this.sql, required this.source, required this.isMain});
+}
+
+class _ResultStrip extends StatelessWidget {
+  final List<_ResultView> views;
+  final int active;
+  final void Function(int index) onSelect;
+
+  const _ResultStrip({required this.views, required this.active, required this.onSelect});
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      height: 30,
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      decoration: BoxDecoration(border: Border(bottom: BorderSide(color: scheme.outlineVariant))),
+      child: ListView.builder(
+        scrollDirection: Axis.horizontal,
+        itemCount: views.length,
+        itemBuilder: (context, index) {
+          final view = views[index];
+          final selected = index == active;
+          return Tooltip(
+            message: view.sql,
+            waitDuration: const Duration(milliseconds: 600),
+            child: InkWell(
+              key: ValueKey('result-tab-$index'),
+              onTap: () => onSelect(index),
+              child: Container(
+                alignment: Alignment.center,
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                decoration: BoxDecoration(
+                  border: Border(
+                    bottom: BorderSide(color: selected ? scheme.primary : Colors.transparent, width: 2),
+                  ),
+                ),
+                child: Text(
+                  view.title,
+                  style: TextStyle(fontSize: 12, fontWeight: selected ? FontWeight.w600 : null),
+                ),
+              ),
+            ),
+          );
+        },
       ),
     );
   }

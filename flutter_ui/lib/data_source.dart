@@ -1,5 +1,7 @@
 import 'package:flutter_rust_bridge/flutter_rust_bridge.dart' show Uint64List;
 
+import 'src/rust/api/csv_import.dart';
+import 'src/rust/api/csv_import.dart' as csv_import show suggestMapping;
 import 'src/rust/api/db.dart';
 // 顶层函数和下面 GridSource 的同名方法重名，方法体里直接调会解析成方法自己
 import 'src/rust/api/db.dart' as db
@@ -7,6 +9,7 @@ import 'src/rust/api/db.dart' as db
 import 'src/rust/api/layouts.dart';
 import 'src/rust/api/layouts.dart' as layouts show loadLayout, saveLayout;
 import 'src/rust/api/schema.dart';
+import 'src/rust/api/schema.dart' as schema show tableDraft, previewAlter, applyAlter;
 import 'src/rust/api/value.dart';
 import 'src/rust/api/value.dart' as value show formatJson, hexDump;
 import 'dart:typed_data' show Uint8List;
@@ -81,6 +84,21 @@ abstract class SchemaSource {
 
   /// 列、索引、外键和建表语句，一次取齐
   Future<TableStructure> structure(String database, String table);
+
+  /// 结构转成可编辑的草稿。哪些列、索引锁住（只能删除或改名）由 core 判定
+  TableDraft draftOf(TableStructure structure);
+
+  /// 预览一批结构改动：core 生成的语句、危险操作、执行须知
+  Future<AlterPlan> previewAlter(String database, String table, TableStructure original, TableDraft draft);
+
+  /// 执行预览过的改动。statements 是预览时拿到的语句，core 重新生成的不一致就拒绝
+  Future<void> applyAlter(
+    String database,
+    String table,
+    TableStructure original,
+    TableDraft draft,
+    List<String> statements,
+  );
 }
 
 class RustGridSource implements GridSource {
@@ -219,4 +237,104 @@ class RustSchemaSource implements SchemaSource {
   Future<TableStructure> structure(String database, String table) {
     return tableStructure(sessionId: sessionId, database: database, table: table);
   }
+
+  @override
+  TableDraft draftOf(TableStructure structure) => schema.tableDraft(structure: structure);
+
+  @override
+  Future<AlterPlan> previewAlter(String database, String table, TableStructure original, TableDraft draft) {
+    return schema.previewAlter(
+      sessionId: sessionId,
+      database: database,
+      table: table,
+      original: original,
+      draft: draft,
+    );
+  }
+
+  @override
+  Future<void> applyAlter(
+    String database,
+    String table,
+    TableStructure original,
+    TableDraft draft,
+    List<String> statements,
+  ) {
+    return schema.applyAlter(
+      sessionId: sessionId,
+      database: database,
+      table: table,
+      original: original,
+      draft: draft,
+      statements: statements,
+    );
+  }
+}
+
+/// 导入 CSV 用的数据源。解析、映射校验、写库都在 Rust 侧，界面只传选项、显示结果
+abstract class ImportSource {
+  /// 目标表的列（能不能写、要不要必填）和当前 sql_mode
+  Future<ImportTarget> target(String database, String table);
+
+  /// 读前 limit 行，表头不算在内
+  Future<CsvPreview> preview(String path, ImportOptions options, int limit);
+
+  /// 按表头建议的映射：下标是 CSV 列，值是目标列下标，null 是跳过
+  List<int?> suggestMapping(List<String> header, List<TargetColumn> columns);
+
+  /// 在后台开始导入，返回任务 id。映射不对、文件打不开直接抛错
+  Future<int> start(ImportRequest request);
+
+  /// 进度；结束后是报告
+  Future<ImportStatus> status(int job);
+
+  Future<void> cancel(int job);
+
+  /// 失败的行另存成 CSV，返回行数
+  Future<int> saveErrors(int job, String path);
+
+  /// 关掉任务、删掉错误行临时文件
+  Future<void> close(int job);
+}
+
+class RustImportSource implements ImportSource {
+  final BigInt sessionId;
+
+  const RustImportSource(this.sessionId);
+
+  @override
+  Future<ImportTarget> target(String database, String table) {
+    return prepareImport(sessionId: sessionId, database: database, table: table);
+  }
+
+  @override
+  Future<CsvPreview> preview(String path, ImportOptions options, int limit) {
+    return previewCsv(path: path, options: options, limit: BigInt.from(limit));
+  }
+
+  @override
+  List<int?> suggestMapping(List<String> header, List<TargetColumn> columns) {
+    return csv_import.suggestMapping(header: header, columns: columns);
+  }
+
+  @override
+  Future<int> start(ImportRequest request) async {
+    final job = await startImport(sessionId: sessionId, request: request);
+    return job.toInt();
+  }
+
+  @override
+  Future<ImportStatus> status(int job) => importStatus(jobId: BigInt.from(job));
+
+  @override
+  Future<void> cancel(int job) => cancelImport(jobId: BigInt.from(job));
+
+  @override
+  Future<int> saveErrors(int job, String path) async {
+    final rows = await saveImportErrors(jobId: BigInt.from(job), path: path);
+    return rows.toInt();
+  }
+
+  @override
+  Future<void> close(int job) => closeImport(jobId: BigInt.from(job));
 }

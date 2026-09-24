@@ -10,6 +10,7 @@ import 'dart:typed_data';
 
 import 'package:cdata_flutter/data_source.dart';
 import 'package:cdata_flutter/src/rust/api/db.dart';
+import 'package:cdata_flutter/src/rust/api/editor.dart' as editor;
 import 'package:cdata_flutter/src/rust/api/options.dart';
 import 'package:cdata_flutter/src/rust/api/value.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -220,6 +221,39 @@ void main() {
       execute(sessionId: sessionId, sql: 'SELECT SLEEP(3)', maxRows: BigInt.one),
       throwsA(contains('已让服务器停止')),
     );
+    await closeSession(sessionId: sessionId);
+  });
+
+  test('多语句脚本和执行计划穿过 FFI：子会话能取行，失败带着第几条', () async {
+    if (_host.isEmpty) {
+      markTestSkipped('未通过 --dart-define 提供连接信息');
+      return;
+    }
+    final sessionId = await openSession(config: _config());
+
+    final script = await editor.executeScript(
+      sessionId: sessionId,
+      sql: "SET @x = 6; SELECT @x * 7 AS answer; SELECT '订单;已完成' AS note",
+      maxRows: BigInt.from(10),
+    );
+    expect(script.failure, isNull);
+    expect(script.outcomes.length, 3);
+    expect(script.outcomes[0].sessionId, isNull, reason: 'SET 没有结果集');
+    final answer = await fetchWindow(sessionId: script.outcomes[1].sessionId!, offset: BigInt.zero, limit: BigInt.one);
+    expect(answer.first.first, const CellValue.int(42), reason: '同一条连接上 @x 还在');
+    final note = await fetchWindowText(sessionId: script.outcomes[2].sessionId!, offset: BigInt.zero, limit: BigInt.one);
+    expect(note.first.first.text, '订单;已完成', reason: '字符串里的分号不切');
+
+    final failed = await editor.executeScript(
+      sessionId: sessionId,
+      sql: 'SELECT 1; SELECT * FROM cdata_no_such_table',
+      maxRows: BigInt.from(10),
+    );
+    expect(failed.failure!.index, 1);
+
+    final plan = await editor.explain(sessionId: sessionId, sql: 'SELECT * FROM big_rows WHERE id = 1', maxRows: BigInt.from(10));
+    expect(plan.summary!.columns.map((c) => c.name), contains('select_type'));
+
     await closeSession(sessionId: sessionId);
   });
 }
