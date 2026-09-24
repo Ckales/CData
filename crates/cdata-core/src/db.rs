@@ -4,7 +4,7 @@
 
 use mysql_async::consts::ColumnType;
 use mysql_async::prelude::*;
-use mysql_async::{Column, Opts, OptsBuilder, Pool};
+use mysql_async::{Column, Opts, OptsBuilder, Pool, Value};
 use serde::{Deserialize, Serialize};
 
 use crate::value::{cell_from_value, CellValue};
@@ -67,10 +67,20 @@ pub async fn run_query(
     sql: &str,
     max_rows: usize,
 ) -> Result<ResultSet, mysql_async::Error> {
+    run_query_with_params(pool, sql, Vec::new(), max_rows).await
+}
+
+/// 带参数的查询。行的解释和 run_query 走同一条路，回读单行时用
+pub async fn run_query_with_params(
+    pool: &Pool,
+    sql: &str,
+    params: Vec<Value>,
+    max_rows: usize,
+) -> Result<ResultSet, mysql_async::Error> {
     let mut conn = pool.get_conn().await?;
 
     // 用 prepared statement 跑，文本协议下所有值都是 Bytes，拿不到真实数值类型
-    let mut result = conn.exec_iter(sql, ()).await?;
+    let mut result = conn.exec_iter(sql, params).await?;
 
     let columns = match result.columns() {
         Some(cols) => build_columns(&cols),

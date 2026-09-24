@@ -7,11 +7,19 @@
 
 import 'dart:typed_data';
 
+import 'package:cdata_flutter/data_source.dart';
+import 'package:cdata_flutter/src/rust/api/db.dart';
 import 'package:cdata_flutter/src/rust/api/value.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
 import 'rust_init.dart';
+
+const _host = String.fromEnvironment('HOST');
+const _port = String.fromEnvironment('PORT');
+const _user = String.fromEnvironment('USER');
+const _password = String.fromEnvironment('PASSWORD');
+const _db = String.fromEnvironment('DB');
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
@@ -54,5 +62,41 @@ void main() {
       await displayText(value: CellValue.invalidText(Uint8List.fromList([0xE9, 0x42]))),
       '<无法解码 2 字节>',
     );
+  });
+
+  test('新增行的 null（默认）和 CellValue（写值）穿过 FFI 不混淆，删除按下标生效', () async {
+    if (_host.isEmpty) {
+      markTestSkipped('未通过 --dart-define 提供连接信息');
+      return;
+    }
+
+    final sessionId = await openSession(
+      config: ConnectionConfig(
+        host: _host,
+        port: int.parse(_port),
+        user: _user,
+        password: _password,
+        database: _db,
+      ),
+    );
+    final summary = await execute(
+      sessionId: sessionId,
+      sql: 'SELECT id, name, amount, note FROM edit_target ORDER BY id',
+      maxRows: BigInt.from(100),
+    );
+    final source = RustGridSource(sessionId: sessionId, summary: summary);
+    final before = summary.totalRows.toInt();
+
+    // id 交给自增，name 写空字符串 —— 空串和「不写」必须是两回事
+    final total = await source.insertRow([null, const CellValue.text(''), null, null]);
+    expect(total, before + 1);
+
+    final row = await source.row(before);
+    expect(row[0], isA<CellValue_Int>(), reason: '自增主键要回填');
+    expect(row[1], const CellValue.text(''), reason: '空字符串不能变成 DEFAULT 的 NULL');
+    expect(row[3], const CellValue.null_());
+
+    expect(await source.deleteRows([before]), before);
+    await closeSession(sessionId: sessionId);
   });
 }

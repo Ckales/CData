@@ -63,6 +63,24 @@ Future<void> applyEdit({
   newValue: newValue,
 );
 
+/// 插一行，返回新的总行数。values[i] 为 null 表示这一列交给 DEFAULT / 自增
+Future<BigInt> insertRow({
+  required BigInt sessionId,
+  required List<CellValue?> values,
+}) => RustLib.instance.api.crateApiDbInsertRow(
+  sessionId: sessionId,
+  values: values,
+);
+
+/// 在一个事务里删若干行，返回新的总行数。任何一行没删成就整体回滚
+Future<BigInt> deleteRows({
+  required BigInt sessionId,
+  required Uint64List rowIndexes,
+}) => RustLib.instance.api.crateApiDbDeleteRows(
+  sessionId: sessionId,
+  rowIndexes: rowIndexes,
+);
+
 /// 关会话并断开连接池
 Future<void> closeSession({required BigInt sessionId}) =>
     RustLib.instance.api.crateApiDbCloseSession(sessionId: sessionId);

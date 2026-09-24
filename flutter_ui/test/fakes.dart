@@ -59,7 +59,13 @@ class FakeGridSource implements GridSource {
   /// 写回的调用记录：(行, 列, 值)
   final List<(int, int, CellValue)> edits = [];
 
-  /// 设成非 null 就让 edit 抛错，用来测界面怎么显示失败
+  /// 插入的调用记录。null 表示那一列交给 DEFAULT
+  final List<List<CellValue?>> inserts = [];
+
+  /// 删除的调用记录
+  final List<List<int>> deletes = [];
+
+  /// 设成非 null 就让 edit / insertRow / deleteRows 抛错，用来测界面怎么显示失败
   String? editError;
 
   FakeGridSource({required this.summary, required this.rows});
@@ -109,6 +115,34 @@ class FakeGridSource implements GridSource {
 
     edits.add((rowIndex, columnIndex, value));
     rows[rowIndex][columnIndex] = value;
+  }
+
+  @override
+  Future<int> insertRow(List<CellValue?> values) async {
+    final error = editError;
+    if (error != null) throw Exception(error);
+
+    inserts.add(values);
+    // 假装库里的 DEFAULT 是 NULL。真实回读行为由 cdata-core 的真库测试保证
+    final row = <CellValue>[];
+    for (final value in values) {
+      row.add(value ?? const CellValue.null_());
+    }
+    rows.add(row);
+    return rows.length;
+  }
+
+  @override
+  Future<int> deleteRows(List<int> rowIndexes) async {
+    final error = editError;
+    if (error != null) throw Exception(error);
+
+    deletes.add(rowIndexes);
+    final sorted = [...rowIndexes]..sort();
+    for (final index in sorted.reversed) {
+      rows.removeAt(index);
+    }
+    return rows.length;
   }
 
   /// 和 Rust 侧 display_text 保持一致的显示规则

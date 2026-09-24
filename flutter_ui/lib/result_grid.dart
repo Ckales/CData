@@ -1,7 +1,10 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'data_source.dart';
+import 'insert_row_dialog.dart';
 import 'src/rust/api/db.dart';
 import 'src/rust/api/value.dart';
 
@@ -48,6 +51,14 @@ class _ResultGridState extends State<ResultGrid> {
 
   int _windowStart = 0;
   List<List<String>> _windowRows = [];
+
+  /// 总行数。增删行后以 Rust 侧返回的为准，不在这里自己加减
+  late int _totalRows = widget.summary.totalRows.toInt();
+
+  /// 点行号选中的行，删除用
+  final Set<int> _selected = {};
+  final _scroll = ScrollController();
+
   bool _loading = false;
   String? _error;
 
@@ -67,6 +78,7 @@ class _ResultGridState extends State<ResultGrid> {
   @override
   void dispose() {
     _editController.dispose();
+    _scroll.dispose();
     super.dispose();
   }
 
@@ -77,6 +89,8 @@ class _ResultGridState extends State<ResultGrid> {
     if (oldWidget.source != widget.source) {
       _windowStart = 0;
       _windowRows = [];
+      _totalRows = widget.summary.totalRows.toInt();
+      _selected.clear();
       _loadWindow(0);
     }
   }
@@ -184,6 +198,73 @@ class _ResultGridState extends State<ResultGrid> {
     }
   }
 
+  void _toggleSelected(int rowIndex) {
+    setState(() {
+      if (!_selected.remove(rowIndex)) _selected.add(rowIndex);
+    });
+  }
+
+  Future<void> _insertRow() async {
+    setState(() => _refusal = null);
+    final values = await showInsertRowDialog(context, widget.summary.columns);
+    if (values == null || !mounted) return;
+
+    try {
+      final total = await widget.source.insertRow(values);
+      if (!mounted) return;
+      setState(() {
+        _totalRows = total;
+        _editing = null;
+      });
+      // 新行追加在末尾：窗口挪到结尾并滚过去，插完就能看到库里实际存下的值
+      await _loadWindow(math.max(0, total - _windowSize), force: true);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _scroll.hasClients) _scroll.jumpTo(_scroll.position.maxScrollExtent);
+      });
+    } catch (e) {
+      if (mounted) setState(() => _refusal = '$e');
+    }
+  }
+
+  /// 删选中的行。直接写库、不能撤销，所以不管几行都要确认
+  Future<void> _deleteSelected() async {
+    final rows = _selected.toList()..sort();
+    setState(() => _refusal = null);
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('删除 ${rows.length} 行？', style: const TextStyle(fontSize: 16)),
+        content: const Text(
+          '直接写入数据库，不能撤销。\n所有行在一个事务里删除，任何一行没删成都会整体回滚。',
+          style: TextStyle(fontSize: 13),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('取消')),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Colors.red.shade700),
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('删除'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    try {
+      final total = await widget.source.deleteRows(rows);
+      if (!mounted) return;
+      setState(() {
+        _totalRows = total;
+        _selected.clear();
+        _editing = null;
+      });
+      await _loadWindow(math.min(_windowStart, math.max(0, total - _windowSize)), force: true);
+    } catch (e) {
+      if (mounted) setState(() => _refusal = '$e');
+    }
+  }
+
   void _scheduleLoad(int start) {
     if (_loading || start == _windowStart) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -193,8 +274,6 @@ class _ResultGridState extends State<ResultGrid> {
       _loadWindow(start);
     });
   }
-
-  int get _totalRows => widget.summary.totalRows.toInt();
 
   @override
   Widget build(BuildContext context) {
@@ -231,6 +310,7 @@ class _ResultGridState extends State<ResultGrid> {
                   ),
                   Expanded(
                     child: ListView.builder(
+                      controller: _scroll,
                       itemCount: _totalRows,
                       itemExtent: _rowHeight,
                       itemBuilder: (context, index) {
@@ -238,6 +318,8 @@ class _ResultGridState extends State<ResultGrid> {
                         final editing = _editing;
                         return _DataRow(
                           rowNumber: index + 1,
+                          selected: _selected.contains(index),
+                          onTapRowNumber: () => _toggleSelected(index),
                           cells: cells,
                           columnCount: columns.length,
                           columnWidth: _columnWidth,
@@ -262,6 +344,9 @@ class _ResultGridState extends State<ResultGrid> {
           loading: _loading,
           editability: widget.summary.editability,
           refusal: _refusal,
+          selectedCount: _selected.length,
+          onInsert: _insertRow,
+          onDeleteSelected: _deleteSelected,
         ),
       ],
     );
@@ -347,6 +432,8 @@ class _HeaderRow extends StatelessWidget {
 
 class _DataRow extends StatelessWidget {
   final int rowNumber;
+  final bool selected;
+  final VoidCallback onTapRowNumber;
   final List<String>? cells;
   final int columnCount;
   final double columnWidth;
@@ -359,6 +446,8 @@ class _DataRow extends StatelessWidget {
 
   const _DataRow({
     required this.rowNumber,
+    required this.selected,
+    required this.onTapRowNumber,
     required this.cells,
     required this.columnCount,
     required this.columnWidth,
@@ -374,20 +463,29 @@ class _DataRow extends StatelessWidget {
   Widget build(BuildContext context) {
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: rowNumber.isEven ? Colors.black.withValues(alpha: 0.02) : null,
+        color: selected
+            ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.12)
+            : rowNumber.isEven
+                ? Colors.black.withValues(alpha: 0.02)
+                : null,
         border: const Border(bottom: BorderSide(color: Colors.black12)),
       ),
       child: Row(
         children: [
-          SizedBox(
-            width: _rowNumberWidth,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              child: Align(
-                alignment: Alignment.centerRight,
-                child: Text(
-                  '$rowNumber',
-                  style: const TextStyle(fontSize: 11, color: Colors.black45),
+          GestureDetector(
+            key: ValueKey('row-number-${rowNumber - 1}'),
+            behavior: HitTestBehavior.opaque,
+            onTap: onTapRowNumber,
+            child: SizedBox(
+              width: _rowNumberWidth,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                child: Align(
+                  alignment: Alignment.centerRight,
+                  child: Text(
+                    '$rowNumber',
+                    style: const TextStyle(fontSize: 11, color: Colors.black45),
+                  ),
                 ),
               ),
             ),
@@ -511,12 +609,18 @@ class _StatusBar extends StatelessWidget {
   final bool loading;
   final Editability editability;
   final String? refusal;
+  final int selectedCount;
+  final VoidCallback onInsert;
+  final VoidCallback onDeleteSelected;
 
   const _StatusBar({
     required this.totalRows,
     required this.loading,
     required this.editability,
     required this.refusal,
+    required this.selectedCount,
+    required this.onInsert,
+    required this.onDeleteSelected,
   });
 
   @override
@@ -552,14 +656,51 @@ class _StatusBar extends StatelessWidget {
             )
           else
             const Expanded(
-              child: Text('双击单元格可编辑', style: TextStyle(fontSize: 11, color: Colors.black38)),
+              child: Text(
+                '双击单元格编辑，点行号选中行',
+                style: TextStyle(fontSize: 11, color: Colors.black38),
+              ),
             ),
           // 刻意不用 CircularProgressIndicator：它是无限动画，会让 pumpAndSettle
           // 永远等不到"稳定"，测试直接挂死。静态文字一样能表达状态
           if (loading)
             const Text('加载中…', style: TextStyle(fontSize: 11, color: Colors.black45)),
+          // 只读结果集不给增删入口，原因已经显示在左边
+          if (readOnlyReason == null) ...[
+            if (selectedCount > 0)
+              _BarButton(
+                label: '删除 $selectedCount 行',
+                color: Colors.red.shade700,
+                onPressed: onDeleteSelected,
+              ),
+            _BarButton(label: '新增行', onPressed: onInsert),
+          ],
         ],
       ),
+    );
+  }
+}
+
+class _BarButton extends StatelessWidget {
+  final String label;
+  final Color? color;
+  final VoidCallback onPressed;
+
+  const _BarButton({required this.label, required this.onPressed, this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return TextButton(
+      style: TextButton.styleFrom(
+        foregroundColor: color,
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        minimumSize: const Size(0, 22),
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        visualDensity: VisualDensity.compact,
+        textStyle: const TextStyle(fontSize: 11),
+      ),
+      onPressed: onPressed,
+      child: Text(label),
     );
   }
 }

@@ -204,4 +204,115 @@ void main() {
     await tester.pumpAndSettle();
     expect(sorted, 'id');
   });
+
+  testWidgets('点行号选中，确认后删除，行数以返回值为准', (tester) async {
+    final source = FakeGridSource.rows(3);
+    await pumpGrid(tester, source);
+
+    await tester.tap(find.byKey(const ValueKey('row-number-0')));
+    await tester.tap(find.byKey(const ValueKey('row-number-2')));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('删除 2 行'));
+    await tester.pumpAndSettle();
+    expect(find.text('删除 2 行？'), findsOneWidget, reason: '删库前必须二次确认');
+
+    await tester.tap(find.widgetWithText(FilledButton, '删除'));
+    await tester.pumpAndSettle();
+
+    expect(source.deletes, [
+      [0, 2],
+    ]);
+    expect(find.text('1 行'), findsOneWidget);
+    expect(find.text('用户2'), findsOneWidget);
+    expect(find.text('用户1'), findsNothing);
+    expect(find.textContaining('删除 '), findsNothing, reason: '删完选中要清空');
+  });
+
+  testWidgets('取消确认就一行都不删', (tester) async {
+    final source = FakeGridSource.rows(2);
+    await pumpGrid(tester, source);
+
+    await tester.tap(find.byKey(const ValueKey('row-number-1')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('删除 1 行'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('取消'));
+    await tester.pumpAndSettle();
+
+    expect(source.deletes, isEmpty);
+    expect(find.text('2 行'), findsOneWidget);
+  });
+
+  testWidgets('再点一次行号取消选中', (tester) async {
+    await pumpGrid(tester, FakeGridSource.rows(2));
+
+    await tester.tap(find.byKey(const ValueKey('row-number-0')));
+    await tester.pumpAndSettle();
+    expect(find.text('删除 1 行'), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('row-number-0')));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('删除 '), findsNothing);
+  });
+
+  testWidgets('新增行区分默认、NULL 和值', (tester) async {
+    final source = FakeGridSource(
+      summary: summaryOf(
+        columns: [column('id'), column('name'), column('note')],
+        totalRows: 1,
+      ),
+      rows: [
+        [CellValue.int(1), CellValue.text('a'), CellValue.null_()],
+      ],
+    );
+    await pumpGrid(tester, source);
+
+    await tester.tap(find.text('新增行'));
+    await tester.pumpAndSettle();
+
+    // id 不动，保持「默认」；name 打字自动切成「值」；note 显式选 NULL
+    await tester.enterText(find.byKey(const ValueKey('insert-field-1')), '新用户');
+    await tester.pump(const Duration(milliseconds: 100));
+    await tester.tap(find.byKey(const ValueKey('insert-mode-2')));
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.tap(find.text('NULL').last);
+    await tester.pump(const Duration(milliseconds: 300));
+
+    await tester.tap(find.text('插入'));
+    await tester.pumpAndSettle();
+
+    expect(source.inserts, [
+      [null, const CellValue.text('新用户'), const CellValue.null_()],
+    ]);
+    expect(find.text('2 行'), findsOneWidget);
+    expect(find.text('新用户'), findsOneWidget);
+  });
+
+  testWidgets('新增行失败要显示原因', (tester) async {
+    final source = FakeGridSource.rows(1)..editError = '主键列 id 没有填值，且不是自增列';
+    await pumpGrid(tester, source);
+
+    await tester.tap(find.text('新增行'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('插入'));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('不是自增列'), findsOneWidget);
+    expect(find.text('1 行'), findsOneWidget);
+  });
+
+  testWidgets('只读结果集没有增删入口', (tester) async {
+    final source = FakeGridSource.rows(
+      2,
+      editability: const Editability.readOnly('结果集来自多张表'),
+    );
+    await pumpGrid(tester, source);
+
+    await tester.tap(find.byKey(const ValueKey('row-number-0')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('新增行'), findsNothing);
+    expect(find.textContaining('删除 '), findsNothing);
+  });
 }

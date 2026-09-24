@@ -81,6 +81,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<List<CellValue>> dco_decode_list_list_cell_value(dynamic raw);
 
   @protected
+  List<CellValue?> dco_decode_list_opt_box_autoadd_cell_value(dynamic raw);
+
+  @protected
+  Uint64List dco_decode_list_prim_u_64_strict(dynamic raw);
+
+  @protected
   Uint8List dco_decode_list_prim_u_8_strict(dynamic raw);
 
   @protected
@@ -94,6 +100,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   String? dco_decode_opt_String(dynamic raw);
+
+  @protected
+  CellValue? dco_decode_opt_box_autoadd_cell_value(dynamic raw);
 
   @protected
   QuerySummary dco_decode_query_summary(dynamic raw);
@@ -180,6 +189,14 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  List<CellValue?> sse_decode_list_opt_box_autoadd_cell_value(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  Uint64List sse_decode_list_prim_u_64_strict(SseDeserializer deserializer);
+
+  @protected
   Uint8List sse_decode_list_prim_u_8_strict(SseDeserializer deserializer);
 
   @protected
@@ -195,6 +212,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   String? sse_decode_opt_String(SseDeserializer deserializer);
+
+  @protected
+  CellValue? sse_decode_opt_box_autoadd_cell_value(
+    SseDeserializer deserializer,
+  );
 
   @protected
   QuerySummary sse_decode_query_summary(SseDeserializer deserializer);
@@ -305,6 +327,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_list_opt_box_autoadd_cell_value(
+    List<CellValue?> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_prim_u_64_strict(
+    Uint64List self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_list_prim_u_8_strict(
     Uint8List self,
     SseSerializer serializer,
@@ -330,6 +364,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_opt_String(String? self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_opt_box_autoadd_cell_value(
+    CellValue? self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_query_summary(QuerySummary self, SseSerializer serializer);

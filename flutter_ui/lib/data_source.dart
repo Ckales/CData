@@ -1,4 +1,8 @@
+import 'package:flutter_rust_bridge/flutter_rust_bridge.dart' show Uint64List;
+
 import 'src/rust/api/db.dart';
+// 顶层函数和下面 GridSource 的同名方法重名，方法体里直接调会解析成方法自己
+import 'src/rust/api/db.dart' as db show insertRow, deleteRows;
 import 'src/rust/api/schema.dart';
 import 'src/rust/api/value.dart';
 
@@ -17,6 +21,12 @@ abstract class GridSource {
   Future<List<CellValue>> row(int index);
 
   Future<void> edit(int rowIndex, int columnIndex, CellValue value);
+
+  /// 插一行，返回新的总行数。values[i] 为 null 表示这一列交给 DEFAULT / 自增
+  Future<int> insertRow(List<CellValue?> values);
+
+  /// 在一个事务里删若干行，返回新的总行数
+  Future<int> deleteRows(List<int> rowIndexes);
 }
 
 abstract class SchemaSource {
@@ -59,6 +69,23 @@ class RustGridSource implements GridSource {
       columnIndex: BigInt.from(columnIndex),
       newValue: value,
     );
+  }
+
+  @override
+  Future<int> insertRow(List<CellValue?> values) async {
+    final total = await db.insertRow(sessionId: sessionId, values: values);
+    return total.toInt();
+  }
+
+  @override
+  Future<int> deleteRows(List<int> rowIndexes) async {
+    // FRB 的 Uint64List 元素是 BigInt，没有 fromList，只能先开长度再逐个填
+    final indexes = Uint64List(rowIndexes.length);
+    for (var i = 0; i < rowIndexes.length; i++) {
+      indexes[i] = BigInt.from(rowIndexes[i]);
+    }
+    final total = await db.deleteRows(sessionId: sessionId, rowIndexes: indexes);
+    return total.toInt();
   }
 }
 

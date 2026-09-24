@@ -455,3 +455,164 @@ async fn order_by_wrapper_actually_sorts_on_the_server() {
 
     cdata_core::session::close_session(id).await.ok();
 }
+
+/// 数一下某个条件下的行数，用独立会话查，不碰被测会话的缓存
+async fn count_where(config: &ConnectionConfig, sql: &str) -> i64 {
+    let id = cdata_core::session::open_session(config);
+    cdata_core::session::execute(id, sql, 10).await.expect("计数失败");
+    let rows = cdata_core::session::fetch_window(id, 0, 1).expect("取窗口失败");
+    cdata_core::session::close_session(id).await.ok();
+    match rows[0][0] {
+        CellValue::Int(n) => n,
+        ref other => panic!("COUNT(*) 应该是整数，实际 {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn insert_reads_back_real_values_and_delete_removes_it() {
+    let Some(config) = config_from_env() else {
+        return;
+    };
+
+    let id = cdata_core::session::open_session(&config);
+    let summary = cdata_core::session::execute(
+        id,
+        "SELECT id, name, amount, note FROM edit_target ORDER BY id",
+        100,
+    )
+    .await
+    .expect("查询失败");
+    let before = summary.total_rows;
+
+    // id 交给自增，note 交给 DEFAULT
+    let total = cdata_core::session::insert_row(
+        id,
+        vec![
+            None,
+            Some(CellValue::Text("新增行".into())),
+            Some(CellValue::Text("12.3".into())),
+            None,
+        ],
+    )
+    .await
+    .expect("插入失败");
+    assert_eq!(total, before + 1);
+
+    // 缓存里是从库里读回来的真实值：自增 id 回填、DECIMAL 按列定义补齐小数位、DEFAULT 是 NULL
+    let row = cdata_core::session::fetch_window(id, before, 1).expect("取窗口失败").remove(0);
+    let CellValue::Int(new_id) = row[0] else {
+        panic!("自增主键没有回填：{:?}", row[0]);
+    };
+    assert_eq!(row[1], CellValue::Text("新增行".to_string()));
+    assert_eq!(row[2], CellValue::Text("12.30".to_string()), "要显示库里存的值，不是用户填的");
+    assert_eq!(row[3], CellValue::Null);
+
+    let total = cdata_core::session::delete_rows(id, vec![before]).await.expect("删除失败");
+    assert_eq!(total, before);
+    assert_eq!(
+        count_where(&config, &format!("SELECT COUNT(*) FROM edit_target WHERE id = {new_id}")).await,
+        0
+    );
+
+    cdata_core::session::close_session(id).await.ok();
+}
+
+#[tokio::test]
+async fn batch_delete_rolls_back_when_any_row_is_stale() {
+    let Some(config) = config_from_env() else {
+        return;
+    };
+
+    let id = cdata_core::session::open_session(&config);
+    let summary = cdata_core::session::execute(
+        id,
+        "SELECT id, name FROM edit_target ORDER BY id",
+        100,
+    )
+    .await
+    .expect("查询失败");
+    let first = summary.total_rows;
+
+    cdata_core::session::insert_row(id, vec![None, Some(CellValue::Text("回滚-1".into()))])
+        .await
+        .expect("插入失败");
+    cdata_core::session::insert_row(id, vec![None, Some(CellValue::Text("回滚-2".into()))])
+        .await
+        .expect("插入失败");
+    let rows = cdata_core::session::fetch_window(id, first, 2).expect("取窗口失败");
+    let (CellValue::Int(id1), CellValue::Int(id2)) = (&rows[0][0], &rows[1][0]) else {
+        panic!("自增主键没有回填：{rows:?}");
+    };
+
+    // 别人先把第二行删了，缓存里的第二行成了过期数据
+    let other = cdata_core::session::open_session(&config);
+    cdata_core::session::execute(other, &format!("DELETE FROM edit_target WHERE id = {id2}"), 10)
+        .await
+        .expect("外部删除失败");
+
+    let err = cdata_core::session::delete_rows(id, vec![first, first + 1])
+        .await
+        .unwrap_err();
+    assert!(err.to_string().contains("回滚"), "{err}");
+
+    // 第一行删成功过，但必须被回滚回来
+    assert_eq!(
+        count_where(&config, &format!("SELECT COUNT(*) FROM edit_target WHERE id = {id1}")).await,
+        1,
+        "一批里有一行失败，整批都不能生效"
+    );
+    // 失败时缓存也不能动
+    let window = cdata_core::session::fetch_window(id, first, 10).expect("取窗口失败");
+    assert_eq!(window.len(), 2);
+
+    cdata_core::session::execute(other, &format!("DELETE FROM edit_target WHERE id = {id1}"), 10)
+        .await
+        .expect("清理失败");
+    cdata_core::session::close_session(other).await.ok();
+    cdata_core::session::close_session(id).await.ok();
+}
+
+#[tokio::test]
+async fn insert_without_full_composite_key_is_refused_before_writing() {
+    let Some(config) = config_from_env() else {
+        return;
+    };
+
+    let before = count_where(&config, "SELECT COUNT(*) FROM edit_composite").await;
+
+    let id = cdata_core::session::open_session(&config);
+    cdata_core::session::execute(id, "SELECT shop_id, order_no, amount FROM edit_composite", 100)
+        .await
+        .expect("查询失败");
+
+    // order_no 没填，插进去也找不回来 —— 必须在写库之前就拒绝
+    let err = cdata_core::session::insert_row(
+        id,
+        vec![Some(CellValue::Int(7)), None, Some(CellValue::Text("3.00".into()))],
+    )
+    .await
+    .unwrap_err();
+    assert!(err.to_string().contains("复合主键"), "{err}");
+    assert_eq!(count_where(&config, "SELECT COUNT(*) FROM edit_composite").await, before);
+
+    cdata_core::session::close_session(id).await.ok();
+}
+
+#[tokio::test]
+async fn read_only_result_refuses_insert_and_delete() {
+    let Some(config) = config_from_env() else {
+        return;
+    };
+
+    let id = cdata_core::session::open_session(&config);
+    cdata_core::session::execute(id, "SELECT a, b FROM no_pk", 100)
+        .await
+        .expect("查询失败");
+
+    let err = cdata_core::session::insert_row(id, vec![None, None]).await.unwrap_err();
+    assert!(err.to_string().contains("没有主键"), "{err}");
+    let err = cdata_core::session::delete_rows(id, vec![0]).await.unwrap_err();
+    assert!(err.to_string().contains("没有主键"), "{err}");
+
+    cdata_core::session::close_session(id).await.ok();
+}

@@ -122,6 +122,17 @@ pub async fn apply_edit(
     .await
 }
 
+/// 插一行，返回新的总行数。values[i] 为 null 表示这一列交给 DEFAULT / 自增
+pub async fn insert_row(session_id: u64, values: Vec<Option<CellValue>>) -> Result<u64> {
+    on_runtime(async move { cdata_core::session::insert_row(session_id, values).await }).await
+}
+
+/// 在一个事务里删若干行，返回新的总行数。任何一行没删成就整体回滚
+pub async fn delete_rows(session_id: u64, row_indexes: Vec<u64>) -> Result<u64> {
+    on_runtime(async move { cdata_core::session::delete_rows(session_id, row_indexes).await })
+        .await
+}
+
 /// 关会话并断开连接池
 pub async fn close_session(session_id: u64) -> Result<()> {
     on_runtime(async move { cdata_core::session::close_session(session_id).await }).await
