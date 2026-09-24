@@ -1,8 +1,9 @@
 //! 库和表的清单。侧栏用。
 
 use mysql_async::prelude::*;
-use mysql_async::Pool;
 use serde::{Deserialize, Serialize};
+
+use crate::db::DbPool;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TableInfo {
@@ -13,7 +14,7 @@ pub struct TableInfo {
 }
 
 /// 用户库列表。系统库单独排在后面，平时用不到但也不藏起来
-pub async fn list_databases(pool: &Pool) -> Result<Vec<String>, mysql_async::Error> {
+pub async fn list_databases(pool: &DbPool) -> Result<Vec<String>, mysql_async::Error> {
     let mut conn = pool.get_conn().await?;
     let names: Vec<String> = conn
         .query(
@@ -26,7 +27,7 @@ pub async fn list_databases(pool: &Pool) -> Result<Vec<String>, mysql_async::Err
 }
 
 /// 某个库的表和视图
-pub async fn list_tables(pool: &Pool, database: &str) -> Result<Vec<TableInfo>, mysql_async::Error> {
+pub async fn list_tables(pool: &DbPool, database: &str) -> Result<Vec<TableInfo>, mysql_async::Error> {
     let mut conn = pool.get_conn().await?;
     let rows: Vec<(String, Option<u64>, String)> = conn
         .exec(

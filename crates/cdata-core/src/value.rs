@@ -101,6 +101,19 @@ pub fn display_text(value: &CellValue) -> String {
     }
 }
 
+/// 网格里的一格。placeholder 表示显示的不是值本身（NULL、二进制、解码失败），
+/// 界面据此画成另一种样式 —— 不能靠文字反推，内容恰好是 "NULL" 的文本也是真实文本
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DisplayCell {
+    pub text: String,
+    pub placeholder: bool,
+}
+
+pub fn display_cell(value: &CellValue) -> DisplayCell {
+    let placeholder = matches!(value, CellValue::Null | CellValue::Bytes(_) | CellValue::InvalidText(_));
+    DisplayCell { text: display_text(value), placeholder }
+}
+
 /// 二进制内容的十六进制视图：偏移、16 字节一行、可打印 ASCII。
 /// 太大的 BLOB 只显示前 limit 字节，并在末尾写明总长，不假装显示了全部
 pub fn hex_dump(bytes: &[u8], limit: usize) -> String {
@@ -251,6 +264,12 @@ mod tests {
     fn display_marks_unreadable_content_instead_of_faking_it() {
         // 空串会让人以为这列真的是空值，二进制和解码失败都必须看得出来
         assert_eq!(display_text(&CellValue::Null), "NULL");
+        // 显示文字一样，但只有真正的 NULL 是占位
+        assert!(display_cell(&CellValue::Null).placeholder);
+        assert!(!display_cell(&CellValue::Text("NULL".into())).placeholder);
+        assert!(!display_cell(&CellValue::Text("<二进制 12 字节>".into())).placeholder);
+        assert!(display_cell(&CellValue::Bytes(vec![1])).placeholder);
+        assert!(display_cell(&CellValue::InvalidText(vec![0xE9])).placeholder);
         assert_eq!(display_text(&CellValue::Bytes(vec![0u8; 12])), "<二进制 12 字节>");
         assert_eq!(
             display_text(&CellValue::InvalidText(vec![0xE9, 0x42])),

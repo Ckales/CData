@@ -10,6 +10,7 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 
 use crate::db::ConnectionConfig;
+use crate::options::{ConnectionOptions, SshHop};
 
 const KEYRING_SERVICE: &str = "com.ckales.cdata";
 
@@ -20,6 +21,8 @@ pub enum Error {
     Keyring(String),
     NoDataDir,
     NotFound(String),
+    /// 值超出允许范围，比如偏好设置里的行数上限
+    Invalid(String),
 }
 
 impl std::fmt::Display for Error {
@@ -30,6 +33,7 @@ impl std::fmt::Display for Error {
             Error::Keyring(message) => write!(f, "钥匙串操作失败：{message}"),
             Error::NoDataDir => write!(f, "找不到用户数据目录"),
             Error::NotFound(id) => write!(f, "没有保存过的连接 {id}"),
+            Error::Invalid(message) => write!(f, "{message}"),
         }
     }
 }
@@ -48,10 +52,13 @@ pub struct SavedConnection {
     pub port: u16,
     pub user: String,
     pub database: Option<String>,
+    /// SSL、超时、SSH。加这个字段之前保存的连接没有它，按默认值读出来，不报解析错误
+    #[serde(default)]
+    pub options: ConnectionOptions,
 }
 
 impl SavedConnection {
-    /// 配上密码变成可以直接连的配置
+    /// 配上密码变成可以直接连的配置。SSH 的密码 / 口令连接时按 saved_id 去钥匙串取
     pub fn with_password(&self, password: String) -> ConnectionConfig {
         ConnectionConfig {
             host: self.host.clone(),
@@ -59,7 +66,36 @@ impl SavedConnection {
             user: self.user.clone(),
             password,
             database: self.database.clone(),
+            options: self.options.clone(),
+            ssh_secrets: Vec::new(),
+            saved_id: Some(self.id.clone()),
         }
+    }
+}
+
+/// SSH 密码 / 口令在钥匙串里的账号名。
+///
+/// 带上这一跳的 user@host:port 而不是只用序号：跳板机和目标机调换顺序、或者改了主机之后，
+/// 旧的密码不会被发给另一台服务器
+fn ssh_secret_account(id: &str, hop: &SshHop) -> String {
+    format!("{id}#ssh:{}", hop.label())
+}
+
+/// 保存某一跳的 SSH 密码或私钥口令，只进钥匙串
+pub fn save_ssh_secret(id: &str, hop: &SshHop, secret: &str) -> Result<()> {
+    let entry = keyring::Entry::new(KEYRING_SERVICE, &ssh_secret_account(id, hop))
+        .map_err(|e| Error::Keyring(e.to_string()))?;
+    entry.set_password(secret).map_err(|e| Error::Keyring(e.to_string()))
+}
+
+/// 取某一跳的 SSH 密码或口令。**不经过 FFI**：只在 core 连接时使用，界面拿不到
+pub fn load_ssh_secret(id: &str, hop: &SshHop) -> Result<Option<String>> {
+    let entry = keyring::Entry::new(KEYRING_SERVICE, &ssh_secret_account(id, hop))
+        .map_err(|e| Error::Keyring(e.to_string()))?;
+    match entry.get_password() {
+        Ok(secret) => Ok(Some(secret)),
+        Err(keyring::Error::NoEntry) => Ok(None),
+        Err(e) => Err(Error::Keyring(e.to_string())),
     }
 }
 
@@ -102,16 +138,21 @@ pub fn save(connection: &SavedConnection, password: Option<&str>) -> Result<()> 
 /// 删连接，钥匙串里的密码一并删掉，不留孤儿凭据
 pub fn delete(id: &str) -> Result<()> {
     let mut all = list()?;
-    let before = all.len();
-    all.retain(|c| c.id != id);
-    if all.len() == before {
+    let Some(index) = all.iter().position(|c| c.id == id) else {
         return Err(Error::NotFound(id.to_string()));
-    }
+    };
+    let removed = all.remove(index);
     write_all(&all)?;
 
     // 钥匙串里本来就没有也算删成功，不因为这个让整个删除失败
-    if let Ok(entry) = keyring::Entry::new(KEYRING_SERVICE, id) {
-        let _ = entry.delete_credential();
+    let mut accounts = vec![id.to_string()];
+    for hop in &removed.options.ssh.hops {
+        accounts.push(ssh_secret_account(id, hop));
+    }
+    for account in accounts {
+        if let Ok(entry) = keyring::Entry::new(KEYRING_SERVICE, &account) {
+            let _ = entry.delete_credential();
+        }
     }
     Ok(())
 }
@@ -156,12 +197,20 @@ mod tests {
             port: 3306,
             user: "root".into(),
             database: Some("shop".into()),
+            options: ConnectionOptions::default(),
         };
 
         // 序列化结果里绝不能出现任何密码痕迹 —— 这个文件会被备份和同步
         let json = serde_json::to_string(&connection).unwrap();
         assert!(!json.contains("password"), "配置里不该有 password 字段：{json}");
         assert!(json.contains("127.0.0.1"));
+    }
+
+    #[test]
+    fn config_saved_before_options_existed_still_loads() {
+        let old = r#"[{"id":"c1","name":"本地","host":"127.0.0.1","port":3306,"user":"root","database":null}]"#;
+        let all: Vec<SavedConnection> = serde_json::from_str(old).unwrap();
+        assert_eq!(all[0].options, ConnectionOptions::default());
     }
 
     /// 配置文件的增删查往返。密码一律传 None，测试不碰钥匙串（会弹系统授权框）
@@ -183,6 +232,7 @@ mod tests {
             port: 3306,
             user: "root".into(),
             database: Some("shop".into()),
+            options: ConnectionOptions::default(),
         };
         save(&connection, None).unwrap();
         assert_eq!(list().unwrap(), vec![connection.clone()]);
@@ -217,6 +267,7 @@ mod tests {
             port: 3306,
             user: "root".into(),
             database: None,
+            options: ConnectionOptions::default(),
         };
 
         let config = connection.with_password("secret".into());

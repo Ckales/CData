@@ -4,6 +4,7 @@
 //! 需要的测试库和表见 README 的「开发」一节。
 
 use cdata_core::db::{open_pool, run_query, ConnectionConfig};
+use cdata_core::options::ConnectionOptions;
 use cdata_core::CellValue;
 
 fn config_from_env() -> Option<ConnectionConfig> {
@@ -19,6 +20,9 @@ fn config_from_env() -> Option<ConnectionConfig> {
         user,
         password,
         database: Some(database),
+        options: ConnectionOptions::default(),
+        ssh_secrets: Vec::new(),
+        saved_id: None,
     })
 }
 
@@ -39,7 +43,7 @@ async fn type_zoo_survives_a_real_round_trip() {
         return;
     };
 
-    let pool = open_pool(&config);
+    let pool = open_pool(&config).await.unwrap();
     let result = run_query(
         &pool,
         "SELECT * FROM type_zoo ORDER BY id",
@@ -105,7 +109,7 @@ async fn truncation_is_explicit_not_silent() {
         return;
     };
 
-    let pool = open_pool(&config);
+    let pool = open_pool(&config).await.unwrap();
     let result = run_query(&pool, "SELECT * FROM big_rows ORDER BY id", 500)
         .await
         .expect("查询 big_rows 失败");
@@ -123,7 +127,7 @@ async fn reads_one_hundred_thousand_rows() {
         return;
     };
 
-    let pool = open_pool(&config);
+    let pool = open_pool(&config).await.unwrap();
     let started = std::time::Instant::now();
     let result = run_query(&pool, "SELECT * FROM big_rows ORDER BY id", 200_000)
         .await
@@ -149,7 +153,7 @@ async fn session_keeps_rows_and_serves_windows() {
         return;
     };
 
-    let id = cdata_core::session::open_session(&config);
+    let id = cdata_core::session::open_session(&config).await.unwrap();
     let summary = cdata_core::session::execute(id, "SELECT * FROM big_rows ORDER BY id", 200_000)
         .await
         .expect("查询失败");
@@ -185,7 +189,7 @@ async fn editing_a_cell_writes_back_and_updates_cache() {
         return;
     };
 
-    let id = cdata_core::session::open_session(&config);
+    let id = cdata_core::session::open_session(&config).await.unwrap();
     let summary = cdata_core::session::execute(
         id,
         "SELECT id, name, amount, note FROM edit_target ORDER BY id",
@@ -248,7 +252,7 @@ async fn writing_null_and_chinese_round_trips() {
         return;
     };
 
-    let id = cdata_core::session::open_session(&config);
+    let id = cdata_core::session::open_session(&config).await.unwrap();
     cdata_core::session::execute(
         id,
         "SELECT id, name, amount, note FROM edit_target ORDER BY id",
@@ -305,7 +309,7 @@ async fn table_without_primary_key_refuses_editing() {
         return;
     };
 
-    let id = cdata_core::session::open_session(&config);
+    let id = cdata_core::session::open_session(&config).await.unwrap();
     let summary = cdata_core::session::execute(id, "SELECT a, b FROM no_pk", 100)
         .await
         .expect("查询失败");
@@ -332,7 +336,7 @@ async fn join_result_refuses_editing() {
         return;
     };
 
-    let id = cdata_core::session::open_session(&config);
+    let id = cdata_core::session::open_session(&config).await.unwrap();
     let summary = cdata_core::session::execute(
         id,
         "SELECT e.id, n.b FROM edit_target e JOIN no_pk n ON n.a = e.id",
@@ -358,7 +362,7 @@ async fn missing_primary_key_column_refuses_editing() {
         return;
     };
 
-    let id = cdata_core::session::open_session(&config);
+    let id = cdata_core::session::open_session(&config).await.unwrap();
     // 没 SELECT 主键，定位不到行
     let summary = cdata_core::session::execute(id, "SELECT name, amount FROM edit_target", 100)
         .await
@@ -380,7 +384,7 @@ async fn composite_primary_key_is_editable() {
         return;
     };
 
-    let id = cdata_core::session::open_session(&config);
+    let id = cdata_core::session::open_session(&config).await.unwrap();
     let summary = cdata_core::session::execute(
         id,
         "SELECT shop_id, order_no, amount FROM edit_composite ORDER BY order_no",
@@ -405,7 +409,7 @@ async fn execute_handles_statements_without_result_set() {
         return;
     };
 
-    let id = cdata_core::session::open_session(&config);
+    let id = cdata_core::session::open_session(&config).await.unwrap();
 
     // UPDATE 没有结果集，execute 必须正常返回而不是卡住
     let summary = cdata_core::session::execute(
@@ -433,7 +437,7 @@ async fn order_by_wrapper_actually_sorts_on_the_server() {
         return;
     };
 
-    let id = cdata_core::session::open_session(&config);
+    let id = cdata_core::session::open_session(&config).await.unwrap();
     let base = "SELECT id, name FROM big_rows ORDER BY id LIMIT 100";
 
     // 原句带 LIMIT：包子查询后语义是「先取前 100 行，再对这 100 行排序」
@@ -464,7 +468,7 @@ async fn filter_and_sort_run_on_the_server() {
         return;
     };
 
-    let id = cdata_core::session::open_session(&config);
+    let id = cdata_core::session::open_session(&config).await.unwrap();
 
     // 数字比较 + 降序：值按字符串绑定，MySQL 按列类型转
     let summary = cdata_core::session::execute_view(
@@ -534,7 +538,7 @@ async fn filtered_result_is_still_editable() {
         return;
     };
 
-    let id = cdata_core::session::open_session(&config);
+    let id = cdata_core::session::open_session(&config).await.unwrap();
     let summary = cdata_core::session::execute_view(
         id,
         "SELECT id, name, amount FROM edit_target",
@@ -558,7 +562,7 @@ async fn filtered_result_is_still_editable() {
 
 /// 数一下某个条件下的行数，用独立会话查，不碰被测会话的缓存
 async fn count_where(config: &ConnectionConfig, sql: &str) -> i64 {
-    let id = cdata_core::session::open_session(config);
+    let id = cdata_core::session::open_session(config).await.unwrap();
     cdata_core::session::execute(id, sql, 10).await.expect("计数失败");
     let rows = cdata_core::session::fetch_window(id, 0, 1).expect("取窗口失败");
     cdata_core::session::close_session(id).await.ok();
@@ -574,7 +578,7 @@ async fn insert_reads_back_real_values_and_delete_removes_it() {
         return;
     };
 
-    let id = cdata_core::session::open_session(&config);
+    let id = cdata_core::session::open_session(&config).await.unwrap();
     let summary = cdata_core::session::execute(
         id,
         "SELECT id, name, amount, note FROM edit_target ORDER BY id",
@@ -623,7 +627,7 @@ async fn batch_delete_rolls_back_when_any_row_is_stale() {
         return;
     };
 
-    let id = cdata_core::session::open_session(&config);
+    let id = cdata_core::session::open_session(&config).await.unwrap();
     let summary = cdata_core::session::execute(
         id,
         "SELECT id, name FROM edit_target ORDER BY id",
@@ -645,7 +649,7 @@ async fn batch_delete_rolls_back_when_any_row_is_stale() {
     };
 
     // 别人先把第二行删了，缓存里的第二行成了过期数据
-    let other = cdata_core::session::open_session(&config);
+    let other = cdata_core::session::open_session(&config).await.unwrap();
     cdata_core::session::execute(other, &format!("DELETE FROM edit_target WHERE id = {id2}"), 10)
         .await
         .expect("外部删除失败");
@@ -680,7 +684,7 @@ async fn insert_without_full_composite_key_is_refused_before_writing() {
 
     let before = count_where(&config, "SELECT COUNT(*) FROM edit_composite").await;
 
-    let id = cdata_core::session::open_session(&config);
+    let id = cdata_core::session::open_session(&config).await.unwrap();
     cdata_core::session::execute(id, "SELECT shop_id, order_no, amount FROM edit_composite", 100)
         .await
         .expect("查询失败");
@@ -704,7 +708,7 @@ async fn read_only_result_refuses_insert_and_delete() {
         return;
     };
 
-    let id = cdata_core::session::open_session(&config);
+    let id = cdata_core::session::open_session(&config).await.unwrap();
     cdata_core::session::execute(id, "SELECT a, b FROM no_pk", 100)
         .await
         .expect("查询失败");
@@ -723,7 +727,7 @@ async fn edit_caches_what_the_database_stored_not_what_was_typed() {
         return;
     };
 
-    let id = cdata_core::session::open_session(&config);
+    let id = cdata_core::session::open_session(&config).await.unwrap();
     let summary = cdata_core::session::execute(
         id,
         "SELECT id, name, amount FROM edit_target ORDER BY id",
@@ -774,7 +778,7 @@ async fn paste_writes_a_block_and_caches_stored_values() {
         return;
     };
 
-    let id = cdata_core::session::open_session(&config);
+    let id = cdata_core::session::open_session(&config).await.unwrap();
     let summary = cdata_core::session::execute(
         id,
         "SELECT id, name, amount, note FROM edit_target ORDER BY id",
@@ -819,7 +823,7 @@ async fn paste_refuses_primary_key_and_out_of_range_before_writing() {
         return;
     };
 
-    let id = cdata_core::session::open_session(&config);
+    let id = cdata_core::session::open_session(&config).await.unwrap();
     let summary = cdata_core::session::execute(
         id,
         "SELECT id, name FROM edit_target ORDER BY id",
@@ -849,7 +853,7 @@ async fn paste_rolls_back_when_any_row_is_stale() {
         return;
     };
 
-    let id = cdata_core::session::open_session(&config);
+    let id = cdata_core::session::open_session(&config).await.unwrap();
     let summary = cdata_core::session::execute(
         id,
         "SELECT id, name, amount, note FROM edit_target ORDER BY id",
@@ -861,7 +865,7 @@ async fn paste_rolls_back_when_any_row_is_stale() {
     let ids = insert_scratch_rows(id, first, 2, "粘贴回滚").await;
 
     // 别人把第二行删了
-    let other = cdata_core::session::open_session(&config);
+    let other = cdata_core::session::open_session(&config).await.unwrap();
     cdata_core::session::execute(other, &format!("DELETE FROM edit_target WHERE id = {}", ids[1]), 10)
         .await
         .expect("外部删除失败");
@@ -892,7 +896,7 @@ async fn table_structure_reads_columns_indexes_foreign_keys_and_ddl() {
     let database = config.database.clone().unwrap();
 
     // 结构测试要有索引和外键，自己建两张探针表（只增不删，重复跑不影响）
-    let setup = cdata_core::session::open_session(&config);
+    let setup = cdata_core::session::open_session(&config).await.unwrap();
     for ddl in [
         "CREATE TABLE IF NOT EXISTS structure_parent (\
             id INT UNSIGNED PRIMARY KEY, code VARCHAR(20) NOT NULL, UNIQUE KEY uk_code (code)\
@@ -958,7 +962,7 @@ async fn column_kinds_come_from_metadata_and_choices_from_the_table() {
         return;
     };
 
-    let id = cdata_core::session::open_session(&config);
+    let id = cdata_core::session::open_session(&config).await.unwrap();
     // 包一层筛选的派生表，类别也不能丢
     let summary = cdata_core::session::execute_view(id, "SELECT * FROM type_zoo", &[], true, Some(("id", true)), 10)
         .await
@@ -999,7 +1003,7 @@ async fn export_writes_the_current_view_and_reports_truncation() {
         return;
     };
 
-    let id = cdata_core::session::open_session(&config);
+    let id = cdata_core::session::open_session(&config).await.unwrap();
     // 导出的是当前视图：筛选后降序的 3 行
     cdata_core::session::execute_view(
         id,
@@ -1051,7 +1055,7 @@ async fn completion_uses_the_loaded_catalog() {
     };
     let database = config.database.clone().unwrap();
 
-    let id = cdata_core::session::open_session(&config);
+    let id = cdata_core::session::open_session(&config).await.unwrap();
     // 没加载目录时只有关键字，不报错
     let before = cdata_core::session::complete_sql(id, "SELECT * FROM ", 14).expect("补全失败");
     assert!(before.items.is_empty(), "没有目录就没有表可补");

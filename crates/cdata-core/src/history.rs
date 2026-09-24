@@ -25,7 +25,7 @@ pub struct Favorite {
     pub sql: String,
 }
 
-fn data_file(env_name: &str, file_name: &str) -> Result<PathBuf> {
+pub(crate) fn data_file(env_name: &str, file_name: &str) -> Result<PathBuf> {
     // 测试指到临时文件，免得改掉用户真实的数据
     if let Ok(path) = std::env::var(env_name) {
         return Ok(PathBuf::from(path));

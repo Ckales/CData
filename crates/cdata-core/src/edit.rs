@@ -4,10 +4,10 @@
 //! 一律禁止编辑并说明原因。猜一个「看起来能用」的 WHERE 条件可能改掉成千上万行。
 
 use mysql_async::prelude::*;
-use mysql_async::{Pool, Value};
+use mysql_async::Value;
 use serde::{Deserialize, Serialize};
 
-use crate::db::ColumnMeta;
+use crate::db::{ColumnMeta, DbPool};
 use crate::sql::{quote_ident, Statement};
 use crate::value::{value_to_mysql, CellValue};
 
@@ -31,7 +31,7 @@ pub struct EditTarget {
 ///
 /// 只支持单表查询：所有列都来自同一张实体表，且主键列全在结果集里。
 /// JOIN、聚合、表达式列一律只读——它们没有可靠的回写目标。
-pub async fn detect_editability(pool: &Pool, columns: &[ColumnMeta]) -> Editability {
+pub async fn detect_editability(pool: &DbPool, columns: &[ColumnMeta]) -> Editability {
     if columns.is_empty() {
         return Editability::ReadOnly("结果集没有列".to_string());
     }
@@ -101,7 +101,7 @@ pub(crate) fn single_source_table(columns: &[ColumnMeta]) -> Result<(String, Str
 }
 
 async fn primary_key_columns(
-    pool: &Pool,
+    pool: &DbPool,
     schema: &str,
     table: &str,
 ) -> Result<Vec<String>, mysql_async::Error> {
@@ -119,7 +119,7 @@ async fn primary_key_columns(
 
 /// 主键列是不是自增。插入时没填主键，只有自增列才能靠 LAST_INSERT_ID 找回这一行
 pub async fn is_auto_increment(
-    pool: &Pool,
+    pool: &DbPool,
     schema: &str,
     table: &str,
     column: &str,

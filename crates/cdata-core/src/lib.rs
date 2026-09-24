@@ -9,9 +9,12 @@ pub mod export;
 pub mod history;
 pub mod layouts;
 pub mod lexer;
+pub mod options;
+pub mod preferences;
 pub mod schema;
 pub mod session;
 pub mod sql;
+pub mod ssh;
 pub mod structure;
 pub mod value;
 

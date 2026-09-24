@@ -1,9 +1,10 @@
 //! 表结构：列定义、索引、外键、建表语句。结构查看、类型编辑器、补全都从这里取列信息。
 
 use mysql_async::prelude::*;
-use mysql_async::{Pool, Row};
+use mysql_async::Row;
 use serde::{Deserialize, Serialize};
 
+use crate::db::DbPool;
 use crate::sql::quote_ident;
 
 /// 列的默认值。information_schema 里 COLUMN_DEFAULT 为 NULL 有两种意思，要结合可空性区分
@@ -65,7 +66,7 @@ pub struct TableStructure {
 }
 
 pub async fn table_structure(
-    pool: &Pool,
+    pool: &DbPool,
     schema: &str,
     table: &str,
 ) -> Result<TableStructure, mysql_async::Error> {
@@ -148,7 +149,7 @@ pub async fn table_structure(
 
 /// 一张表的列定义，按表里的顺序
 pub async fn table_columns(
-    pool: &Pool,
+    pool: &DbPool,
     schema: &str,
     table: &str,
 ) -> Result<Vec<ColumnDef>, mysql_async::Error> {
@@ -236,7 +237,7 @@ pub fn parse_choices(column_type: &str) -> Option<Vec<String>> {
 
 /// 某张表某一列的 ENUM / SET 可选值。不是这两种类型就是 None
 pub async fn column_choices(
-    pool: &Pool,
+    pool: &DbPool,
     schema: &str,
     table: &str,
     column: &str,

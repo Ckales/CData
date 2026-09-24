@@ -7,15 +7,18 @@ use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
 
 use mysql_async::prelude::Queryable;
-use mysql_async::{Pool, TxOpts};
+use mysql_async::TxOpts;
 
-use crate::db::{open_pool, run_query_with_params, ColumnMeta, ConnectionConfig, ResultSet};
+use crate::db::{
+    open_pool, run_query_with_params, ColumnMeta, ConnectFailed, ConnectionConfig, DbPool, OpenError,
+    QueryTimedOut, ResultSet,
+};
 use crate::sql::{build_view, FilterCondition};
 use crate::edit::{
     build_delete, build_insert, build_select_by_key, build_update, detect_editability,
     is_auto_increment, EditTarget, Editability,
 };
-use crate::value::CellValue;
+use crate::value::{CellValue, DisplayCell};
 
 #[derive(Debug)]
 pub enum Error {
@@ -28,8 +31,16 @@ pub enum Error {
     NotEditable(String),
     /// 写回没有按预期生效
     EditFailed(String),
-    /// 界面给的参数不对：选区越界、剪贴板格式不规整、筛选条件缺列
+    /// 界面给的参数不对：选区越界、剪贴板格式不规整、筛选条件缺列、连接选项说不通
     BadInput(String),
+    /// 取连接时就失败了（连不上、连接超时、隧道建不起来）。语句还没发出去，肯定没执行
+    Connect(String),
+    /// 语句发出去之后连接断了。**可能执行了也可能没执行**，不自动重试
+    ConnectionLost(String),
+    /// 查询超时，已经尝试让服务器停掉
+    QueryTimeout(String),
+    /// SSH 隧道建不起来。主机密钥的问题带着指纹，界面可以据此问用户
+    Ssh(crate::ssh::Error),
 }
 
 impl std::fmt::Display for Error {
@@ -41,15 +52,66 @@ impl std::fmt::Display for Error {
             Error::NotEditable(reason) => write!(f, "{reason}"),
             Error::EditFailed(reason) => write!(f, "{reason}"),
             Error::BadInput(reason) => write!(f, "{reason}"),
+            Error::Connect(reason) => write!(f, "{reason}（语句还没有发出，没有执行）"),
+            Error::ConnectionLost(reason) => write!(
+                f,
+                "连接断开了（{reason}）。这条语句可能已经执行，也可能没有执行，请确认后再决定是否重跑；\
+                 下一次操作会自动重新连接"
+            ),
+            Error::QueryTimeout(reason) => write!(f, "{reason}"),
+            Error::Ssh(err) => write!(f, "{err}"),
         }
     }
 }
 
 impl std::error::Error for Error {}
 
+impl Error {
+    /// 主机密钥没通过校验时的详情。未知主机可以让用户确认指纹后调 ssh::trust_host_key
+    pub fn host_key_issue(&self) -> Option<&crate::ssh::HostKeyIssue> {
+        match self {
+            Error::Ssh(crate::ssh::Error::HostKey(issue)) => Some(issue),
+            _ => None,
+        }
+    }
+}
+
+/// 服务器主动断开连接时发来的错误码：
+/// 1053 服务器正在关闭，4031 闲置太久被服务器断开，3169 会话被 KILL（MySQL 8），1927 连接被 KILL（MariaDB）
+const CONNECTION_GONE_CODES: [u16; 4] = [1053, 4031, 3169, 1927];
+
 impl From<mysql_async::Error> for Error {
+    /// 按「语句有没有可能执行」分类：取连接时的失败、执行中断线、超时、其余的 MySQL 错误
     fn from(err: mysql_async::Error) -> Self {
-        Error::Mysql(err.to_string())
+        match err {
+            mysql_async::Error::Other(inner) => {
+                let inner = match inner.downcast::<ConnectFailed>() {
+                    Ok(failed) => return Error::Connect(failed.to_string()),
+                    Err(other) => other,
+                };
+                match inner.downcast::<QueryTimedOut>() {
+                    Ok(timed_out) => Error::QueryTimeout(timed_out.to_string()),
+                    Err(other) => Error::Mysql(other.to_string()),
+                }
+            }
+            mysql_async::Error::Io(io) => Error::ConnectionLost(io.to_string()),
+            mysql_async::Error::Driver(mysql_async::DriverError::ConnectionClosed) => {
+                Error::ConnectionLost("服务器关闭了连接".to_string())
+            }
+            mysql_async::Error::Server(server) if CONNECTION_GONE_CODES.contains(&server.code) => {
+                Error::ConnectionLost(server.to_string())
+            }
+            other => Error::Mysql(other.to_string()),
+        }
+    }
+}
+
+impl From<OpenError> for Error {
+    fn from(err: OpenError) -> Self {
+        match err {
+            OpenError::BadOptions(reason) => Error::BadInput(reason),
+            OpenError::Ssh(err) => Error::Ssh(err),
+        }
     }
 }
 
@@ -69,8 +131,8 @@ pub struct QuerySummary {
 }
 
 struct Session {
-    pool: Pool,
-    /// host:port，拼布局键用
+    pool: DbPool,
+    /// host:port（走 SSH 时带上隧道出口），拼布局键用
     server: String,
     result: Option<ResultSet>,
     editability: Option<Editability>,
@@ -93,9 +155,16 @@ fn store() -> &'static Mutex<Store> {
     })
 }
 
-/// 开一个会话。这里只建池，真正的 TCP 连接等到第一次查询才发生
-pub fn open_session(config: &ConnectionConfig) -> u64 {
-    let pool = open_pool(config);
+/// 开一个会话。直连时只建池，真正的 TCP 连接等到第一次查询才发生；
+/// 走 SSH 时当场建隧道，主机密钥和认证的问题在这里就报出来
+pub async fn open_session(config: &ConnectionConfig) -> Result<u64> {
+    let pool = open_pool(config).await?;
+    // 走隧道时 host:port 是从 SSH 服务器看过去的地址，常常就是 127.0.0.1:3306，
+    // 不带上隧道出口的话会和本机库的列布局混在一起
+    let server = match config.options.ssh.hops.last() {
+        Some(exit) => format!("{}:{} via {}", config.host, config.port, exit.label()),
+        None => format!("{}:{}", config.host, config.port),
+    };
 
     let mut guard = store().lock().unwrap();
     let id = guard.next_id;
@@ -104,13 +173,13 @@ pub fn open_session(config: &ConnectionConfig) -> u64 {
         id,
         Session {
             pool,
-            server: format!("{}:{}", config.host, config.port),
+            server,
             result: None,
             editability: None,
             catalog: crate::complete::Catalog::default(),
         },
     );
-    id
+    Ok(id)
 }
 
 /// 跑查询并把结果留在会话里，只回概况
@@ -189,14 +258,14 @@ pub fn fetch_window(session_id: u64, offset: u64, limit: u64) -> Result<Vec<Vec<
 /// 和 fetch_window 是两个场景，刻意分开：渲染要的是一屏文本、一次调用；
 /// 编辑要的是单个单元格的原始值。合成一个接口会让每屏都多传一份用不上的数据，
 /// 而按单元格调 FFI 拿文本又会把调用次数放大到几千次。
-pub fn fetch_window_text(session_id: u64, offset: u64, limit: u64) -> Result<Vec<Vec<String>>> {
+pub fn fetch_window_text(session_id: u64, offset: u64, limit: u64) -> Result<Vec<Vec<DisplayCell>>> {
     let rows = fetch_window(session_id, offset, limit)?;
 
     let mut out = Vec::with_capacity(rows.len());
     for row in &rows {
         let mut texts = Vec::with_capacity(row.len());
         for cell in row {
-            texts.push(crate::value::display_text(cell));
+            texts.push(crate::value::display_cell(cell));
         }
         out.push(texts);
     }
@@ -344,7 +413,7 @@ pub async fn table_structure(
 }
 
 /// 取会话的连接池并立刻释放锁，不把锁持过 await
-fn pool_of(session_id: u64) -> Result<Pool> {
+fn pool_of(session_id: u64) -> Result<DbPool> {
     let guard = store().lock().unwrap();
     let session = guard
         .sessions
@@ -425,7 +494,7 @@ pub async fn apply_edit(
 
 /// 按主键从库里重读一行。写库之后用它刷新缓存，界面显示的永远是库里真实存下的值
 async fn reread_row(
-    pool: &Pool,
+    pool: &DbPool,
     target: &EditTarget,
     columns: &[ColumnMeta],
     row: &[CellValue],

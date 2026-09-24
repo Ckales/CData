@@ -23,9 +23,12 @@ keyring = { version = "4.2", default-features = false, features = [
 mysql_async = { version = "0.37", default-features = false, features = [
     "default-rustls-ring",
 ] }
+russh = { version = "0.63", default-features = false, features = ["ring", "rsa"] }
 serde = { version = "1", features = ["derive"] }
 # preserve_order：格式化 JSON 不能把键重新排序；arbitrary_precision：大数字不能被转成 f64 丢精度
 serde_json = { version = "1.0.151", features = ["preserve_order", "arbitrary_precision"] }
+tokio = { version = "1", features = ["net", "time", "io-util", "sync", "rt"] }
 
 [dev-dependencies]
+rand = "0.10"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
