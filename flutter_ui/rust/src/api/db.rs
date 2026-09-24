@@ -50,6 +50,7 @@ pub struct _QuerySummary {
     pub total_rows: u64,
     pub truncated: bool,
     pub editability: Editability,
+    pub layout_key: Option<String>,
 }
 
 pub(crate) fn runtime() -> &'static Runtime {

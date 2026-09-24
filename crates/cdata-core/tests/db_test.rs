@@ -156,6 +156,9 @@ async fn session_keeps_rows_and_serves_windows() {
 
     assert_eq!(summary.total_rows, 100_000);
     assert!(!summary.truncated);
+    // 单表结果按「服务器/库.表」记布局
+    let key = summary.layout_key.as_deref().expect("单表结果应该有布局键");
+    assert_eq!(key, format!("{}:{}/{}.big_rows", config.host, config.port, config.database.as_deref().unwrap()));
 
     // 界面滚到中间，只取两百行
     let window = cdata_core::session::fetch_window(id, 50_000, 200).expect("取窗口失败");
@@ -344,6 +347,7 @@ async fn join_result_refuses_editing() {
         }
         cdata_core::edit::Editability::Editable(_) => panic!("JOIN 结果不该可编辑"),
     }
+    assert_eq!(summary.layout_key, None, "JOIN 结果没有稳定的列归属，不记布局");
 
     cdata_core::session::close_session(id).await.ok();
 }

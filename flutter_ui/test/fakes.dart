@@ -5,6 +5,7 @@
 
 import 'package:cdata_flutter/data_source.dart';
 import 'package:cdata_flutter/src/rust/api/db.dart';
+import 'package:cdata_flutter/src/rust/api/layouts.dart';
 import 'package:cdata_flutter/src/rust/api/schema.dart';
 import 'package:cdata_flutter/src/rust/api/value.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge.dart';
@@ -64,6 +65,12 @@ class FakeGridSource implements GridSource {
 
   /// 删除的调用记录
   final List<List<int>> deletes = [];
+
+  /// 记住的列布局。saveLayout 会覆盖它
+  List<ColumnLayout> savedLayout = [];
+
+  /// saveLayout 的调用记录
+  final List<List<ColumnLayout>> layoutSaves = [];
 
   /// 设成非 null 就让 edit / insertRow / deleteRows 抛错，用来测界面怎么显示失败
   String? editError;
@@ -143,6 +150,15 @@ class FakeGridSource implements GridSource {
       rows.removeAt(index);
     }
     return rows.length;
+  }
+
+  @override
+  Future<List<ColumnLayout>> loadLayout() async => savedLayout;
+
+  @override
+  Future<void> saveLayout(List<ColumnLayout> columns) async {
+    layoutSaves.add(columns);
+    savedLayout = columns;
   }
 
   /// 和 Rust 侧 display_text 保持一致的显示规则

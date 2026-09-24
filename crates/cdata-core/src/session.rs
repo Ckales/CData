@@ -60,10 +60,14 @@ pub struct QuerySummary {
     pub truncated: bool,
     /// 能不能编辑。不能的话带着原因，界面要显示出来而不是闷着禁用
     pub editability: Editability,
+    /// 记列宽列序用的键。结果集不是来自单张表时为 None，不记
+    pub layout_key: Option<String>,
 }
 
 struct Session {
     pool: Pool,
+    /// host:port，拼布局键用
+    server: String,
     result: Option<ResultSet>,
     editability: Option<Editability>,
 }
@@ -94,6 +98,7 @@ pub fn open_session(config: &ConnectionConfig) -> u64 {
         id,
         Session {
             pool,
+            server: format!("{}:{}", config.host, config.port),
             result: None,
             editability: None,
         },
@@ -104,13 +109,13 @@ pub fn open_session(config: &ConnectionConfig) -> u64 {
 /// 跑查询并把结果留在会话里，只回概况
 pub async fn execute(session_id: u64, sql: &str, max_rows: usize) -> Result<QuerySummary> {
     // 先把池克隆出来再释放锁，避免把锁持过 await
-    let pool = {
+    let (pool, server) = {
         let guard = store().lock().unwrap();
         let session = guard
             .sessions
             .get(&session_id)
             .ok_or(Error::NoSuchSession(session_id))?;
-        session.pool.clone()
+        (session.pool.clone(), session.server.clone())
     };
 
     let result = run_query(&pool, sql, max_rows).await?;
@@ -121,6 +126,7 @@ pub async fn execute(session_id: u64, sql: &str, max_rows: usize) -> Result<Quer
         total_rows: result.rows.len() as u64,
         truncated: result.truncated,
         editability: editability.clone(),
+        layout_key: crate::layouts::layout_key(&server, &result.columns),
     };
 
     let mut guard = store().lock().unwrap();

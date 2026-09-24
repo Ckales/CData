@@ -5,6 +5,8 @@
 
 import 'package:cdata_flutter/result_grid.dart';
 import 'package:cdata_flutter/src/rust/api/db.dart';
+import 'package:cdata_flutter/src/rust/api/layouts.dart';
+import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:cdata_flutter/src/rust/api/value.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -41,6 +43,24 @@ Future<void> doubleTap(WidgetTester tester, Finder finder) async {
   // 编辑态里 TextField 的光标是无限动画，不能 pumpAndSettle
   await tester.pump(const Duration(milliseconds: 100));
 }
+
+/// 用鼠标拖。桌面上横向滚动不响应鼠标拖动，用触摸拖会和外层 ScrollView 抢手势
+Future<void> mouseDrag(WidgetTester tester, Finder finder, Offset offset) async {
+  final gesture = await tester.startGesture(tester.getCenter(finder), kind: PointerDeviceKind.mouse);
+  // 先挪过拖动阈值，再一步到位
+  await gesture.moveBy(Offset(offset.dx.sign * 20, 0));
+  await tester.pump();
+  await gesture.moveBy(Offset(offset.dx - offset.dx.sign * 20, 0));
+  await tester.pump();
+  await gesture.up();
+  await tester.pumpAndSettle();
+}
+
+double widthOf(WidgetTester tester, String key) => tester.getSize(find.byKey(ValueKey(key))).width;
+
+double leftOf(WidgetTester tester, String key) => tester.getTopLeft(find.byKey(ValueKey(key))).dx;
+
+List<String> namesOf(List<ColumnLayout> layout) => [for (final column in layout) column.name];
 
 void main() {
   testWidgets('渲染列头、行号和数据', (tester) async {
@@ -314,5 +334,93 @@ void main() {
 
     expect(find.text('新增行'), findsNothing);
     expect(find.textContaining('删除 '), findsNothing);
+  });
+
+  testWidgets('拖列边改宽度，松手后记住', (tester) async {
+    final source = FakeGridSource.rows(2);
+    await pumpGrid(tester, source);
+
+    await mouseDrag(tester, find.byKey(const ValueKey('resize-1')), const Offset(60, 0));
+
+    expect(widthOf(tester, 'cell-0-1'), closeTo(230, 1), reason: '数据列要跟着表头一起变宽');
+    expect(widthOf(tester, 'header-1'), closeTo(230, 1));
+    expect(source.layoutSaves, hasLength(1), reason: '拖动过程中不存，松手存一次');
+    expect(namesOf(source.layoutSaves.last), ['id', 'name']);
+    expect(source.layoutSaves.last[1].width, closeTo(230, 1));
+  });
+
+  testWidgets('列宽有下限，拖不没', (tester) async {
+    await pumpGrid(tester, FakeGridSource.rows(2));
+
+    await mouseDrag(tester, find.byKey(const ValueKey('resize-1')), const Offset(-400, 0));
+    expect(widthOf(tester, 'cell-0-1'), greaterThanOrEqualTo(48));
+  });
+
+  testWidgets('双击列边按内容自适应，超长内容有上限', (tester) async {
+    final source = FakeGridSource(
+      summary: summaryOf(columns: [column('id'), column('name'), column('note')], totalRows: 1),
+      rows: [
+        [CellValue.int(1), CellValue.text('ab'), CellValue.text('x' * 300)],
+      ],
+    );
+    await pumpGrid(tester, source);
+
+    await doubleTap(tester, find.byKey(const ValueKey('resize-1')));
+    await tester.pumpAndSettle();
+    await doubleTap(tester, find.byKey(const ValueKey('resize-2')));
+    await tester.pumpAndSettle();
+
+    expect(widthOf(tester, 'cell-0-1'), lessThan(170), reason: '短内容应该收窄');
+    expect(widthOf(tester, 'cell-0-2'), 600, reason: '超长内容不能把列撑到没边');
+    expect(source.layoutSaves, hasLength(2));
+  });
+
+  testWidgets('拖列头换顺序，数据列跟着换并记住', (tester) async {
+    final source = FakeGridSource.rows(2);
+    await pumpGrid(tester, source);
+
+    // 把 name 拖到 id 上
+    await mouseDrag(tester, find.text('name'), const Offset(-170, 0));
+
+    expect(leftOf(tester, 'cell-0-1'), lessThan(leftOf(tester, 'cell-0-0')));
+    expect(leftOf(tester, 'header-1'), lessThan(leftOf(tester, 'header-0')));
+    expect(namesOf(source.savedLayout), ['name', 'id']);
+
+    // 换了顺序，双击编辑的还是原来那一列
+    await doubleTap(tester, find.text('用户1'));
+    await tester.enterText(find.byType(TextField), '新名字');
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.pumpAndSettle();
+    expect(source.edits.single.$2, 1);
+  });
+
+  testWidgets('打开时套用记住的布局，没记过的新列排在最后', (tester) async {
+    final source = FakeGridSource(
+      summary: summaryOf(columns: [column('id'), column('name'), column('note')], totalRows: 1),
+      rows: [
+        [CellValue.int(1), CellValue.text('a'), CellValue.text('b')],
+      ],
+    )..savedLayout = [
+        ColumnLayout(name: 'name', width: 250),
+        ColumnLayout(name: 'dropped_column', width: 999),
+        ColumnLayout(name: 'id', width: 90),
+      ];
+    await pumpGrid(tester, source);
+
+    expect(widthOf(tester, 'cell-0-1'), 250);
+    expect(widthOf(tester, 'cell-0-0'), 90);
+    expect(widthOf(tester, 'cell-0-2'), 170, reason: 'note 没记过，用默认宽度');
+    expect(leftOf(tester, 'cell-0-1'), lessThan(leftOf(tester, 'cell-0-0')));
+    expect(leftOf(tester, 'cell-0-0'), lessThan(leftOf(tester, 'cell-0-2')));
+  });
+
+  testWidgets('同样的列重跑（排序）保留当前布局', (tester) async {
+    final first = FakeGridSource.rows(2);
+    await pumpGrid(tester, first);
+    await mouseDrag(tester, find.byKey(const ValueKey('resize-1')), const Offset(60, 0));
+
+    // 排序会换一个新结果集，列不变；新结果集里读不到布局（比如 JOIN 结果不记）
+    await pumpGrid(tester, FakeGridSource.rows(2));
+    expect(widthOf(tester, 'cell-0-1'), closeTo(230, 1));
   });
 }

@@ -3,6 +3,7 @@
 pub mod connections;
 pub mod db;
 pub mod edit;
+pub mod layouts;
 pub mod schema;
 pub mod session;
 pub mod sql;

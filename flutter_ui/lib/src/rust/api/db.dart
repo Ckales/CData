@@ -192,12 +192,14 @@ class QuerySummary {
   final BigInt totalRows;
   final bool truncated;
   final Editability editability;
+  final String? layoutKey;
 
   const QuerySummary({
     required this.columns,
     required this.totalRows,
     required this.truncated,
     required this.editability,
+    this.layoutKey,
   });
 
   @override
@@ -205,7 +207,8 @@ class QuerySummary {
       columns.hashCode ^
       totalRows.hashCode ^
       truncated.hashCode ^
-      editability.hashCode;
+      editability.hashCode ^
+      layoutKey.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -215,5 +218,6 @@ class QuerySummary {
           columns == other.columns &&
           totalRows == other.totalRows &&
           truncated == other.truncated &&
-          editability == other.editability;
+          editability == other.editability &&
+          layoutKey == other.layoutKey;
 }

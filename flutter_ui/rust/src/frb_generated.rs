@@ -39,7 +39,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.13.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 477168102;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 1087463800;
 
 // Section: executor
 
@@ -555,6 +555,39 @@ fn wire__crate__api__schema__list_tables_impl(
         },
     )
 }
+fn wire__crate__api__layouts__load_layout_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "load_layout",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_key = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, String>((move || {
+                    let output_ok = crate::api::layouts::load_layout(api_key)?;
+                    std::result::Result::Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
 fn wire__crate__api__connections__load_password_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
@@ -657,6 +690,41 @@ fn wire__crate__api__connections__save_connection_impl(
         },
     )
 }
+fn wire__crate__api__layouts__save_layout_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "save_layout",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_key = <String>::sse_decode(&mut deserializer);
+            let api_columns =
+                <Vec<crate::api::layouts::ColumnLayout>>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, String>((move || {
+                    let output_ok = crate::api::layouts::save_layout(api_key, api_columns)?;
+                    std::result::Result::Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
 fn wire__crate__api__schema__with_order_by_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
@@ -723,6 +791,11 @@ const _: fn() = || {
         }
     }
     {
+        let ColumnLayout = None::<crate::api::layouts::ColumnLayout>.unwrap();
+        let _: String = ColumnLayout.name;
+        let _: f64 = ColumnLayout.width;
+    }
+    {
         let ColumnMeta = None::<crate::api::db::ColumnMeta>.unwrap();
         let _: String = ColumnMeta.name;
         let _: String = ColumnMeta.org_name;
@@ -758,6 +831,7 @@ const _: fn() = || {
         let _: u64 = QuerySummary.total_rows;
         let _: bool = QuerySummary.truncated;
         let _: crate::api::db::Editability = QuerySummary.editability;
+        let _: Option<String> = QuerySummary.layout_key;
     }
     {
         let SavedConnection = None::<crate::api::connections::SavedConnection>.unwrap();
@@ -829,6 +903,18 @@ impl SseDecode for crate::api::value::CellValue {
                 unimplemented!("");
             }
         }
+    }
+}
+
+impl SseDecode for crate::api::layouts::ColumnLayout {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_name = <String>::sse_decode(deserializer);
+        let mut var_width = <f64>::sse_decode(deserializer);
+        return crate::api::layouts::ColumnLayout {
+            name: var_name,
+            width: var_width,
+        };
     }
 }
 
@@ -935,6 +1021,20 @@ impl SseDecode for Vec<crate::api::value::CellValue> {
         let mut ans_ = Vec::with_capacity(len_ as usize);
         for idx_ in 0..len_ {
             ans_.push(<crate::api::value::CellValue>::sse_decode(deserializer));
+        }
+        return ans_;
+    }
+}
+
+impl SseDecode for Vec<crate::api::layouts::ColumnLayout> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<crate::api::layouts::ColumnLayout>::sse_decode(
+                deserializer,
+            ));
         }
         return ans_;
     }
@@ -1083,11 +1183,13 @@ impl SseDecode for crate::api::db::QuerySummary {
         let mut var_totalRows = <u64>::sse_decode(deserializer);
         let mut var_truncated = <bool>::sse_decode(deserializer);
         let mut var_editability = <crate::api::db::Editability>::sse_decode(deserializer);
+        let mut var_layoutKey = <Option<String>>::sse_decode(deserializer);
         return crate::api::db::QuerySummary {
             columns: var_columns,
             total_rows: var_totalRows,
             truncated: var_truncated,
             editability: var_editability,
+            layout_key: var_layoutKey,
         };
     }
 }
@@ -1193,12 +1295,14 @@ fn pde_ffi_dispatcher_primary_impl(
         }
         13 => wire__crate__api__schema__list_databases_impl(port, ptr, rust_vec_len, data_len),
         14 => wire__crate__api__schema__list_tables_impl(port, ptr, rust_vec_len, data_len),
-        15 => wire__crate__api__connections__load_password_impl(port, ptr, rust_vec_len, data_len),
-        16 => wire__crate__api__db__open_session_impl(port, ptr, rust_vec_len, data_len),
-        17 => {
+        15 => wire__crate__api__layouts__load_layout_impl(port, ptr, rust_vec_len, data_len),
+        16 => wire__crate__api__connections__load_password_impl(port, ptr, rust_vec_len, data_len),
+        17 => wire__crate__api__db__open_session_impl(port, ptr, rust_vec_len, data_len),
+        18 => {
             wire__crate__api__connections__save_connection_impl(port, ptr, rust_vec_len, data_len)
         }
-        18 => wire__crate__api__schema__with_order_by_impl(port, ptr, rust_vec_len, data_len),
+        19 => wire__crate__api__layouts__save_layout_impl(port, ptr, rust_vec_len, data_len),
+        20 => wire__crate__api__schema__with_order_by_impl(port, ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -1254,6 +1358,27 @@ impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<crate::api::value::CellValue>>
     for crate::api::value::CellValue
 {
     fn into_into_dart(self) -> FrbWrapper<crate::api::value::CellValue> {
+        self.into()
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::layouts::ColumnLayout> {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.0.name.into_into_dart().into_dart(),
+            self.0.width.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for FrbWrapper<crate::api::layouts::ColumnLayout>
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<crate::api::layouts::ColumnLayout>>
+    for crate::api::layouts::ColumnLayout
+{
+    fn into_into_dart(self) -> FrbWrapper<crate::api::layouts::ColumnLayout> {
         self.into()
     }
 }
@@ -1362,6 +1487,7 @@ impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::db::QuerySummary> 
             self.0.total_rows.into_into_dart().into_dart(),
             self.0.truncated.into_into_dart().into_dart(),
             self.0.editability.into_into_dart().into_dart(),
+            self.0.layout_key.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -1477,6 +1603,14 @@ impl SseEncode for crate::api::value::CellValue {
     }
 }
 
+impl SseEncode for crate::api::layouts::ColumnLayout {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.name, serializer);
+        <f64>::sse_encode(self.width, serializer);
+    }
+}
+
 impl SseEncode for crate::api::db::ColumnMeta {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -1557,6 +1691,16 @@ impl SseEncode for Vec<crate::api::value::CellValue> {
         <i32>::sse_encode(self.len() as _, serializer);
         for item in self {
             <crate::api::value::CellValue>::sse_encode(item, serializer);
+        }
+    }
+}
+
+impl SseEncode for Vec<crate::api::layouts::ColumnLayout> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::api::layouts::ColumnLayout>::sse_encode(item, serializer);
         }
     }
 }
@@ -1678,6 +1822,7 @@ impl SseEncode for crate::api::db::QuerySummary {
         <u64>::sse_encode(self.total_rows, serializer);
         <bool>::sse_encode(self.truncated, serializer);
         <crate::api::db::Editability>::sse_encode(self.editability, serializer);
+        <Option<String>>::sse_encode(self.layout_key, serializer);
     }
 }
 

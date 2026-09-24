@@ -1,11 +1,14 @@
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart' show listEquals;
+import 'package:flutter/gestures.dart' show DragStartBehavior;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'data_source.dart';
 import 'insert_row_dialog.dart';
 import 'src/rust/api/db.dart';
+import 'src/rust/api/layouts.dart';
 import 'src/rust/api/value.dart';
 
 /// 行号列的宽度。表头、数据行、总宽三处共用，漏掉任何一处都会让 Row 比容器宽
@@ -46,8 +49,16 @@ class _ResultGridState extends State<ResultGrid> {
   /// 离窗口边缘还剩这么多行就预取下一段
   static const int _prefetchMargin = 40;
 
-  static const double _columnWidth = 170;
+  static const double _defaultColumnWidth = 170;
+  static const double _minColumnWidth = 48;
+  static const double _maxAutoFitWidth = 600;
   static const double _rowHeight = 30;
+
+  /// 显示顺序：第 n 个位置显示第 _order[n] 列。列下标始终指结果集里的原始位置
+  late List<int> _order;
+
+  /// 按原始列下标存的宽度
+  late List<double> _widths;
 
   int _windowStart = 0;
   List<List<String>> _windowRows = [];
@@ -72,6 +83,8 @@ class _ResultGridState extends State<ResultGrid> {
   @override
   void initState() {
     super.initState();
+    _resetLayout();
+    _loadLayout();
     _loadWindow(0);
   }
 
@@ -91,8 +104,106 @@ class _ResultGridState extends State<ResultGrid> {
       _windowRows = [];
       _totalRows = widget.summary.totalRows.toInt();
       _selected.clear();
+      // 同一批列（比如点列头排序重跑）保留当前布局，换了列才重新读
+      if (!listEquals(oldWidget.summary.columns, widget.summary.columns)) {
+        _resetLayout();
+        _loadLayout();
+      }
       _loadWindow(0);
     }
+  }
+
+  void _resetLayout() {
+    final count = widget.summary.columns.length;
+    _order = [for (var i = 0; i < count; i++) i];
+    _widths = List.filled(count, _defaultColumnWidth);
+  }
+
+  /// 按列名套用记住的布局。上次没记过的列（比如表新加了列）排在最后，用默认宽度
+  Future<void> _loadLayout() async {
+    final source = widget.source;
+    final List<ColumnLayout> saved;
+    try {
+      saved = await source.loadLayout();
+    } catch (e) {
+      if (mounted) setState(() => _refusal = '读取列布局失败：$e');
+      return;
+    }
+    // 读回来之前可能已经换了查询，旧布局不能套到新列上
+    if (!mounted || widget.source != source || saved.isEmpty) return;
+
+    final columns = widget.summary.columns;
+    final order = <int>[];
+    final widths = List<double>.filled(columns.length, _defaultColumnWidth);
+    for (final item in saved) {
+      for (var i = 0; i < columns.length; i++) {
+        if (columns[i].name == item.name && !order.contains(i)) {
+          order.add(i);
+          widths[i] = item.width;
+          break;
+        }
+      }
+    }
+    for (var i = 0; i < columns.length; i++) {
+      if (!order.contains(i)) order.add(i);
+    }
+
+    setState(() {
+      _order = order;
+      _widths = widths;
+    });
+  }
+
+  Future<void> _saveLayout() async {
+    final columns = widget.summary.columns;
+    final layout = [
+      for (final i in _order) ColumnLayout(name: columns[i].name, width: _widths[i]),
+    ];
+    try {
+      await widget.source.saveLayout(layout);
+    } catch (e) {
+      if (mounted) setState(() => _refusal = '保存列布局失败：$e');
+    }
+  }
+
+  void _resizeColumn(int column, double delta) {
+    setState(() => _widths[column] = math.max(_minColumnWidth, _widths[column] + delta));
+  }
+
+  /// 双击列边：按表头和已取回的行算出刚好放得下的宽度
+  void _autoFitColumn(int column) {
+    const headerStyle = TextStyle(fontWeight: FontWeight.w600, fontSize: 12);
+    const cellStyle = TextStyle(fontSize: 12, fontFamily: 'Menlo');
+
+    // 表头右边还要留出排序箭头（12）和拖拽柄（6）
+    var widest = _textWidth(widget.summary.columns[column].name, headerStyle) + 18;
+    // ponytail: 只量当前窗口（最多 200 行），不为了自适应去扫整个结果集
+    for (final row in _windowRows) {
+      widest = math.max(widest, _textWidth(row[column], cellStyle));
+    }
+
+    setState(() => _widths[column] = (widest + 16).clamp(_minColumnWidth, _maxAutoFitWidth));
+    _saveLayout();
+  }
+
+  double _textWidth(String text, TextStyle style) {
+    final painter = TextPainter(
+      text: TextSpan(text: text, style: style),
+      maxLines: 1,
+      textDirection: TextDirection.ltr,
+    )..layout();
+    final width = painter.width;
+    painter.dispose();
+    return width;
+  }
+
+  /// 把列挪到第 position 个位置，原来在那儿的往后让
+  void _moveColumn(int column, int position) {
+    setState(() {
+      _order.remove(column);
+      _order.insert(position.clamp(0, _order.length), column);
+    });
+    _saveLayout();
   }
 
   Future<void> _loadWindow(int start, {bool force = false}) async {
@@ -287,7 +398,10 @@ class _ResultGridState extends State<ResultGrid> {
     }
 
     final columns = widget.summary.columns;
-    final totalWidth = _rowNumberWidth + columns.length * _columnWidth;
+    var totalWidth = _rowNumberWidth;
+    for (final width in _widths) {
+      totalWidth += width;
+    }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -303,7 +417,12 @@ class _ResultGridState extends State<ResultGrid> {
                 children: [
                   _HeaderRow(
                     columns: columns,
-                    columnWidth: _columnWidth,
+                    order: _order,
+                    widths: _widths,
+                    onResize: _resizeColumn,
+                    onResizeEnd: _saveLayout,
+                    onAutoFit: _autoFitColumn,
+                    onMove: _moveColumn,
                     onSortColumn: widget.onSortColumn,
                     sortColumn: widget.sortColumn,
                     sortAscending: widget.sortAscending,
@@ -321,8 +440,8 @@ class _ResultGridState extends State<ResultGrid> {
                           selected: _selected.contains(index),
                           onTapRowNumber: () => _toggleSelected(index),
                           cells: cells,
-                          columnCount: columns.length,
-                          columnWidth: _columnWidth,
+                          order: _order,
+                          widths: _widths,
                           editingColumn:
                               editing != null && editing.row == index ? editing.column : null,
                           editController: _editController,
@@ -372,14 +491,24 @@ class _TruncationBanner extends StatelessWidget {
 
 class _HeaderRow extends StatelessWidget {
   final List<ColumnMeta> columns;
-  final double columnWidth;
+  final List<int> order;
+  final List<double> widths;
+  final void Function(int column, double delta) onResize;
+  final VoidCallback onResizeEnd;
+  final void Function(int column) onAutoFit;
+  final void Function(int column, int position) onMove;
   final void Function(String column)? onSortColumn;
   final String? sortColumn;
   final bool sortAscending;
 
   const _HeaderRow({
     required this.columns,
-    required this.columnWidth,
+    required this.order,
+    required this.widths,
+    required this.onResize,
+    required this.onResizeEnd,
+    required this.onAutoFit,
+    required this.onMove,
     required this.onSortColumn,
     required this.sortColumn,
     required this.sortAscending,
@@ -396,34 +525,97 @@ class _HeaderRow extends StatelessWidget {
       child: Row(
         children: [
           const SizedBox(width: _rowNumberWidth),
-          for (final column in columns)
-            SizedBox(
-              width: columnWidth,
-              child: InkWell(
-                onTap: onSortColumn == null ? null : () => onSortColumn!(column.name),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          column.name,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 12),
-                        ),
+          for (var position = 0; position < order.length; position++)
+            _cell(context, position, order[position]),
+        ],
+      ),
+    );
+  }
+
+  /// 一个列头：左边拖动换位置、点击排序，右边的窄条拖动改宽度、双击自适应
+  Widget _cell(BuildContext context, int position, int index) {
+    final column = columns[index];
+    final label = Text(
+      column.name,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 12),
+    );
+
+    return SizedBox(
+      key: ValueKey('header-$index'),
+      width: widths[index],
+      child: Row(
+        children: [
+          Expanded(
+            child: DragTarget<int>(
+              onWillAcceptWithDetails: (details) => details.data != index,
+              onAcceptWithDetails: (details) => onMove(details.data, position),
+              builder: (context, candidates, _) => Draggable<int>(
+                data: index,
+                axis: Axis.horizontal,
+                feedback: Material(
+                  elevation: 4,
+                  child: Container(
+                    width: widths[index],
+                    height: 32,
+                    alignment: Alignment.centerLeft,
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                    child: label,
+                  ),
+                ),
+                childWhenDragging: Opacity(opacity: 0.4, child: label),
+                child: DecoratedBox(
+                  // 拖到这一列上时画左边线，表示会插到这里
+                  decoration: BoxDecoration(
+                    border: candidates.isEmpty
+                        ? null
+                        : Border(
+                            left: BorderSide(
+                              color: Theme.of(context).colorScheme.primary,
+                              width: 2,
+                            ),
+                          ),
+                  ),
+                  child: InkWell(
+                    onTap: onSortColumn == null ? null : () => onSortColumn!(column.name),
+                    child: Padding(
+                      padding: const EdgeInsets.only(left: 8),
+                      child: Row(
+                        children: [
+                          Expanded(child: label),
+                          if (sortColumn == column.name)
+                            Icon(
+                              sortAscending ? Icons.arrow_upward : Icons.arrow_downward,
+                              size: 12,
+                              color: Colors.black54,
+                            ),
+                        ],
                       ),
-                      if (sortColumn == column.name)
-                        Icon(
-                          sortAscending ? Icons.arrow_upward : Icons.arrow_downward,
-                          size: 12,
-                          color: Colors.black54,
-                        ),
-                    ],
+                    ),
                   ),
                 ),
               ),
             ),
+          ),
+          MouseRegion(
+            cursor: SystemMouseCursors.resizeColumn,
+            child: GestureDetector(
+              key: ValueKey('resize-$index'),
+              behavior: HitTestBehavior.opaque,
+              // 从按下的点算位移，不然越过拖动阈值前的那一段会丢，列边跟不上鼠标
+              dragStartBehavior: DragStartBehavior.down,
+              onHorizontalDragUpdate: (details) => onResize(index, details.delta.dx),
+              onHorizontalDragEnd: (_) => onResizeEnd(),
+              onDoubleTap: () => onAutoFit(index),
+              child: const SizedBox(
+                width: 6,
+                height: 32,
+                child: Center(child: SizedBox(width: 1, height: 16, child: ColoredBox(color: Colors.black26))),
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -435,8 +627,8 @@ class _DataRow extends StatelessWidget {
   final bool selected;
   final VoidCallback onTapRowNumber;
   final List<String>? cells;
-  final int columnCount;
-  final double columnWidth;
+  final List<int> order;
+  final List<double> widths;
   final int? editingColumn;
   final TextEditingController editController;
   final void Function(int column) onDoubleTapCell;
@@ -449,8 +641,8 @@ class _DataRow extends StatelessWidget {
     required this.selected,
     required this.onTapRowNumber,
     required this.cells,
-    required this.columnCount,
-    required this.columnWidth,
+    required this.order,
+    required this.widths,
     required this.editingColumn,
     required this.editController,
     required this.onDoubleTapCell,
@@ -490,11 +682,12 @@ class _DataRow extends StatelessWidget {
               ),
             ),
           ),
-          for (int i = 0; i < columnCount; i++)
+          for (final i in order)
             SizedBox(
-              // 行号列和数据列可能显示一样的文本，测试要靠 key 才能精确定位
+              // 行号列和数据列可能显示一样的文本，测试要靠 key 才能精确定位。
+              // i 是结果集里的原始列下标，和显示顺序无关
               key: ValueKey('cell-${rowNumber - 1}-$i'),
-              width: columnWidth,
+              width: widths[i],
               child: editingColumn == i
                   ? _CellEditor(
                       controller: editController,

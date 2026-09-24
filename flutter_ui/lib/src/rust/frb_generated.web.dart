@@ -8,6 +8,7 @@
 
 import 'api/connections.dart';
 import 'api/db.dart';
+import 'api/layouts.dart';
 import 'api/schema.dart';
 import 'api/value.dart';
 
@@ -48,6 +49,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   CellValue dco_decode_cell_value(dynamic raw);
 
   @protected
+  ColumnLayout dco_decode_column_layout(dynamic raw);
+
+  @protected
   ColumnMeta dco_decode_column_meta(dynamic raw);
 
   @protected
@@ -70,6 +74,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<CellValue> dco_decode_list_cell_value(dynamic raw);
+
+  @protected
+  List<ColumnLayout> dco_decode_list_column_layout(dynamic raw);
 
   @protected
   List<ColumnMeta> dco_decode_list_column_meta(dynamic raw);
@@ -154,6 +161,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   CellValue sse_decode_cell_value(SseDeserializer deserializer);
 
   @protected
+  ColumnLayout sse_decode_column_layout(SseDeserializer deserializer);
+
+  @protected
   ColumnMeta sse_decode_column_meta(SseDeserializer deserializer);
 
   @protected
@@ -176,6 +186,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<CellValue> sse_decode_list_cell_value(SseDeserializer deserializer);
+
+  @protected
+  List<ColumnLayout> sse_decode_list_column_layout(
+    SseDeserializer deserializer,
+  );
 
   @protected
   List<ColumnMeta> sse_decode_list_column_meta(SseDeserializer deserializer);
@@ -279,6 +294,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_cell_value(CellValue self, SseSerializer serializer);
 
   @protected
+  void sse_encode_column_layout(ColumnLayout self, SseSerializer serializer);
+
+  @protected
   void sse_encode_column_meta(ColumnMeta self, SseSerializer serializer);
 
   @protected
@@ -305,6 +323,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_list_cell_value(
     List<CellValue> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_column_layout(
+    List<ColumnLayout> self,
     SseSerializer serializer,
   );
 

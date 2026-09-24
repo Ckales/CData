@@ -73,7 +73,7 @@ pub async fn detect_editability(pool: &Pool, columns: &[ColumnMeta]) -> Editabil
 }
 
 /// 所有列必须来自同一张实体表
-fn single_source_table(columns: &[ColumnMeta]) -> Result<(String, String), String> {
+pub(crate) fn single_source_table(columns: &[ColumnMeta]) -> Result<(String, String), String> {
     let mut source: Option<(String, String)> = None;
 
     for column in columns {

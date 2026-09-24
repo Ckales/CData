@@ -3,6 +3,8 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge.dart' show Uint64List;
 import 'src/rust/api/db.dart';
 // 顶层函数和下面 GridSource 的同名方法重名，方法体里直接调会解析成方法自己
 import 'src/rust/api/db.dart' as db show insertRow, deleteRows;
+import 'src/rust/api/layouts.dart';
+import 'src/rust/api/layouts.dart' as layouts show loadLayout, saveLayout;
 import 'src/rust/api/schema.dart';
 import 'src/rust/api/value.dart';
 
@@ -27,6 +29,11 @@ abstract class GridSource {
 
   /// 在一个事务里删若干行，返回新的总行数
   Future<int> deleteRows(List<int> rowIndexes);
+
+  /// 这个结果集记住的列宽列序。没记过、或结果集不来自单张表，都是空列表
+  Future<List<ColumnLayout>> loadLayout();
+
+  Future<void> saveLayout(List<ColumnLayout> columns);
 }
 
 abstract class SchemaSource {
@@ -86,6 +93,21 @@ class RustGridSource implements GridSource {
     }
     final total = await db.deleteRows(sessionId: sessionId, rowIndexes: indexes);
     return total.toInt();
+  }
+
+  @override
+  Future<List<ColumnLayout>> loadLayout() async {
+    final key = summary.layoutKey;
+    // JOIN、表达式结果没有布局键，不记
+    if (key == null) return const [];
+    return layouts.loadLayout(key: key);
+  }
+
+  @override
+  Future<void> saveLayout(List<ColumnLayout> columns) async {
+    final key = summary.layoutKey;
+    if (key == null) return;
+    await layouts.saveLayout(key: key, columns: columns);
   }
 }
 
