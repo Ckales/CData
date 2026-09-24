@@ -12,6 +12,8 @@ name = "cdata_core"
 
 [dependencies]
 dirs = "7.0.0"
+# 导出 GBK：表示不了的字符要能检测出来报错，不能静默替换成 ?
+encoding_rs = "0.8"
 # 只开 macOS 和 Windows 的原生后端：Linux 的 secret-service 会拖进 dbus 依赖，现在用不上
 keyring = { version = "4.2", default-features = false, features = [
     "v1",
@@ -22,7 +24,8 @@ mysql_async = { version = "0.37", default-features = false, features = [
     "default-rustls-ring",
 ] }
 serde = { version = "1", features = ["derive"] }
-serde_json = "1.0.151"
+# preserve_order：格式化 JSON 不能把键重新排序；arbitrary_precision：大数字不能被转成 f64 丢精度
+serde_json = { version = "1.0.151", features = ["preserve_order", "arbitrary_precision"] }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }

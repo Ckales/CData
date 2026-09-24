@@ -882,3 +882,193 @@ async fn paste_rolls_back_when_any_row_is_stale() {
     cdata_core::session::close_session(other).await.ok();
     cdata_core::session::close_session(id).await.ok();
 }
+
+#[tokio::test]
+async fn table_structure_reads_columns_indexes_foreign_keys_and_ddl() {
+    use cdata_core::structure::DefaultValue;
+    let Some(config) = config_from_env() else {
+        return;
+    };
+    let database = config.database.clone().unwrap();
+
+    // 结构测试要有索引和外键，自己建两张探针表（只增不删，重复跑不影响）
+    let setup = cdata_core::session::open_session(&config);
+    for ddl in [
+        "CREATE TABLE IF NOT EXISTS structure_parent (\
+            id INT UNSIGNED PRIMARY KEY, code VARCHAR(20) NOT NULL, UNIQUE KEY uk_code (code)\
+         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+        "CREATE TABLE IF NOT EXISTS structure_child (\
+            id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,\
+            parent_id INT UNSIGNED NOT NULL,\
+            title VARCHAR(100) NOT NULL DEFAULT '' COMMENT '标题',\
+            body TEXT,\
+            status ENUM('draft','done') NOT NULL DEFAULT 'draft',\
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,\
+            KEY idx_title_prefix (title(10), status),\
+            CONSTRAINT fk_child_parent FOREIGN KEY (parent_id) REFERENCES structure_parent (id) ON DELETE CASCADE\
+         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+    ] {
+        cdata_core::session::execute(setup, ddl, 1).await.expect("建探针表失败");
+    }
+
+    let structure = cdata_core::session::table_structure(setup, &database, "structure_child")
+        .await
+        .expect("读结构失败");
+
+    let names: Vec<&str> = structure.columns.iter().map(|c| c.name.as_str()).collect();
+    assert_eq!(names, ["id", "parent_id", "title", "body", "status", "created_at"]);
+
+    let column = |name: &str| structure.columns.iter().find(|c| c.name == name).unwrap().clone();
+    assert_eq!(column("id").default, DefaultValue::NoDefault);
+    assert!(column("id").extra.contains("auto_increment"));
+    assert_eq!(column("title").default, DefaultValue::Literal(String::new()), "空串默认值不是没有默认值");
+    assert_eq!(column("title").comment, "标题");
+    assert_eq!(column("body").default, DefaultValue::Null);
+    assert_eq!(column("status").column_type, "enum('draft','done')");
+    assert_eq!(column("status").default, DefaultValue::Literal("draft".into()));
+    assert_eq!(column("created_at").default, DefaultValue::Expression("CURRENT_TIMESTAMP".into()));
+
+    assert_eq!(structure.indexes[0].name, "PRIMARY", "主键排第一");
+    let prefix = structure.indexes.iter().find(|i| i.name == "idx_title_prefix").unwrap();
+    assert!(!prefix.unique);
+    assert_eq!(prefix.columns, ["title(10)", "status"]);
+
+    assert_eq!(structure.foreign_keys.len(), 1);
+    let fk = &structure.foreign_keys[0];
+    assert_eq!(fk.name, "fk_child_parent");
+    assert_eq!(fk.columns, ["parent_id"]);
+    assert_eq!(fk.referenced_table, "structure_parent");
+    assert_eq!(fk.referenced_columns, ["id"]);
+    assert_eq!(fk.on_delete, "CASCADE");
+
+    assert!(structure.create_sql.starts_with("CREATE TABLE `structure_child`"), "{}", structure.create_sql);
+
+    let parent = cdata_core::session::table_structure(setup, &database, "structure_parent")
+        .await
+        .expect("读结构失败");
+    assert!(parent.indexes.iter().any(|i| i.name == "uk_code" && i.unique));
+
+    cdata_core::session::close_session(setup).await.ok();
+}
+
+#[tokio::test]
+async fn column_kinds_come_from_metadata_and_choices_from_the_table() {
+    use cdata_core::db::ColumnKind;
+    let Some(config) = config_from_env() else {
+        return;
+    };
+
+    let id = cdata_core::session::open_session(&config);
+    // 包一层筛选的派生表，类别也不能丢
+    let summary = cdata_core::session::execute_view(id, "SELECT * FROM type_zoo", &[], true, Some(("id", true)), 10)
+        .await
+        .expect("查询失败");
+
+    let kind = |name: &str| summary.columns.iter().find(|c| c.name == name).unwrap().kind;
+    assert_eq!(kind("id"), ColumnKind::Number);
+    assert_eq!(kind("amount"), ColumnKind::Number);
+    assert_eq!(kind("d_zero"), ColumnKind::Date);
+    assert_eq!(kind("dt_micro"), ColumnKind::DateTime);
+    assert_eq!(kind("t_neg"), ColumnKind::Time);
+    assert_eq!(kind("txt_cn"), ColumnKind::Text);
+    assert_eq!(kind("json_col"), ColumnKind::Json);
+    assert_eq!(kind("enum_col"), ColumnKind::Enum);
+    assert_eq!(kind("set_col"), ColumnKind::Set);
+    assert_eq!(kind("blob_col"), ColumnKind::Binary);
+    assert_eq!(kind("bit_col"), ColumnKind::Binary);
+
+    let enum_index = summary.columns.iter().position(|c| c.name == "enum_col").unwrap() as u64;
+    let choices = cdata_core::session::column_choices(id, enum_index).await.expect("读可选值失败");
+    assert_eq!(choices, ["draft", "paid", "refunded"]);
+
+    let set_index = summary.columns.iter().position(|c| c.name == "set_col").unwrap() as u64;
+    let choices = cdata_core::session::column_choices(id, set_index).await.expect("读可选值失败");
+    assert_eq!(choices, ["x", "y", "z"]);
+
+    let err = cdata_core::session::column_choices(id, 0).await.unwrap_err();
+    assert!(err.to_string().contains("不是 ENUM"), "{err}");
+
+    cdata_core::session::close_session(id).await.ok();
+}
+
+#[tokio::test]
+async fn export_writes_the_current_view_and_reports_truncation() {
+    use cdata_core::export::{ExportEncoding, ExportFormat, ExportOptions};
+    use cdata_core::sql::FilterOp;
+    let Some(config) = config_from_env() else {
+        return;
+    };
+
+    let id = cdata_core::session::open_session(&config);
+    // 导出的是当前视图：筛选后降序的 3 行
+    cdata_core::session::execute_view(
+        id,
+        "SELECT id, name, amount FROM big_rows",
+        &[condition("id", FilterOp::LtEq, "3")],
+        true,
+        Some(("id", false)),
+        100,
+    )
+    .await
+    .expect("查询失败");
+
+    let dir = std::env::temp_dir().join(format!("cdata-export-db-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("rows.csv");
+    let options = ExportOptions {
+        format: ExportFormat::Csv,
+        encoding: ExportEncoding::Utf8,
+        delimiter: ",".to_string(),
+        header: true,
+        null_text: String::new(),
+        table_name: String::new(),
+    };
+
+    let summary = cdata_core::session::export_rows(id, path.to_str().unwrap(), 0, None, vec![0, 1, 2], &options)
+        .expect("导出失败");
+    assert_eq!(summary.rows_written, 3);
+    assert!(!summary.source_truncated);
+    assert_eq!(
+        std::fs::read_to_string(&path).unwrap(),
+        "id,name,amount\r\n3,用户3,3.69\r\n2,用户2,2.46\r\n1,用户1,1.23\r\n"
+    );
+
+    // 截断过的结果集导出去要带着截断标记
+    cdata_core::session::execute(id, "SELECT id FROM big_rows ORDER BY id", 10).await.expect("查询失败");
+    let summary = cdata_core::session::export_rows(id, path.to_str().unwrap(), 0, None, vec![0], &options)
+        .expect("导出失败");
+    assert_eq!(summary.rows_written, 10);
+    assert!(summary.source_truncated, "截断过的结果导出去也是不完整的，必须告诉界面");
+
+    std::fs::remove_dir_all(&dir).ok();
+    cdata_core::session::close_session(id).await.ok();
+}
+
+#[tokio::test]
+async fn completion_uses_the_loaded_catalog() {
+    let Some(config) = config_from_env() else {
+        return;
+    };
+    let database = config.database.clone().unwrap();
+
+    let id = cdata_core::session::open_session(&config);
+    // 没加载目录时只有关键字，不报错
+    let before = cdata_core::session::complete_sql(id, "SELECT * FROM ", 14).expect("补全失败");
+    assert!(before.items.is_empty(), "没有目录就没有表可补");
+
+    let tables = cdata_core::session::load_catalog(id, &database).await.expect("读目录失败");
+    assert!(tables >= 5);
+
+    let sql = "SELECT e. FROM edit_target e";
+    let completion = cdata_core::session::complete_sql(id, sql, 9).expect("补全失败");
+    let mut labels = Vec::new();
+    for item in &completion.items {
+        labels.push(item.label.as_str());
+    }
+    assert_eq!(labels, ["id", "name", "amount", "note"]);
+
+    let completion = cdata_core::session::complete_sql(id, "SELECT * FROM big", 17).expect("补全失败");
+    assert_eq!(completion.items[0].label, "big_rows");
+
+    cdata_core::session::close_session(id).await.ok();
+}

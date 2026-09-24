@@ -86,6 +86,7 @@ mod tests {
             org_table: table.to_string(),
             schema: "shop".to_string(),
             is_binary: false,
+            kind: crate::db::ColumnKind::Text,
         }
     }
 

@@ -2,7 +2,7 @@
 //!
 //! 值的解释全部委托给 value.rs，这里只负责把连接建起来、把行取回来、把列元数据带上。
 
-use mysql_async::consts::ColumnType;
+use mysql_async::consts::{ColumnFlags, ColumnType};
 use mysql_async::prelude::*;
 use mysql_async::{Column, Opts, OptsBuilder, Pool, Value};
 use serde::{Deserialize, Serialize};
@@ -33,6 +33,23 @@ pub struct ColumnMeta {
     pub schema: String,
     /// 二进制列，值按字节处理，不尝试解码成文本
     pub is_binary: bool,
+    /// 这一列用什么编辑器。只由列元数据决定，不看值
+    pub kind: ColumnKind,
+}
+
+/// 列的类别，界面按它选编辑器
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ColumnKind {
+    Text,
+    Number,
+    Json,
+    Date,
+    DateTime,
+    Time,
+    Enum,
+    Set,
+    /// BLOB、BINARY、BIT、GEOMETRY 等按字节处理的列
+    Binary,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -122,6 +139,7 @@ fn build_columns(columns: &[Column]) -> Vec<ColumnMeta> {
             org_table: column.org_table_str().to_string(),
             schema: column.schema_str().to_string(),
             is_binary: is_binary_column(column),
+            kind: column_kind(column),
         });
     }
     metas
@@ -145,6 +163,43 @@ fn is_binary_column(column: &Column) -> bool {
         | ColumnType::MYSQL_TYPE_LONG_BLOB => column.character_set() == BINARY_COLLATION_ID,
 
         _ => false,
+    }
+}
+
+/// 列类别。ENUM / SET 在结果集元数据里是 STRING 加标志位，不是单独的类型
+fn column_kind(column: &Column) -> ColumnKind {
+    if is_binary_column(column) {
+        return ColumnKind::Binary;
+    }
+    let flags = column.flags();
+    if flags.contains(ColumnFlags::ENUM_FLAG) {
+        return ColumnKind::Enum;
+    }
+    if flags.contains(ColumnFlags::SET_FLAG) {
+        return ColumnKind::Set;
+    }
+
+    match column.column_type() {
+        ColumnType::MYSQL_TYPE_JSON => ColumnKind::Json,
+        ColumnType::MYSQL_TYPE_DATE | ColumnType::MYSQL_TYPE_NEWDATE => ColumnKind::Date,
+        ColumnType::MYSQL_TYPE_DATETIME
+        | ColumnType::MYSQL_TYPE_DATETIME2
+        | ColumnType::MYSQL_TYPE_TIMESTAMP
+        | ColumnType::MYSQL_TYPE_TIMESTAMP2 => ColumnKind::DateTime,
+        ColumnType::MYSQL_TYPE_TIME | ColumnType::MYSQL_TYPE_TIME2 => ColumnKind::Time,
+        ColumnType::MYSQL_TYPE_ENUM => ColumnKind::Enum,
+        ColumnType::MYSQL_TYPE_SET => ColumnKind::Set,
+        ColumnType::MYSQL_TYPE_TINY
+        | ColumnType::MYSQL_TYPE_SHORT
+        | ColumnType::MYSQL_TYPE_LONG
+        | ColumnType::MYSQL_TYPE_LONGLONG
+        | ColumnType::MYSQL_TYPE_INT24
+        | ColumnType::MYSQL_TYPE_YEAR
+        | ColumnType::MYSQL_TYPE_FLOAT
+        | ColumnType::MYSQL_TYPE_DOUBLE
+        | ColumnType::MYSQL_TYPE_DECIMAL
+        | ColumnType::MYSQL_TYPE_NEWDECIMAL => ColumnKind::Number,
+        _ => ColumnKind::Text,
     }
 }
 

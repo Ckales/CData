@@ -96,6 +96,8 @@ CREATE TABLE no_pk (a INT, b VARCHAR(50));
 > `character_set_client` 默认是 latin1，会把 UTF-8 字节双编码存进去，而读取时又反向转一次，
 > **在命令行里完全看不出来**，只有按 utf8mb4 读的客户端才会看到乱码。
 
+表结构测试会自己在测试库里建 `structure_parent` / `structure_child` 两张探针表（`CREATE TABLE IF NOT EXISTS`，只增不删）。
+
 连接信息通过环境变量传，不写进代码：
 
 ```bash

@@ -74,6 +74,8 @@ struct Session {
     server: String,
     result: Option<ResultSet>,
     editability: Option<Editability>,
+    /// 补全用的库表列目录。load_catalog 之后才有
+    catalog: crate::complete::Catalog,
 }
 
 struct Store {
@@ -105,6 +107,7 @@ pub fn open_session(config: &ConnectionConfig) -> u64 {
             server: format!("{}:{}", config.host, config.port),
             result: None,
             editability: None,
+            catalog: crate::complete::Catalog::default(),
         },
     );
     id
@@ -210,6 +213,134 @@ pub async fn list_databases(session_id: u64) -> Result<Vec<String>> {
 pub async fn list_tables(session_id: u64, database: &str) -> Result<Vec<crate::schema::TableInfo>> {
     let pool = pool_of(session_id)?;
     Ok(crate::schema::list_tables(&pool, database).await?)
+}
+
+/// 把结果集的一段导出成文件。row_count 为 None 表示从 row_start 到末尾。
+///
+/// 导出的是会话里缓存的这份结果：包括当前的筛选和排序，也包括它的截断状态 ——
+/// 截断过的结果导出去也是不完整的，summary 里要带上，界面必须说清楚。
+pub fn export_rows(
+    session_id: u64,
+    path: &str,
+    row_start: u64,
+    row_count: Option<u64>,
+    column_indexes: Vec<u64>,
+    options: &crate::export::ExportOptions,
+) -> Result<crate::export::ExportSummary> {
+    let guard = store().lock().unwrap();
+    let session = guard
+        .sessions
+        .get(&session_id)
+        .ok_or(Error::NoSuchSession(session_id))?;
+    let result = session.result.as_ref().ok_or(Error::NoResult(session_id))?;
+
+    let start = row_start as usize;
+    let end = match row_count {
+        Some(count) => start.saturating_add(count as usize),
+        None => result.rows.len(),
+    };
+    if start > end || end > result.rows.len() {
+        return Err(Error::BadInput(format!(
+            "导出区域到第 {end} 行，结果集只有 {} 行",
+            result.rows.len()
+        )));
+    }
+
+    let mut columns = Vec::with_capacity(column_indexes.len());
+    for index in column_indexes {
+        columns.push(index as usize);
+    }
+
+    // ponytail: 写文件时一直持着会话锁，十万行几百毫秒；更大的量再改成先拷一份行再释放锁
+    let rows_written = crate::export::write_file(
+        std::path::Path::new(path),
+        &result.columns,
+        &result.rows[start..end],
+        &columns,
+        options,
+    )
+    .map_err(Error::BadInput)?;
+
+    Ok(crate::export::ExportSummary { rows_written, source_truncated: result.truncated })
+}
+
+/// 结果集某一列的 ENUM / SET 可选值，按定义顺序。
+/// 要知道来源表才查得到，表达式列、JOIN 里看不出来源的列直接报错
+pub async fn column_choices(session_id: u64, column_index: u64) -> Result<Vec<String>> {
+    let (pool, column) = {
+        let guard = store().lock().unwrap();
+        let session = guard
+            .sessions
+            .get(&session_id)
+            .ok_or(Error::NoSuchSession(session_id))?;
+        let result = session.result.as_ref().ok_or(Error::NoResult(session_id))?;
+        let column = result
+            .columns
+            .get(column_index as usize)
+            .ok_or_else(|| Error::BadInput(format!("列下标 {column_index} 越界")))?
+            .clone();
+        (session.pool.clone(), column)
+    };
+
+    if column.org_table.is_empty() {
+        return Err(Error::BadInput(format!("列 {} 不是直接来自某张表，读不到可选值", column.name)));
+    }
+    crate::structure::column_choices(&pool, &column.schema, &column.org_table, &column.org_name)
+        .await?
+        .ok_or_else(|| Error::BadInput(format!("列 {} 不是 ENUM / SET", column.name)))
+}
+
+/// 读一个库的表和列放进会话，给补全用。返回表的数量。
+///
+/// 一条 information_schema 查询取齐，不按表逐个查
+pub async fn load_catalog(session_id: u64, database: &str) -> Result<u64> {
+    let pool = pool_of(session_id)?;
+    let mut conn = pool.get_conn().await?;
+    let rows: Vec<(String, String)> = conn
+        .exec(
+            "SELECT TABLE_NAME, COLUMN_NAME FROM information_schema.COLUMNS \
+             WHERE TABLE_SCHEMA = ? ORDER BY TABLE_NAME, ORDINAL_POSITION",
+            (database,),
+        )
+        .await?;
+    drop(conn);
+
+    let mut catalog = crate::complete::Catalog::default();
+    for (table, column) in rows {
+        match catalog.tables.last_mut() {
+            Some(last) if last.name == table => last.columns.push(column),
+            _ => catalog.tables.push(crate::complete::CatalogTable { name: table, columns: vec![column] }),
+        }
+    }
+    let count = catalog.tables.len() as u64;
+
+    let mut guard = store().lock().unwrap();
+    let session = guard
+        .sessions
+        .get_mut(&session_id)
+        .ok_or(Error::NoSuchSession(session_id))?;
+    session.catalog = catalog;
+    Ok(count)
+}
+
+/// 补全。纯计算，读的是 load_catalog 缓存的目录，不访问数据库；没加载过就只有关键字
+pub fn complete_sql(session_id: u64, sql: &str, cursor: u32) -> Result<crate::complete::Completion> {
+    let guard = store().lock().unwrap();
+    let session = guard
+        .sessions
+        .get(&session_id)
+        .ok_or(Error::NoSuchSession(session_id))?;
+    Ok(crate::complete::complete(sql, cursor, &session.catalog))
+}
+
+/// 一张表的列、索引、外键和建表语句
+pub async fn table_structure(
+    session_id: u64,
+    database: &str,
+    table: &str,
+) -> Result<crate::structure::TableStructure> {
+    let pool = pool_of(session_id)?;
+    Ok(crate::structure::table_structure(&pool, database, table).await?)
 }
 
 /// 取会话的连接池并立刻释放锁，不把锁持过 await

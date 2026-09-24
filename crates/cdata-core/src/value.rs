@@ -101,6 +101,41 @@ pub fn display_text(value: &CellValue) -> String {
     }
 }
 
+/// 二进制内容的十六进制视图：偏移、16 字节一行、可打印 ASCII。
+/// 太大的 BLOB 只显示前 limit 字节，并在末尾写明总长，不假装显示了全部
+pub fn hex_dump(bytes: &[u8], limit: usize) -> String {
+    let shown = &bytes[..bytes.len().min(limit)];
+    let mut lines = Vec::with_capacity(shown.len() / 16 + 2);
+
+    for (line_index, chunk) in shown.chunks(16).enumerate() {
+        let mut hex = String::with_capacity(48);
+        let mut ascii = String::with_capacity(16);
+        for (i, byte) in chunk.iter().enumerate() {
+            if i == 8 {
+                hex.push(' ');
+            }
+            hex.push_str(&format!("{byte:02X} "));
+            ascii.push(if byte.is_ascii_graphic() || *byte == b' ' { *byte as char } else { '.' });
+        }
+        lines.push(format!("{:08X}  {hex:<49} {ascii}", line_index * 16));
+    }
+
+    if bytes.len() > shown.len() {
+        lines.push(format!("…… 只显示前 {} 字节，共 {} 字节", shown.len(), bytes.len()));
+    }
+    lines.join("\n")
+}
+
+/// 把 JSON 文本格式化成缩进形式，也用来校验：不合法就返回解析错误（带行列号）。
+///
+/// 键的顺序和数字的原始写法都保留（见 Cargo.toml 里 serde_json 的特性），
+/// 格式化只改空白，不改内容。
+pub fn format_json(text: &str) -> Result<String, String> {
+    let value: serde_json::Value =
+        serde_json::from_str(text).map_err(|err| format!("不是合法的 JSON：{err}"))?;
+    serde_json::to_string_pretty(&value).map_err(|err| err.to_string())
+}
+
 /// 单元格值转回 MySQL 值，写回时用。
 ///
 /// Text 一律当字符串绑定，由 MySQL 按目标列的类型转换 —— 这是走参数化后最保真的做法：
@@ -261,6 +296,35 @@ mod tests {
             let back = cell_from_value(value_to_mysql(&original), is_binary);
             assert_eq!(back, original, "{original:?} 往返后变了");
         }
+    }
+
+    #[test]
+    fn format_json_keeps_key_order_and_number_precision() {
+        let formatted = format_json(r#"{"z":1,"a":12345678901234567890.123456789,"m":[1.0,true,null]}"#)
+            .expect("应该能格式化");
+        assert_eq!(
+            formatted,
+            "{\n  \"z\": 1,\n  \"a\": 12345678901234567890.123456789,\n  \"m\": [\n    1.0,\n    true,\n    null\n  ]\n}"
+        );
+    }
+
+    #[test]
+    fn format_json_reports_where_it_broke() {
+        let err = format_json("{\"a\": 1,}").unwrap_err();
+        assert!(err.contains("line 1"), "{err}");
+    }
+
+    #[test]
+    fn hex_dump_shows_offsets_and_ascii() {
+        let dump = hex_dump(b"CData\x00\xFF", 1024);
+        assert_eq!(dump, "00000000  43 44 61 74 61 00 FF                              CData..");
+    }
+
+    #[test]
+    fn hex_dump_says_when_it_is_truncated() {
+        let dump = hex_dump(&[0u8; 40], 32);
+        assert_eq!(dump.lines().count(), 3);
+        assert!(dump.ends_with("只显示前 32 字节，共 40 字节"), "{dump}");
     }
 
     #[test]
