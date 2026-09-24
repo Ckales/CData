@@ -67,6 +67,10 @@ class _QueryPageState extends State<QueryPage> {
   static const _library = RustSqlLibrary();
 
   List<SavedConnection> _saved = [];
+
+  /// 快捷键挂在这个节点上。切标签时旧标签被 IndexedStack 设成不可聚焦，焦点会退到路由那一层、
+  /// 跑到快捷键外面去，所以每次换标签都把焦点收回这里
+  final _pageFocus = FocusNode(debugLabel: 'query-page');
   late String? _error = widget.startupError;
 
   @override
@@ -84,6 +88,7 @@ class _QueryPageState extends State<QueryPage> {
     _user.dispose();
     _password.dispose();
     _database.dispose();
+    _pageFocus.dispose();
     super.dispose();
   }
 
@@ -109,6 +114,14 @@ class _QueryPageState extends State<QueryPage> {
     );
     _tabs.add(entry);
     _active = _tabs.length - 1;
+    _keepShortcutsAlive();
+  }
+
+  /// 等这一帧把旧标签设成不可聚焦之后再收回焦点
+  void _keepShortcutsAlive() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _pageFocus.requestFocus();
+    });
   }
 
   /// 关标签就关它的会话，否则连接一直挂着。最后一个关掉后留一个空标签
@@ -120,6 +133,7 @@ class _QueryPageState extends State<QueryPage> {
       _active = _active.clamp(0, _tabs.length - 1);
     });
     _showConfigInBar(_activeEntry.config);
+    _keepShortcutsAlive();
     await entry.runner.close();
     await _pruneSchemaSessions();
   }
@@ -128,6 +142,7 @@ class _QueryPageState extends State<QueryPage> {
     if (index < 0 || index >= _tabs.length) return;
     setState(() => _active = index);
     _showConfigInBar(_activeEntry.config);
+    _keepShortcutsAlive();
   }
 
   /// 切到一个连过的标签，连接栏显示它的参数。没连过的保持栏上现有的内容
@@ -473,6 +488,7 @@ class _QueryPageState extends State<QueryPage> {
     return CallbackShortcuts(
       bindings: _shortcuts,
       child: Focus(
+        focusNode: _pageFocus,
         autofocus: true,
         child: Scaffold(
           body: Column(

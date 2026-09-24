@@ -23,12 +23,34 @@ DEFINES=(
 FILES=(type_fidelity smoke)
 failed=0
 
+# 窗口被别的窗口完全挡住时，macOS 停掉这个视图的刷新信号，live binding 的 pump() 等不到帧，
+# 测试就无声地卡住（CPU 为 0，可以卡几十分钟）。flutter 自己的「把 app 调到前台」总是失败
+# （Failed to foreground app; open returned 1），所以这里等 app 起来后自己激活。
+# 进程出现时窗口不一定已经建好，头 15 秒每秒激活一次。跑测试期间别把窗口盖住。
+activate_when_launched() {
+  for i in {1..600}; do
+    if pgrep -x CData >/dev/null; then
+      for j in {1..15}; do
+        osascript -e 'tell application id "com.ckales.cdata" to activate' >/dev/null 2>&1 || true
+        sleep 1
+      done
+      return
+    fi
+    sleep 0.5
+  done
+}
+
 for name in $FILES; do
   echo "=== $name ==="
   killall CData 2>/dev/null || true
+  # 等旧进程真退出，免得下面激活到正在退出的那一个
+  while pgrep -x CData >/dev/null; do sleep 0.2; done
+  activate_when_launched &
+  activator=$!
   if ! flutter test "integration_test/${name}_test.dart" -d macos $DEFINES; then
     failed=1
   fi
+  kill $activator 2>/dev/null || true
 done
 
 exit $failed

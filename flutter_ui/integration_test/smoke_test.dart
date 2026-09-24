@@ -43,6 +43,15 @@ Future<void> settleUntil(WidgetTester tester, Finder finder, {int maxRounds = 20
   }
 }
 
+/// 界面上显示着的错误文字，断言失败时一并打出来，不用再猜卡在哪
+String shownErrors(WidgetTester tester) {
+  final texts = <String>[];
+  for (final widget in tester.widgetList<SelectableText>(find.byType(SelectableText))) {
+    texts.add(widget.data ?? '');
+  }
+  return texts.isEmpty ? '界面上没有错误信息' : '界面上的错误：${texts.join(' | ')}';
+}
+
 Future<void> savePng(String name) async {
   final boundary = _boundaryKey.currentContext!.findRenderObject() as RenderRepaintBoundary;
   final image = await boundary.toImage(pixelRatio: 2.0);
@@ -101,7 +110,7 @@ void main() {
     await settle(tester, rounds: 1);
     await tester.tap(find.text('运行'));
     await settleUntil(tester, find.text('第二行'));
-    expect(find.text('第二行'), findsOneWidget, reason: '第二个标签没查到数据');
+    expect(find.text('第二行'), findsOneWidget, reason: '第二个标签没查到数据。${shownErrors(tester)}');
     expect(find.text('用户1'), findsNothing, reason: '第一个标签的结果不该显示在第二个标签里');
 
     await tester.tap(find.byKey(const ValueKey('tab-1')));
@@ -121,7 +130,7 @@ void main() {
     await tester.tap(find.text('连接'));
     final schemaRow = find.descendant(of: find.byType(ResultGrid), matching: find.text('big_rows'));
     await settleUntil(tester, schemaRow);
-    expect(schemaRow, findsOneWidget, reason: '第二个标签没连上 information_schema');
+    expect(schemaRow, findsOneWidget, reason: '第二个标签没连上 information_schema。${shownErrors(tester)}');
 
     await tester.tap(find.byKey(const ValueKey('tab-1')));
     await settleUntil(tester, find.text('用户1'));
