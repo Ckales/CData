@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'data_source.dart';
+import 'filter_panel.dart';
 import 'result_grid.dart';
 import 'src/rust/api/connections.dart';
 import 'src/rust/api/db.dart';
@@ -33,11 +34,17 @@ class _QueryPageState extends State<QueryPage> {
   bool _busy = false;
   Duration? _elapsed;
 
-  /// 排序的基准 SQL。每次点列头都从它包一层，
+  /// 筛选、排序的基准 SQL。每次都从它包一层，
   /// 不然在已排序的结果上再包，点几次就套成俄罗斯套娃
   String _baseSql = '';
   String? _sortColumn;
   bool _sortAscending = true;
+  List<FilterCondition> _filters = const [];
+  bool _matchAll = true;
+
+  /// 基准 SQL 最近一次成功返回的列名。筛选出错时 _summary 是 null，
+  /// 靠它继续显示筛选条，才能把写错的条件改掉或清掉
+  List<String> _columns = const [];
 
   List<SavedConnection> _saved = [];
   String? _savedId;
@@ -117,13 +124,17 @@ class _QueryPageState extends State<QueryPage> {
     super.dispose();
   }
 
+  /// 跑编辑框里的新 SQL，筛选和排序都清掉
   Future<void> _run() async {
     _baseSql = _sql.text;
     setState(() {
       _sortColumn = null;
       _sortAscending = true;
+      _filters = const [];
+      _matchAll = true;
+      _columns = const [];
     });
-    await _runSql(_baseSql);
+    await _runView();
   }
 
   /// 点列头排序。同一列再点一次换方向，换列则从升序开始
@@ -135,16 +146,32 @@ class _QueryPageState extends State<QueryPage> {
       _sortColumn = column;
       _sortAscending = ascending;
     });
-
-    final sorted = await withOrderBy(
-      sql: _baseSql,
-      column: column,
-      ascending: ascending,
-    );
-    await _runSql(sorted);
+    await _runView();
   }
 
-  Future<void> _runSql(String sql) async {
+  Future<void> _editFilter() async {
+    final result = await showFilterDialog(
+      context,
+      columns: _columns,
+      initial: _filters,
+      matchAll: _matchAll,
+    );
+    if (result == null || !mounted) return;
+
+    setState(() {
+      _filters = result.conditions;
+      _matchAll = result.matchAll;
+    });
+    await _runView();
+  }
+
+  Future<void> _clearFilter() async {
+    setState(() => _filters = const []);
+    await _runView();
+  }
+
+  /// 按当前的基准 SQL + 筛选 + 排序跑一次。SQL 在 core 里生成
+  Future<void> _runView() async {
     setState(() {
       _busy = true;
       _error = null;
@@ -155,9 +182,13 @@ class _QueryPageState extends State<QueryPage> {
       // 换了连接参数就重开会话，避免拿旧连接跑新库
       final id = _sessionId ?? await openSession(config: _readConfig());
 
-      final summary = await execute(
+      final summary = await executeView(
         sessionId: id,
-        sql: sql,
+        sql: _baseSql,
+        conditions: _filters,
+        matchAll: _matchAll,
+        sortColumn: _sortColumn,
+        sortAscending: _sortAscending,
         maxRows: BigInt.from(_maxRows),
       );
 
@@ -165,6 +196,7 @@ class _QueryPageState extends State<QueryPage> {
       setState(() {
         _sessionId = id;
         _summary = summary;
+        _columns = [for (final column in summary.columns) column.name];
         _elapsed = DateTime.now().difference(started);
       });
     } catch (e) {
@@ -249,6 +281,13 @@ class _QueryPageState extends State<QueryPage> {
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       _SqlBar(controller: _sql, busy: _busy, onRun: _busy ? null : _run),
+                      if (_columns.isNotEmpty)
+                        FilterBar(
+                          conditions: _filters,
+                          matchAll: _matchAll,
+                          onEdit: _busy ? null : _editFilter,
+                          onClear: _busy ? null : _clearFilter,
+                        ),
                       if (_error != null) _ErrorBanner(message: _error!),
                       if (_elapsed != null && _error == null)
                         Padding(

@@ -8,7 +8,7 @@ use mysql_async::{Pool, Value};
 use serde::{Deserialize, Serialize};
 
 use crate::db::ColumnMeta;
-use crate::sql::quote_ident;
+use crate::sql::{quote_ident, Statement};
 use crate::value::{value_to_mysql, CellValue};
 
 /// 结果集的可编辑性。不可编辑时带上原因，界面要显示出来而不是灰掉了事
@@ -133,13 +133,6 @@ pub async fn is_auto_increment(
         )
         .await?;
     Ok(extra.is_some_and(|extra| extra.contains("auto_increment")))
-}
-
-/// 一条写库语句。SQL 和参数分开，值永远走参数化，不拼进 SQL
-#[derive(Debug, Clone, PartialEq)]
-pub struct Statement {
-    pub sql: String,
-    pub params: Vec<Value>,
 }
 
 /// 生成改一个单元格的 UPDATE。

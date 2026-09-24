@@ -27,8 +27,3 @@ pub async fn list_tables(session_id: u64, database: String) -> Result<Vec<TableI
 pub fn browse_sql(table: String) -> String {
     cdata_core::sql::browse_table(&table)
 }
-
-/// 给查询加排序。包子查询而不是改原句，原 SQL 里已有的 ORDER BY / LIMIT 都不受影响
-pub fn with_order_by(sql: String, column: String, ascending: bool) -> String {
-    cdata_core::sql::with_order_by(&sql, &column, ascending)
-}

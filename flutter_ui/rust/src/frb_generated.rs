@@ -39,7 +39,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.13.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -1821017928;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 790518486;
 
 // Section: executor
 
@@ -337,6 +337,58 @@ fn wire__crate__api__db__execute_impl(
                     (move || async move {
                         let output_ok =
                             crate::api::db::execute(api_session_id, api_sql, api_max_rows).await?;
+                        std::result::Result::Ok(output_ok)
+                    })()
+                    .await,
+                )
+            }
+        },
+    )
+}
+fn wire__crate__api__db__execute_view_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "execute_view",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_session_id = <u64>::sse_decode(&mut deserializer);
+            let api_sql = <String>::sse_decode(&mut deserializer);
+            let api_conditions =
+                <Vec<crate::api::db::FilterCondition>>::sse_decode(&mut deserializer);
+            let api_match_all = <bool>::sse_decode(&mut deserializer);
+            let api_sort_column = <Option<String>>::sse_decode(&mut deserializer);
+            let api_sort_ascending = <bool>::sse_decode(&mut deserializer);
+            let api_max_rows = <u64>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| async move {
+                transform_result_sse::<_, String>(
+                    (move || async move {
+                        let output_ok = crate::api::db::execute_view(
+                            api_session_id,
+                            api_sql,
+                            api_conditions,
+                            api_match_all,
+                            api_sort_column,
+                            api_sort_ascending,
+                            api_max_rows,
+                        )
+                        .await?;
                         std::result::Result::Ok(output_ok)
                     })()
                     .await,
@@ -845,45 +897,6 @@ fn wire__crate__api__layouts__save_layout_impl(
         },
     )
 }
-fn wire__crate__api__schema__with_order_by_impl(
-    port_: flutter_rust_bridge::for_generated::MessagePort,
-    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
-    rust_vec_len_: i32,
-    data_len_: i32,
-) {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
-        flutter_rust_bridge::for_generated::TaskInfo {
-            debug_name: "with_order_by",
-            port: Some(port_),
-            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
-        },
-        move || {
-            let message = unsafe {
-                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
-                    ptr_,
-                    rust_vec_len_,
-                    data_len_,
-                )
-            };
-            let mut deserializer =
-                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
-            let api_sql = <String>::sse_decode(&mut deserializer);
-            let api_column = <String>::sse_decode(&mut deserializer);
-            let api_ascending = <bool>::sse_decode(&mut deserializer);
-            deserializer.end();
-            move |context| {
-                transform_result_sse::<_, ()>((move || {
-                    let output_ok = Ok::<_, ()>(crate::api::schema::with_order_by(
-                        api_sql,
-                        api_column,
-                        api_ascending,
-                    ))?;
-                    std::result::Result::Ok(output_ok)
-                })())
-            }
-        },
-    )
-}
 
 // Section: static_checks
 
@@ -944,6 +957,12 @@ const _: fn() = || {
         crate::api::db::Editability::ReadOnly(field0) => {
             let _: String = field0;
         }
+    }
+    {
+        let FilterCondition = None::<crate::api::db::FilterCondition>.unwrap();
+        let _: String = FilterCondition.column;
+        let _: crate::api::db::FilterOp = FilterCondition.op;
+        let _: String = FilterCondition.value;
     }
     {
         let QuerySummary = None::<crate::api::db::QuerySummary>.unwrap();
@@ -1115,6 +1134,49 @@ impl SseDecode for f64 {
     }
 }
 
+impl SseDecode for crate::api::db::FilterCondition {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_column = <String>::sse_decode(deserializer);
+        let mut var_op = <crate::api::db::FilterOp>::sse_decode(deserializer);
+        let mut var_value = <String>::sse_decode(deserializer);
+        return crate::api::db::FilterCondition {
+            column: var_column,
+            op: var_op,
+            value: var_value,
+        };
+    }
+}
+
+impl SseDecode for crate::api::db::FilterOp {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut inner = <i32>::sse_decode(deserializer);
+        return match inner {
+            0 => crate::api::db::FilterOp::Eq,
+            1 => crate::api::db::FilterOp::NotEq,
+            2 => crate::api::db::FilterOp::Lt,
+            3 => crate::api::db::FilterOp::LtEq,
+            4 => crate::api::db::FilterOp::Gt,
+            5 => crate::api::db::FilterOp::GtEq,
+            6 => crate::api::db::FilterOp::Contains,
+            7 => crate::api::db::FilterOp::NotContains,
+            8 => crate::api::db::FilterOp::StartsWith,
+            9 => crate::api::db::FilterOp::EndsWith,
+            10 => crate::api::db::FilterOp::IsNull,
+            11 => crate::api::db::FilterOp::IsNotNull,
+            _ => unreachable!("Invalid variant for FilterOp: {}", inner),
+        };
+    }
+}
+
+impl SseDecode for i32 {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        deserializer.cursor.read_i32::<NativeEndian>().unwrap()
+    }
+}
+
 impl SseDecode for i64 {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -1167,6 +1229,18 @@ impl SseDecode for Vec<crate::api::db::ColumnMeta> {
         let mut ans_ = Vec::with_capacity(len_ as usize);
         for idx_ in 0..len_ {
             ans_.push(<crate::api::db::ColumnMeta>::sse_decode(deserializer));
+        }
+        return ans_;
+    }
+}
+
+impl SseDecode for Vec<crate::api::db::FilterCondition> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<crate::api::db::FilterCondition>::sse_decode(deserializer));
         }
         return ans_;
     }
@@ -1381,13 +1455,6 @@ impl SseDecode for usize {
     }
 }
 
-impl SseDecode for i32 {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
-        deserializer.cursor.read_i32::<NativeEndian>().unwrap()
-    }
-}
-
 fn pde_ffi_dispatcher_primary_impl(
     func_id: i32,
     port: flutter_rust_bridge::for_generated::MessagePort,
@@ -1407,25 +1474,25 @@ fn pde_ffi_dispatcher_primary_impl(
         6 => wire__crate__api__db__delete_rows_impl(port, ptr, rust_vec_len, data_len),
         7 => wire__crate__api__value__display_text_impl(port, ptr, rust_vec_len, data_len),
         8 => wire__crate__api__db__execute_impl(port, ptr, rust_vec_len, data_len),
-        9 => wire__crate__api__db__fetch_window_impl(port, ptr, rust_vec_len, data_len),
-        10 => wire__crate__api__db__fetch_window_text_impl(port, ptr, rust_vec_len, data_len),
-        11 => wire__crate__api__init_app_impl(port, ptr, rust_vec_len, data_len),
-        12 => wire__crate__api__db__insert_row_impl(port, ptr, rust_vec_len, data_len),
-        13 => {
+        9 => wire__crate__api__db__execute_view_impl(port, ptr, rust_vec_len, data_len),
+        10 => wire__crate__api__db__fetch_window_impl(port, ptr, rust_vec_len, data_len),
+        11 => wire__crate__api__db__fetch_window_text_impl(port, ptr, rust_vec_len, data_len),
+        12 => wire__crate__api__init_app_impl(port, ptr, rust_vec_len, data_len),
+        13 => wire__crate__api__db__insert_row_impl(port, ptr, rust_vec_len, data_len),
+        14 => {
             wire__crate__api__connections__list_connections_impl(port, ptr, rust_vec_len, data_len)
         }
-        14 => wire__crate__api__schema__list_databases_impl(port, ptr, rust_vec_len, data_len),
-        15 => wire__crate__api__schema__list_tables_impl(port, ptr, rust_vec_len, data_len),
-        16 => wire__crate__api__layouts__load_layout_impl(port, ptr, rust_vec_len, data_len),
-        17 => wire__crate__api__connections__load_password_impl(port, ptr, rust_vec_len, data_len),
-        18 => wire__crate__api__db__open_session_impl(port, ptr, rust_vec_len, data_len),
-        19 => wire__crate__api__db__parse_clipboard_impl(port, ptr, rust_vec_len, data_len),
-        20 => wire__crate__api__db__paste_cells_impl(port, ptr, rust_vec_len, data_len),
-        21 => {
+        15 => wire__crate__api__schema__list_databases_impl(port, ptr, rust_vec_len, data_len),
+        16 => wire__crate__api__schema__list_tables_impl(port, ptr, rust_vec_len, data_len),
+        17 => wire__crate__api__layouts__load_layout_impl(port, ptr, rust_vec_len, data_len),
+        18 => wire__crate__api__connections__load_password_impl(port, ptr, rust_vec_len, data_len),
+        19 => wire__crate__api__db__open_session_impl(port, ptr, rust_vec_len, data_len),
+        20 => wire__crate__api__db__parse_clipboard_impl(port, ptr, rust_vec_len, data_len),
+        21 => wire__crate__api__db__paste_cells_impl(port, ptr, rust_vec_len, data_len),
+        22 => {
             wire__crate__api__connections__save_connection_impl(port, ptr, rust_vec_len, data_len)
         }
-        22 => wire__crate__api__layouts__save_layout_impl(port, ptr, rust_vec_len, data_len),
-        23 => wire__crate__api__schema__with_order_by_impl(port, ptr, rust_vec_len, data_len),
+        23 => wire__crate__api__layouts__save_layout_impl(port, ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -1599,6 +1666,59 @@ impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<crate::api::db::Editability>>
     for crate::api::db::Editability
 {
     fn into_into_dart(self) -> FrbWrapper<crate::api::db::Editability> {
+        self.into()
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::db::FilterCondition> {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.0.column.into_into_dart().into_dart(),
+            self.0.op.into_into_dart().into_dart(),
+            self.0.value.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for FrbWrapper<crate::api::db::FilterCondition>
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<crate::api::db::FilterCondition>>
+    for crate::api::db::FilterCondition
+{
+    fn into_into_dart(self) -> FrbWrapper<crate::api::db::FilterCondition> {
+        self.into()
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::db::FilterOp> {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        match self.0 {
+            crate::api::db::FilterOp::Eq => 0.into_dart(),
+            crate::api::db::FilterOp::NotEq => 1.into_dart(),
+            crate::api::db::FilterOp::Lt => 2.into_dart(),
+            crate::api::db::FilterOp::LtEq => 3.into_dart(),
+            crate::api::db::FilterOp::Gt => 4.into_dart(),
+            crate::api::db::FilterOp::GtEq => 5.into_dart(),
+            crate::api::db::FilterOp::Contains => 6.into_dart(),
+            crate::api::db::FilterOp::NotContains => 7.into_dart(),
+            crate::api::db::FilterOp::StartsWith => 8.into_dart(),
+            crate::api::db::FilterOp::EndsWith => 9.into_dart(),
+            crate::api::db::FilterOp::IsNull => 10.into_dart(),
+            crate::api::db::FilterOp::IsNotNull => 11.into_dart(),
+            _ => unreachable!(),
+        }
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for FrbWrapper<crate::api::db::FilterOp>
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<crate::api::db::FilterOp>>
+    for crate::api::db::FilterOp
+{
+    fn into_into_dart(self) -> FrbWrapper<crate::api::db::FilterOp> {
         self.into()
     }
 }
@@ -1791,6 +1911,48 @@ impl SseEncode for f64 {
     }
 }
 
+impl SseEncode for crate::api::db::FilterCondition {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.column, serializer);
+        <crate::api::db::FilterOp>::sse_encode(self.op, serializer);
+        <String>::sse_encode(self.value, serializer);
+    }
+}
+
+impl SseEncode for crate::api::db::FilterOp {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(
+            match self {
+                crate::api::db::FilterOp::Eq => 0,
+                crate::api::db::FilterOp::NotEq => 1,
+                crate::api::db::FilterOp::Lt => 2,
+                crate::api::db::FilterOp::LtEq => 3,
+                crate::api::db::FilterOp::Gt => 4,
+                crate::api::db::FilterOp::GtEq => 5,
+                crate::api::db::FilterOp::Contains => 6,
+                crate::api::db::FilterOp::NotContains => 7,
+                crate::api::db::FilterOp::StartsWith => 8,
+                crate::api::db::FilterOp::EndsWith => 9,
+                crate::api::db::FilterOp::IsNull => 10,
+                crate::api::db::FilterOp::IsNotNull => 11,
+                _ => {
+                    unimplemented!("");
+                }
+            },
+            serializer,
+        );
+    }
+}
+
+impl SseEncode for i32 {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        serializer.cursor.write_i32::<NativeEndian>(self).unwrap();
+    }
+}
+
 impl SseEncode for i64 {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -1834,6 +1996,16 @@ impl SseEncode for Vec<crate::api::db::ColumnMeta> {
         <i32>::sse_encode(self.len() as _, serializer);
         for item in self {
             <crate::api::db::ColumnMeta>::sse_encode(item, serializer);
+        }
+    }
+}
+
+impl SseEncode for Vec<crate::api::db::FilterCondition> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::api::db::FilterCondition>::sse_encode(item, serializer);
         }
     }
 }
@@ -2003,13 +2175,6 @@ impl SseEncode for usize {
             .cursor
             .write_u64::<NativeEndian>(self as _)
             .unwrap();
-    }
-}
-
-impl SseEncode for i32 {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
-        serializer.cursor.write_i32::<NativeEndian>(self).unwrap();
     }
 }
 

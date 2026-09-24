@@ -24,17 +24,6 @@ Future<List<TableInfo>> listTables({
 Future<String> browseSql({required String table}) =>
     RustLib.instance.api.crateApiSchemaBrowseSql(table: table);
 
-/// 给查询加排序。包子查询而不是改原句，原 SQL 里已有的 ORDER BY / LIMIT 都不受影响
-Future<String> withOrderBy({
-  required String sql,
-  required String column,
-  required bool ascending,
-}) => RustLib.instance.api.crateApiSchemaWithOrderBy(
-  sql: sql,
-  column: column,
-  ascending: ascending,
-);
-
 class TableInfo {
   final String name;
   final BigInt estimatedRows;

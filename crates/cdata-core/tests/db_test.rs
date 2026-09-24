@@ -434,28 +434,124 @@ async fn order_by_wrapper_actually_sorts_on_the_server() {
     };
 
     let id = cdata_core::session::open_session(&config);
+    let base = "SELECT id, name FROM big_rows ORDER BY id LIMIT 100";
 
     // 原句带 LIMIT：包子查询后语义是「先取前 100 行，再对这 100 行排序」
-    let sql = cdata_core::sql::with_order_by(
-        "SELECT id, name FROM big_rows ORDER BY id LIMIT 100",
-        "id",
-        false,
-    );
-    let summary = cdata_core::session::execute(id, &sql, 200).await.expect("排序查询失败");
+    let summary = cdata_core::session::execute_view(id, base, &[], true, Some(("id", false)), 200)
+        .await
+        .expect("排序查询失败");
     assert_eq!(summary.total_rows, 100);
-
     let rows = cdata_core::session::fetch_window(id, 0, 1).expect("取窗口失败");
     assert_eq!(rows[0][0], CellValue::Int(100), "降序后第一行应该是 100");
 
-    // 升序
-    let asc = cdata_core::sql::with_order_by(
-        "SELECT id, name FROM big_rows ORDER BY id LIMIT 100",
-        "id",
-        true,
-    );
-    cdata_core::session::execute(id, &asc, 200).await.expect("排序查询失败");
+    cdata_core::session::execute_view(id, base, &[], true, Some(("id", true)), 200)
+        .await
+        .expect("排序查询失败");
     let rows = cdata_core::session::fetch_window(id, 0, 1).expect("取窗口失败");
     assert_eq!(rows[0][0], CellValue::Int(1));
+
+    cdata_core::session::close_session(id).await.ok();
+}
+
+fn condition(column: &str, op: cdata_core::sql::FilterOp, value: &str) -> cdata_core::sql::FilterCondition {
+    cdata_core::sql::FilterCondition { column: column.to_string(), op, value: value.to_string() }
+}
+
+#[tokio::test]
+async fn filter_and_sort_run_on_the_server() {
+    use cdata_core::sql::FilterOp;
+    let Some(config) = config_from_env() else {
+        return;
+    };
+
+    let id = cdata_core::session::open_session(&config);
+
+    // 数字比较 + 降序：值按字符串绑定，MySQL 按列类型转
+    let summary = cdata_core::session::execute_view(
+        id,
+        "SELECT * FROM big_rows",
+        &[condition("id", FilterOp::LtEq, "3")],
+        true,
+        Some(("id", false)),
+        200,
+    )
+    .await
+    .expect("筛选失败");
+    assert_eq!(summary.total_rows, 3);
+    let rows = cdata_core::session::fetch_window(id, 0, 3).expect("取窗口失败");
+    assert_eq!(rows[0][0], CellValue::Int(3));
+
+    // 中文 LIKE：用户9999 和 用户99990 … 用户99999
+    let summary = cdata_core::session::execute_view(
+        id,
+        "SELECT id, name AS 名字 FROM big_rows",
+        &[condition("名字", FilterOp::Contains, "用户9999")],
+        true,
+        None,
+        200,
+    )
+    .await
+    .expect("筛选失败");
+    assert_eq!(summary.total_rows, 11, "按别名筛选，别名也要能用");
+
+    // 任一满足
+    let summary = cdata_core::session::execute_view(
+        id,
+        "SELECT * FROM big_rows",
+        &[condition("id", FilterOp::Eq, "1"), condition("id", FilterOp::Eq, "2")],
+        false,
+        None,
+        200,
+    )
+    .await
+    .expect("筛选失败");
+    assert_eq!(summary.total_rows, 2);
+
+    // IS NULL 和直接写 WHERE 的结果一致
+    let nulls = cdata_core::session::execute_view(
+        id,
+        "SELECT * FROM big_rows",
+        &[condition("note", FilterOp::IsNull, "")],
+        true,
+        None,
+        200_000,
+    )
+    .await
+    .expect("筛选失败");
+    assert!(nulls.total_rows > 0, "开发库里 note 有 NULL");
+    assert_eq!(
+        nulls.total_rows as i64,
+        count_where(&config, "SELECT COUNT(*) FROM big_rows WHERE note IS NULL").await
+    );
+
+    cdata_core::session::close_session(id).await.ok();
+}
+
+#[tokio::test]
+async fn filtered_result_is_still_editable() {
+    use cdata_core::sql::FilterOp;
+    let Some(config) = config_from_env() else {
+        return;
+    };
+
+    let id = cdata_core::session::open_session(&config);
+    let summary = cdata_core::session::execute_view(
+        id,
+        "SELECT id, name, amount FROM edit_target",
+        &[condition("id", FilterOp::Eq, "1")],
+        true,
+        Some(("id", true)),
+        100,
+    )
+    .await
+    .expect("筛选失败");
+
+    // 包一层派生表后，列元数据里的原始表还在，照样能按主键写回
+    match &summary.editability {
+        cdata_core::edit::Editability::Editable(target) => assert_eq!(target.table, "edit_target"),
+        cdata_core::edit::Editability::ReadOnly(reason) => panic!("筛选后应该还能编辑：{reason}"),
+    }
+    assert!(summary.layout_key.is_some(), "筛选后列布局也要能记");
 
     cdata_core::session::close_session(id).await.ok();
 }

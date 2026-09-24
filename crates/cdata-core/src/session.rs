@@ -9,7 +9,8 @@ use std::sync::{Mutex, OnceLock};
 use mysql_async::prelude::Queryable;
 use mysql_async::{Pool, TxOpts};
 
-use crate::db::{open_pool, run_query, run_query_with_params, ColumnMeta, ConnectionConfig, ResultSet};
+use crate::db::{open_pool, run_query_with_params, ColumnMeta, ConnectionConfig, ResultSet};
+use crate::sql::{build_view, FilterCondition};
 use crate::edit::{
     build_delete, build_insert, build_select_by_key, build_update, detect_editability,
     is_auto_increment, EditTarget, Editability,
@@ -27,8 +28,8 @@ pub enum Error {
     NotEditable(String),
     /// 写回没有按预期生效
     EditFailed(String),
-    /// 复制粘贴的区域或内容不对
-    Clipboard(String),
+    /// 界面给的参数不对：选区越界、剪贴板格式不规整、筛选条件缺列
+    BadInput(String),
 }
 
 impl std::fmt::Display for Error {
@@ -39,7 +40,7 @@ impl std::fmt::Display for Error {
             Error::Mysql(message) => write!(f, "MySQL 错误：{message}"),
             Error::NotEditable(reason) => write!(f, "{reason}"),
             Error::EditFailed(reason) => write!(f, "{reason}"),
-            Error::Clipboard(reason) => write!(f, "{reason}"),
+            Error::BadInput(reason) => write!(f, "{reason}"),
         }
     }
 }
@@ -111,6 +112,28 @@ pub fn open_session(config: &ConnectionConfig) -> u64 {
 
 /// 跑查询并把结果留在会话里，只回概况
 pub async fn execute(session_id: u64, sql: &str, max_rows: usize) -> Result<QuerySummary> {
+    execute_statement(session_id, sql, Vec::new(), max_rows).await
+}
+
+/// 在原查询上套筛选和排序再跑。条件的值走参数化，SQL 由 core 生成
+pub async fn execute_view(
+    session_id: u64,
+    sql: &str,
+    conditions: &[FilterCondition],
+    match_all: bool,
+    sort: Option<(&str, bool)>,
+    max_rows: usize,
+) -> Result<QuerySummary> {
+    let statement = build_view(sql, conditions, match_all, sort).map_err(Error::BadInput)?;
+    execute_statement(session_id, &statement.sql, statement.params, max_rows).await
+}
+
+async fn execute_statement(
+    session_id: u64,
+    sql: &str,
+    params: Vec<mysql_async::Value>,
+    max_rows: usize,
+) -> Result<QuerySummary> {
     // 先把池克隆出来再释放锁，避免把锁持过 await
     let (pool, server) = {
         let guard = store().lock().unwrap();
@@ -121,7 +144,7 @@ pub async fn execute(session_id: u64, sql: &str, max_rows: usize) -> Result<Quer
         (session.pool.clone(), session.server.clone())
     };
 
-    let result = run_query(&pool, sql, max_rows).await?;
+    let result = run_query_with_params(&pool, sql, params, max_rows).await?;
     let editability = detect_editability(&pool, &result.columns).await;
 
     let summary = QuerySummary {
@@ -305,7 +328,7 @@ pub fn copy_range(
     let start = row_start as usize;
     let end = start.saturating_add(row_count as usize);
     if end > result.rows.len() {
-        return Err(Error::Clipboard(format!(
+        return Err(Error::BadInput(format!(
             "复制区域到第 {end} 行，结果集只有 {} 行",
             result.rows.len()
         )));
@@ -315,7 +338,7 @@ pub fn copy_range(
     for index in column_indexes {
         columns.push(index as usize);
     }
-    crate::clipboard::encode(&result.rows[start..end], &columns).map_err(Error::Clipboard)
+    crate::clipboard::encode(&result.rows[start..end], &columns).map_err(Error::BadInput)
 }
 
 /// 从 row_start 行起，把一块值粘贴进 column_indexes 这几列，返回写了多少个单元格。
@@ -346,7 +369,7 @@ pub async fn paste_cells(
         let target = edit_target(session, session_id)?;
 
         if row_start + values.len() > result.rows.len() {
-            return Err(Error::Clipboard(format!(
+            return Err(Error::BadInput(format!(
                 "从第 {} 行粘贴 {} 行会超出结果集末尾（共 {} 行）",
                 row_start + 1,
                 values.len(),
@@ -357,7 +380,7 @@ pub async fn paste_cells(
             let column = result
                 .columns
                 .get(index)
-                .ok_or_else(|| Error::Clipboard(format!("列下标 {index} 越界")))?;
+                .ok_or_else(|| Error::BadInput(format!("列下标 {index} 越界")))?;
             if target.key_indexes.contains(&index) {
                 return Err(Error::NotEditable(format!(
                     "粘贴区域包含主键列 {}，改主键要用专门的流程",
@@ -376,7 +399,7 @@ pub async fn paste_cells(
         let mut touched = Vec::new();
         for (offset, pasted_row) in values.iter().enumerate() {
             if pasted_row.len() != column_indexes.len() {
-                return Err(Error::Clipboard(format!(
+                return Err(Error::BadInput(format!(
                     "第 {} 行有 {} 个值，选中的是 {} 列",
                     offset + 1,
                     pasted_row.len(),

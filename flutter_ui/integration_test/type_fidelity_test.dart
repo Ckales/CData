@@ -106,4 +106,38 @@ void main() {
     expect(await source.deleteRows([before]), before);
     await closeSession(sessionId: sessionId);
   });
+
+  test('筛选条件和排序穿过 FFI 生成正确的查询', () async {
+    if (_host.isEmpty) {
+      markTestSkipped('未通过 --dart-define 提供连接信息');
+      return;
+    }
+
+    final sessionId = await openSession(
+      config: ConnectionConfig(
+        host: _host,
+        port: int.parse(_port),
+        user: _user,
+        password: _password,
+        database: _db,
+      ),
+    );
+    final summary = await executeView(
+      sessionId: sessionId,
+      sql: 'SELECT * FROM big_rows',
+      conditions: const [
+        FilterCondition(column: 'id', op: FilterOp.ltEq, value: '3'),
+        FilterCondition(column: 'name', op: FilterOp.startsWith, value: '用户'),
+      ],
+      matchAll: true,
+      sortColumn: 'id',
+      sortAscending: false,
+      maxRows: BigInt.from(100),
+    );
+    expect(summary.totalRows, BigInt.from(3));
+
+    final rows = await fetchWindowText(sessionId: sessionId, offset: BigInt.zero, limit: BigInt.one);
+    expect(rows.first.first, '3', reason: '降序后第一行是 3');
+    await closeSession(sessionId: sessionId);
+  });
 }

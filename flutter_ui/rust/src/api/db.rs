@@ -11,6 +11,7 @@ use tokio::runtime::Runtime;
 pub use cdata_core::db::{ColumnMeta, ConnectionConfig};
 pub use cdata_core::edit::{Editability, EditTarget};
 pub use cdata_core::session::QuerySummary;
+pub use cdata_core::sql::{FilterCondition, FilterOp};
 pub use cdata_core::CellValue;
 
 #[frb(mirror(ConnectionConfig))]
@@ -51,6 +52,29 @@ pub struct _QuerySummary {
     pub truncated: bool,
     pub editability: Editability,
     pub layout_key: Option<String>,
+}
+
+#[frb(mirror(FilterOp))]
+pub enum _FilterOp {
+    Eq,
+    NotEq,
+    Lt,
+    LtEq,
+    Gt,
+    GtEq,
+    Contains,
+    NotContains,
+    StartsWith,
+    EndsWith,
+    IsNull,
+    IsNotNull,
+}
+
+#[frb(mirror(FilterCondition))]
+pub struct _FilterCondition {
+    pub column: String,
+    pub op: FilterOp,
+    pub value: String,
 }
 
 pub(crate) fn runtime() -> &'static Runtime {
@@ -96,6 +120,32 @@ pub fn open_session(config: ConnectionConfig) -> u64 {
 pub async fn execute(session_id: u64, sql: String, max_rows: u64) -> Result<QuerySummary> {
     on_runtime(async move {
         cdata_core::session::execute(session_id, &sql, max_rows as usize).await
+    })
+    .await
+}
+
+/// 在原查询上套筛选和排序再跑。SQL 在 core 里生成，条件的值走参数化。
+/// 没有条件、sort_column 为 null 时就是原样跑 sql
+pub async fn execute_view(
+    session_id: u64,
+    sql: String,
+    conditions: Vec<FilterCondition>,
+    match_all: bool,
+    sort_column: Option<String>,
+    sort_ascending: bool,
+    max_rows: u64,
+) -> Result<QuerySummary> {
+    on_runtime(async move {
+        let sort = sort_column.as_deref().map(|column| (column, sort_ascending));
+        cdata_core::session::execute_view(
+            session_id,
+            &sql,
+            &conditions,
+            match_all,
+            sort,
+            max_rows as usize,
+        )
+        .await
     })
     .await
 }

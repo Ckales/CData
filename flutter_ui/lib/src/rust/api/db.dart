@@ -28,6 +28,26 @@ Future<QuerySummary> execute({
   maxRows: maxRows,
 );
 
+/// 在原查询上套筛选和排序再跑。SQL 在 core 里生成，条件的值走参数化。
+/// 没有条件、sort_column 为 null 时就是原样跑 sql
+Future<QuerySummary> executeView({
+  required BigInt sessionId,
+  required String sql,
+  required List<FilterCondition> conditions,
+  required bool matchAll,
+  String? sortColumn,
+  required bool sortAscending,
+  required BigInt maxRows,
+}) => RustLib.instance.api.crateApiDbExecuteView(
+  sessionId: sessionId,
+  sql: sql,
+  conditions: conditions,
+  matchAll: matchAll,
+  sortColumn: sortColumn,
+  sortAscending: sortAscending,
+  maxRows: maxRows,
+);
+
 /// 取可视区的显示文本，网格渲染走这条。整个结果集不跨 FFI，界面滚到哪取到哪
 Future<List<List<String>>> fetchWindowText({
   required BigInt sessionId,
@@ -215,6 +235,45 @@ sealed class Editability with _$Editability {
 
   const factory Editability.editable(EditTarget field0) = Editability_Editable;
   const factory Editability.readOnly(String field0) = Editability_ReadOnly;
+}
+
+class FilterCondition {
+  final String column;
+  final FilterOp op;
+  final String value;
+
+  const FilterCondition({
+    required this.column,
+    required this.op,
+    required this.value,
+  });
+
+  @override
+  int get hashCode => column.hashCode ^ op.hashCode ^ value.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is FilterCondition &&
+          runtimeType == other.runtimeType &&
+          column == other.column &&
+          op == other.op &&
+          value == other.value;
+}
+
+enum FilterOp {
+  eq,
+  notEq,
+  lt,
+  ltEq,
+  gt,
+  gtEq,
+  contains,
+  notContains,
+  startsWith,
+  endsWith,
+  isNull,
+  isNotNull,
 }
 
 class QuerySummary {
