@@ -45,6 +45,38 @@ Future<void> applyAlter({
   statements: statements,
 );
 
+/// 新建表的起始草稿：自增主键 id、InnoDB，默认值由 core 定
+TableDraft newTableDraft() =>
+    RustLib.instance.api.crateApiSchemaNewTableDraft();
+
+/// 预览新建表。同名的表或视图已经存在就报错
+Future<AlterPlan> previewCreateTable({
+  required BigInt sessionId,
+  required String database,
+  required String table,
+  required TableDraft draft,
+}) => RustLib.instance.api.crateApiSchemaPreviewCreateTable(
+  sessionId: sessionId,
+  database: database,
+  table: table,
+  draft: draft,
+);
+
+/// 执行预览过的建表。statements 是预览时拿到的语句，重新生成的不一致就不执行
+Future<void> createTable({
+  required BigInt sessionId,
+  required String database,
+  required String table,
+  required TableDraft draft,
+  required List<String> statements,
+}) => RustLib.instance.api.crateApiSchemaCreateTable(
+  sessionId: sessionId,
+  database: database,
+  table: table,
+  draft: draft,
+  statements: statements,
+);
+
 /// 一张表的列、索引、外键和建表语句，结构页一次取齐
 Future<TableStructure> tableStructure({
   required BigInt sessionId,
@@ -95,6 +127,61 @@ class AlterPlan {
           statements == other.statements &&
           dangers == other.dangers &&
           notes == other.notes;
+}
+
+class CheckDef {
+  final String name;
+  final String expression;
+  final bool enforced;
+
+  const CheckDef({
+    required this.name,
+    required this.expression,
+    required this.enforced,
+  });
+
+  @override
+  int get hashCode => name.hashCode ^ expression.hashCode ^ enforced.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is CheckDef &&
+          runtimeType == other.runtimeType &&
+          name == other.name &&
+          expression == other.expression &&
+          enforced == other.enforced;
+}
+
+class CheckDraft {
+  final String? originalName;
+  final String name;
+  final String expression;
+  final bool enforced;
+
+  const CheckDraft({
+    this.originalName,
+    required this.name,
+    required this.expression,
+    required this.enforced,
+  });
+
+  @override
+  int get hashCode =>
+      originalName.hashCode ^
+      name.hashCode ^
+      expression.hashCode ^
+      enforced.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is CheckDraft &&
+          runtimeType == other.runtimeType &&
+          originalName == other.originalName &&
+          name == other.name &&
+          expression == other.expression &&
+          enforced == other.enforced;
 }
 
 class ColumnDef {
@@ -400,16 +487,24 @@ class TableDraft {
   final List<ColumnDraft> columns;
   final List<IndexDraft> indexes;
   final List<ForeignKeyDraft> foreignKeys;
+  final List<CheckDraft> checks;
+  final TableOptionsDraft options;
 
   const TableDraft({
     required this.columns,
     required this.indexes,
     required this.foreignKeys,
+    required this.checks,
+    required this.options,
   });
 
   @override
   int get hashCode =>
-      columns.hashCode ^ indexes.hashCode ^ foreignKeys.hashCode;
+      columns.hashCode ^
+      indexes.hashCode ^
+      foreignKeys.hashCode ^
+      checks.hashCode ^
+      options.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -418,7 +513,9 @@ class TableDraft {
           runtimeType == other.runtimeType &&
           columns == other.columns &&
           indexes == other.indexes &&
-          foreignKeys == other.foreignKeys;
+          foreignKeys == other.foreignKeys &&
+          checks == other.checks &&
+          options == other.options;
 }
 
 class TableInfo {
@@ -445,12 +542,61 @@ class TableInfo {
           isView == other.isView;
 }
 
+class TableOptionsDraft {
+  final String engine;
+  final String? charset;
+  final String? collation;
+  final String comment;
+  final BigInt? autoIncrement;
+  final String? rowFormat;
+  final bool convertCharset;
+
+  const TableOptionsDraft({
+    required this.engine,
+    this.charset,
+    this.collation,
+    required this.comment,
+    this.autoIncrement,
+    this.rowFormat,
+    required this.convertCharset,
+  });
+
+  @override
+  int get hashCode =>
+      engine.hashCode ^
+      charset.hashCode ^
+      collation.hashCode ^
+      comment.hashCode ^
+      autoIncrement.hashCode ^
+      rowFormat.hashCode ^
+      convertCharset.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is TableOptionsDraft &&
+          runtimeType == other.runtimeType &&
+          engine == other.engine &&
+          charset == other.charset &&
+          collation == other.collation &&
+          comment == other.comment &&
+          autoIncrement == other.autoIncrement &&
+          rowFormat == other.rowFormat &&
+          convertCharset == other.convertCharset;
+}
+
 class TableStructure {
   final List<ColumnDef> columns;
   final List<IndexDef> indexes;
   final List<ForeignKeyDef> foreignKeys;
   final String createSql;
   final String? tableCollation;
+  final String? tableCharset;
+  final String? engine;
+  final String tableComment;
+  final BigInt? autoIncrement;
+  final String? rowFormat;
+  final List<CheckDef>? checks;
 
   const TableStructure({
     required this.columns,
@@ -458,6 +604,12 @@ class TableStructure {
     required this.foreignKeys,
     required this.createSql,
     this.tableCollation,
+    this.tableCharset,
+    this.engine,
+    required this.tableComment,
+    this.autoIncrement,
+    this.rowFormat,
+    this.checks,
   });
 
   @override
@@ -466,7 +618,13 @@ class TableStructure {
       indexes.hashCode ^
       foreignKeys.hashCode ^
       createSql.hashCode ^
-      tableCollation.hashCode;
+      tableCollation.hashCode ^
+      tableCharset.hashCode ^
+      engine.hashCode ^
+      tableComment.hashCode ^
+      autoIncrement.hashCode ^
+      rowFormat.hashCode ^
+      checks.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -477,5 +635,11 @@ class TableStructure {
           indexes == other.indexes &&
           foreignKeys == other.foreignKeys &&
           createSql == other.createSql &&
-          tableCollation == other.tableCollation;
+          tableCollation == other.tableCollation &&
+          tableCharset == other.tableCharset &&
+          engine == other.engine &&
+          tableComment == other.tableComment &&
+          autoIncrement == other.autoIncrement &&
+          rowFormat == other.rowFormat &&
+          checks == other.checks;
 }

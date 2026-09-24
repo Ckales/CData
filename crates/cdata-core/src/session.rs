@@ -623,17 +623,23 @@ async fn plan_alter_on(
     if !fresh.create_sql.starts_with("CREATE TABLE") {
         return Err(Error::BadInput("只有普通表能用结构编辑器修改，视图请直接写 SQL".to_string()));
     }
+    // AUTO_INCREMENT 每次插入都会变，不算结构改动；草稿里的自增值是「要设成多少」，不和它比
     if fresh.columns != original.columns
         || fresh.indexes != original.indexes
         || fresh.foreign_keys != original.foreign_keys
+        || fresh.checks != original.checks
+        || fresh.engine != original.engine
+        || fresh.table_charset != original.table_charset
+        || fresh.table_collation != original.table_collation
+        || fresh.table_comment != original.table_comment
+        || fresh.row_format != original.row_format
     {
         return Err(Error::BadInput(
             "表结构在打开编辑器之后被改过，请关掉编辑器重新打开，免得把别人的改动覆盖回去".to_string(),
         ));
     }
 
-    let sql_mode: String = conn.query_first("SELECT @@SESSION.sql_mode").await?.unwrap_or_default();
-    let no_backslash_escapes = sql_mode.split(',').any(|mode| mode == "NO_BACKSLASH_ESCAPES");
+    let no_backslash_escapes = no_backslash_escapes(conn).await?;
     crate::alter::plan_alter(database, table, &fresh, draft, no_backslash_escapes).map_err(Error::BadInput)
 }
 
@@ -1080,4 +1086,202 @@ pub async fn close_session(session_id: u64) -> Result<()> {
         session.pool.disconnect().await?;
     }
     Ok(())
+}
+
+// ---- 服务器状态：server.rs 的薄包装 ----
+
+/// 连同一台服务器的所有会话的连接池取出过的线程 id。每个标签各有各的池，都算 CData 自己的连接。
+/// 要在取到这次用的连接之后再调，这条连接自己才在里面
+fn own_connection_ids(session_id: u64) -> Result<Vec<u32>> {
+    let guard = store().lock().unwrap();
+    let server = &guard
+        .sessions
+        .get(&session_id)
+        .ok_or(Error::NoSuchSession(session_id))?
+        .server;
+    let mut ids = Vec::new();
+    for session in guard.sessions.values() {
+        if &session.server == server {
+            ids.extend(session.pool.connection_ids());
+        }
+    }
+    Ok(ids)
+}
+
+/// 进程列表，CData 自己的连接标出来
+pub async fn server_processes(session_id: u64) -> Result<crate::server::ProcessList> {
+    let pool = pool_of(session_id)?;
+    let mut conn = pool.get_conn().await?;
+    let own_ids = own_connection_ids(session_id)?;
+    crate::server::read_processes(&mut conn, &own_ids).await
+}
+
+/// KILL QUERY / KILL CONNECTION。拒绝 CData 自己的连接，和确认时看到的对不上也拒绝
+pub async fn kill_process(
+    session_id: u64,
+    target: &crate::server::ProcessInfo,
+    mode: crate::server::KillMode,
+) -> Result<()> {
+    let pool = pool_of(session_id)?;
+    let mut conn = pool.get_conn().await?;
+    let own_ids = own_connection_ids(session_id)?;
+    crate::server::kill(&mut conn, target, mode, &own_ids).await
+}
+
+/// SHOW GLOBAL / SESSION VARIABLES。会话值来自连接池里的一条连接，归还时会被重置
+pub async fn server_variables(
+    session_id: u64,
+    scope: crate::server::VariableScope,
+) -> Result<crate::server::VariableList> {
+    let pool = pool_of(session_id)?;
+    let mut conn = pool.get_conn().await?;
+    crate::server::read_variables(&mut conn, scope).await
+}
+
+/// SHOW GLOBAL STATUS，和 previous 比出差值
+pub async fn server_status(
+    session_id: u64,
+    previous: Option<&crate::server::StatusSnapshot>,
+) -> Result<crate::server::StatusSnapshot> {
+    let pool = pool_of(session_id)?;
+    let mut conn = pool.get_conn().await?;
+    crate::server::read_status(&mut conn, previous).await
+}
+
+pub async fn slow_log_config(session_id: u64) -> Result<crate::server::SlowLogConfig> {
+    let pool = pool_of(session_id)?;
+    let mut conn = pool.get_conn().await?;
+    crate::server::slow_log_config(&mut conn).await
+}
+
+/// mysql.slow_log 最近 limit 条。log_output 不含 TABLE 时拒绝并说明日志在哪
+pub async fn slow_log_entries(session_id: u64, limit: u32) -> Result<Vec<crate::server::SlowLogEntry>> {
+    let pool = pool_of(session_id)?;
+    let mut conn = pool.get_conn().await?;
+    crate::server::read_slow_log(&mut conn, limit).await
+}
+
+pub async fn preview_set_global(session_id: u64, name: &str, value: &str) -> Result<crate::server::SetVariablePlan> {
+    let pool = pool_of(session_id)?;
+    let mut conn = pool.get_conn().await?;
+    crate::server::plan_set_global(&mut conn, name, value).await
+}
+
+/// 执行预览过的 SET GLOBAL，返回服务器存下的新值
+pub async fn apply_set_global(session_id: u64, name: &str, value: &str, previewed: &str) -> Result<DisplayCell> {
+    let pool = pool_of(session_id)?;
+    let mut conn = pool.get_conn().await?;
+    crate::server::apply_set_global(&mut conn, name, value, previewed).await
+}
+
+/// 用户管理页打开时的全部信息：当前账号、账号清单、认证插件、各层可选的权限
+pub async fn load_user_admin(session_id: u64) -> Result<crate::users::UserAdmin> {
+    let mut conn = pool_of(session_id)?.get_conn().await?;
+    crate::users::load(&mut conn).await
+}
+
+/// 一个账号的 SHOW GRANTS，分层解析后连同原文返回
+pub async fn account_grants(session_id: u64, account: &crate::users::Account) -> Result<crate::users::AccountGrants> {
+    let mut conn = pool_of(session_id)?.get_conn().await?;
+    crate::users::account_grants(&mut conn, account).await
+}
+
+/// 预览一次账号或权限变更。返回的语句里密码是 `'***'`
+pub async fn preview_user_change(
+    session_id: u64,
+    change: &crate::users::UserChange,
+    password: Option<&str>,
+) -> Result<crate::users::ChangePlan> {
+    let mut conn = pool_of(session_id)?.get_conn().await?;
+    crate::users::preview_change(&mut conn, change, password).await
+}
+
+/// 执行预览过的变更。previewed 是预览时拿到的语句，重新生成的不一致就不执行
+pub async fn apply_user_change(
+    session_id: u64,
+    change: &crate::users::UserChange,
+    password: Option<&str>,
+    previewed: &str,
+) -> Result<()> {
+    let mut conn = pool_of(session_id)?.get_conn().await?;
+    crate::users::apply_change(&mut conn, change, password, previewed).await
+}
+
+/// 字符串里的反斜杠怎么转义取决于执行语句那条连接的 sql_mode
+async fn no_backslash_escapes(conn: &mut mysql_async::Conn) -> Result<bool> {
+    let sql_mode: String = conn.query_first("SELECT @@SESSION.sql_mode").await?.unwrap_or_default();
+    Ok(sql_mode.split(',').any(|mode| mode == "NO_BACKSLASH_ESCAPES"))
+}
+
+/// 预览新建表。同名的表或视图已经存在就拒绝
+pub async fn preview_create_table(
+    session_id: u64,
+    database: &str,
+    table: &str,
+    draft: &crate::alter::TableDraft,
+) -> Result<crate::alter::AlterPlan> {
+    let pool = pool_of(session_id)?;
+    let mut conn = pool.get_conn().await?;
+    plan_create_on(&mut conn, database, table, draft).await
+}
+
+/// 执行预览过的建表。在同一条连接上重新核对、重新生成，和预览时的语句不一致就不执行。
+/// 语句是不带 IF NOT EXISTS 的 CREATE TABLE，核对之后才冒出来的同名表也会让它报错，不会误用别人的表
+pub async fn create_table(
+    session_id: u64,
+    database: &str,
+    table: &str,
+    draft: &crate::alter::TableDraft,
+    previewed: &[String],
+) -> Result<()> {
+    let pool = pool_of(session_id)?;
+    let mut conn = pool.get_conn().await?;
+    let plan = plan_create_on(&mut conn, database, table, draft).await?;
+    if plan.statements != previewed {
+        return Err(Error::BadInput(
+            "要执行的语句和预览时不一样了（sql_mode 变了），请重新预览".to_string(),
+        ));
+    }
+    crate::alter::run_statements(&mut conn, &plan.statements).await.map_err(|(_, err)| Error::from(err))
+}
+
+async fn plan_create_on(
+    conn: &mut mysql_async::Conn,
+    database: &str,
+    table: &str,
+    draft: &crate::alter::TableDraft,
+) -> Result<crate::alter::AlterPlan> {
+    let version: String = conn.query_first("SELECT VERSION()").await?.unwrap_or_default();
+    if !crate::alter::supports_alter(&version) {
+        return Err(Error::BadInput(format!(
+            "新建表只支持 MySQL 8.0.13 及以上（当前 {version}）：和结构编辑用的是同一套生成规则"
+        )));
+    }
+    let existing: Option<String> = conn
+        .exec_first(
+            "SELECT TABLE_TYPE FROM information_schema.TABLES WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?",
+            (database, table),
+        )
+        .await?;
+    if let Some(kind) = existing {
+        let what = if kind == "VIEW" { "视图" } else { "表" };
+        return Err(Error::BadInput(format!("{database} 里已经有叫 {table} 的{what}，换个名字")));
+    }
+
+    let no_backslash_escapes = no_backslash_escapes(conn).await?;
+    let supports_check = crate::alter::supports_check(&version);
+    crate::alter::plan_create(database, table, draft, no_backslash_escapes, supports_check).map_err(Error::BadInput)
+}
+
+/// 在原查询上套分组筛选（可嵌套、带 IN）和排序再跑。execute_view 是只有一组时的特例。
+/// 加在文件末尾：这个文件另有人在改，分组筛选只在这里接一个入口
+pub async fn execute_filtered_view(
+    session_id: u64,
+    sql: &str,
+    filter: &crate::sql::FilterGroup,
+    sort: Option<(&str, bool)>,
+    max_rows: usize,
+) -> Result<QuerySummary> {
+    let statement = crate::sql::build_filtered_view(sql, filter, sort).map_err(Error::BadInput)?;
+    execute_statement(session_id, &statement.sql, statement.params, max_rows).await
 }

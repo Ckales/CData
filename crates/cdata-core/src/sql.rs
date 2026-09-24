@@ -35,6 +35,9 @@ pub enum FilterOp {
     EndsWith,
     IsNull,
     IsNotNull,
+    /// 值是一行一个的列表，见 [`filter_in_values`]
+    In,
+    NotIn,
 }
 
 /// 一条筛选条件。column 是结果集里的列名（有别名就是别名），IS NULL 类运算符忽略 value
@@ -45,9 +48,40 @@ pub struct FilterCondition {
     pub value: String,
 }
 
+/// 一组条件，按 match_all 用 AND 或 OR 连起来。组里可以再套组，
+/// 这样才写得出 (A AND B) OR (C AND D)
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FilterGroup {
+    pub match_all: bool,
+    pub items: Vec<FilterItem>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum FilterItem {
+    Condition(FilterCondition),
+    Group(FilterGroup),
+}
+
 /// LIKE 的转义字符。不用反斜杠：反斜杠在字符串字面量里的含义随 NO_BACKSLASH_ESCAPES 变，
 /// 换一个普通字符，不管服务器开没开这个 sql_mode 都一样
 const LIKE_ESCAPE: char = '|';
+
+/// 一条预处理语句最多 65535 个占位符，超了 MySQL 报错，这里先拦下来说清楚
+const MAX_PARAMS: usize = 65535;
+
+/// 单层条件的筛选，等价于只有一组的 [`build_filtered_view`]
+pub fn build_view(
+    sql: &str,
+    conditions: &[FilterCondition],
+    match_all: bool,
+    sort: Option<(&str, bool)>,
+) -> Result<Statement, String> {
+    let mut items = Vec::with_capacity(conditions.len());
+    for condition in conditions {
+        items.push(FilterItem::Condition(condition.clone()));
+    }
+    build_filtered_view(sql, &FilterGroup { match_all, items }, sort)
+}
 
 /// 给任意查询加筛选和排序。
 ///
@@ -59,58 +93,27 @@ const LIKE_ESCAPE: char = '|';
 /// 这些规则只有 MySQL 自己算得准。
 ///
 /// 既没有条件也不排序时原样返回，不多包一层。
-pub fn build_view(
+pub fn build_filtered_view(
     sql: &str,
-    conditions: &[FilterCondition],
-    match_all: bool,
+    filter: &FilterGroup,
     sort: Option<(&str, bool)>,
 ) -> Result<Statement, String> {
-    if conditions.is_empty() && sort.is_none() {
+    if filter.items.is_empty() && sort.is_none() {
         return Ok(Statement { sql: sql.to_string(), params: Vec::new() });
     }
 
-    let mut parts = Vec::with_capacity(conditions.len());
     let mut params = Vec::new();
-    for condition in conditions {
-        if condition.column.is_empty() {
-            return Err("筛选条件没有选列".to_string());
-        }
-        let column = quote_ident(&condition.column);
-        let value = &condition.value;
-
-        // NOT LIKE / <> 对 NULL 的结果是 NULL，NULL 行不会出现在「不包含」「≠」里。
-        // 这是 MySQL 的语义，和直接写 WHERE 一致，不在这里偷偷补 OR IS NULL
-        let (part, param) = match condition.op {
-            FilterOp::Eq => (format!("{column} = ?"), Some(value.clone())),
-            FilterOp::NotEq => (format!("{column} <> ?"), Some(value.clone())),
-            FilterOp::Lt => (format!("{column} < ?"), Some(value.clone())),
-            FilterOp::LtEq => (format!("{column} <= ?"), Some(value.clone())),
-            FilterOp::Gt => (format!("{column} > ?"), Some(value.clone())),
-            FilterOp::GtEq => (format!("{column} >= ?"), Some(value.clone())),
-            FilterOp::Contains => (
-                format!("{column} LIKE ? ESCAPE '{LIKE_ESCAPE}'"),
-                Some(format!("%{}%", escape_like(value))),
-            ),
-            FilterOp::NotContains => (
-                format!("{column} NOT LIKE ? ESCAPE '{LIKE_ESCAPE}'"),
-                Some(format!("%{}%", escape_like(value))),
-            ),
-            FilterOp::StartsWith => (
-                format!("{column} LIKE ? ESCAPE '{LIKE_ESCAPE}'"),
-                Some(format!("{}%", escape_like(value))),
-            ),
-            FilterOp::EndsWith => (
-                format!("{column} LIKE ? ESCAPE '{LIKE_ESCAPE}'"),
-                Some(format!("%{}", escape_like(value))),
-            ),
-            FilterOp::IsNull => (format!("{column} IS NULL"), None),
-            FilterOp::IsNotNull => (format!("{column} IS NOT NULL"), None),
-        };
-
-        parts.push(format!("({part})"));
-        if let Some(param) = param {
-            params.push(Value::Bytes(param.into_bytes()));
-        }
+    // 最外层的空组就是没有筛选；里层的空组在 group_sql 里拒绝
+    let where_clause = if filter.items.is_empty() {
+        None
+    } else {
+        Some(group_sql(filter, &mut params)?)
+    };
+    if params.len() > MAX_PARAMS {
+        return Err(format!(
+            "筛选一共有 {} 个值，超过 MySQL 单条语句 {MAX_PARAMS} 个参数的上限，请减少 IN 列表里的值",
+            params.len()
+        ));
     }
 
     // 原句末尾的分号留着会让子查询语法错；换行包住，原句末尾的 `-- 注释` 不会吞掉右括号
@@ -118,10 +121,9 @@ pub fn build_view(
         "SELECT * FROM (\n{}\n) AS cdata_view",
         sql.trim().trim_end_matches(';')
     );
-    if !parts.is_empty() {
-        let joiner = if match_all { " AND " } else { " OR " };
+    if let Some(where_clause) = where_clause {
         out.push_str(" WHERE ");
-        out.push_str(&parts.join(joiner));
+        out.push_str(&where_clause);
     }
     if let Some((column, ascending)) = sort {
         let direction = if ascending { "ASC" } else { "DESC" };
@@ -129,6 +131,107 @@ pub fn build_view(
     }
 
     Ok(Statement { sql: out, params })
+}
+
+/// 一组条件拼成 `(a) AND (b) AND (…)`，里层的组再包一层括号
+fn group_sql(group: &FilterGroup, params: &mut Vec<Value>) -> Result<String, String> {
+    let mut parts = Vec::with_capacity(group.items.len());
+    for item in &group.items {
+        match item {
+            FilterItem::Condition(condition) => {
+                parts.push(format!("({})", condition_sql(condition, params)?));
+            }
+            FilterItem::Group(inner) => {
+                // 空的 AND 组算真、空的 OR 组算假，哪种都不是用户想要的，不替他挑
+                if inner.items.is_empty() {
+                    return Err("有一个分组里没有条件，请删掉这个分组或者往里加条件".to_string());
+                }
+                parts.push(format!("({})", group_sql(inner, params)?));
+            }
+        }
+    }
+    let joiner = if group.match_all { " AND " } else { " OR " };
+    Ok(parts.join(joiner))
+}
+
+fn condition_sql(condition: &FilterCondition, params: &mut Vec<Value>) -> Result<String, String> {
+    if condition.column.is_empty() {
+        return Err("筛选条件没有选列".to_string());
+    }
+    let column = quote_ident(&condition.column);
+    let value = &condition.value;
+
+    // NOT LIKE / <> / NOT IN 对 NULL 的结果是 NULL，NULL 行不会出现在「不包含」「≠」「不属于」里。
+    // 这是 MySQL 的语义，和直接写 WHERE 一致，不在这里偷偷补 OR IS NULL
+    let (part, values) = match condition.op {
+        FilterOp::Eq => (format!("{column} = ?"), vec![value.clone()]),
+        FilterOp::NotEq => (format!("{column} <> ?"), vec![value.clone()]),
+        FilterOp::Lt => (format!("{column} < ?"), vec![value.clone()]),
+        FilterOp::LtEq => (format!("{column} <= ?"), vec![value.clone()]),
+        FilterOp::Gt => (format!("{column} > ?"), vec![value.clone()]),
+        FilterOp::GtEq => (format!("{column} >= ?"), vec![value.clone()]),
+        FilterOp::Contains => (
+            format!("{column} LIKE ? ESCAPE '{LIKE_ESCAPE}'"),
+            vec![format!("%{}%", escape_like(value))],
+        ),
+        FilterOp::NotContains => (
+            format!("{column} NOT LIKE ? ESCAPE '{LIKE_ESCAPE}'"),
+            vec![format!("%{}%", escape_like(value))],
+        ),
+        FilterOp::StartsWith => (
+            format!("{column} LIKE ? ESCAPE '{LIKE_ESCAPE}'"),
+            vec![format!("{}%", escape_like(value))],
+        ),
+        FilterOp::EndsWith => (
+            format!("{column} LIKE ? ESCAPE '{LIKE_ESCAPE}'"),
+            vec![format!("%{}", escape_like(value))],
+        ),
+        FilterOp::IsNull => (format!("{column} IS NULL"), Vec::new()),
+        FilterOp::IsNotNull => (format!("{column} IS NOT NULL"), Vec::new()),
+        FilterOp::In | FilterOp::NotIn => {
+            let values = filter_in_values(value).map_err(|err| format!("{}：{err}", condition.column))?;
+            let marks = vec!["?"; values.len()].join(", ");
+            let keyword = if condition.op == FilterOp::In { "IN" } else { "NOT IN" };
+            (format!("{column} {keyword} ({marks})"), values)
+        }
+    };
+
+    for value in values {
+        params.push(Value::Bytes(value.into_bytes()));
+    }
+    Ok(part)
+}
+
+/// IN / NOT IN 的值列表：一行一个，原样绑定。
+///
+/// 不按逗号切，值里本来就可能有逗号。拒绝三种情况，都不替用户猜：
+/// - 空列表：`IN ()` 是语法错误，当成「全不命中」或「全命中」都是替用户定语义；
+/// - 空行：多半是手滑，要匹配空字符串请用「=」；
+/// - `NULL`：`x IN (…, NULL)` 命中不了 NULL 行，`x NOT IN (…, NULL)` 永远不为真，
+///   写进去只会得到意料之外的空结果。文本 "NULL" 也一并拒绝，要匹配它请用「=」。
+pub fn filter_in_values(text: &str) -> Result<Vec<String>, String> {
+    // 从表格里复制一列，末尾常带一个换行（Windows 上是 \r\n）
+    let body = text.strip_suffix('\n').unwrap_or(text);
+    if body.is_empty() || body == "\r" {
+        return Err("IN 列表是空的，至少要写一个值（一行一个）".to_string());
+    }
+
+    let mut values = Vec::new();
+    for (index, line) in body.split('\n').enumerate() {
+        let line = line.strip_suffix('\r').unwrap_or(line);
+        if line.is_empty() {
+            return Err(format!("IN 列表第 {} 行是空的；要匹配空字符串请用「=」", index + 1));
+        }
+        if line.eq_ignore_ascii_case("NULL") {
+            return Err(format!(
+                "IN 列表第 {} 行是 NULL：IN 里的 NULL 命中不了 NULL 行，NOT IN 里有 NULL 永远不为真。\
+                 要找 NULL 请另加一条「为 NULL」条件，用「满足任一」连起来",
+                index + 1
+            ));
+        }
+        values.push(line.to_string());
+    }
+    Ok(values)
 }
 
 /// 用户输入里的 % 和 _ 是字面字符，不是通配符
@@ -251,5 +354,108 @@ mod tests {
     fn condition_without_column_is_refused() {
         let conditions = vec![condition("", FilterOp::Eq, "1")];
         assert!(build_view("SELECT * FROM t", &conditions, true, None).unwrap_err().contains("列"));
+    }
+
+    fn leaf(column: &str, op: FilterOp, value: &str) -> FilterItem {
+        FilterItem::Condition(condition(column, op, value))
+    }
+
+    fn group(match_all: bool, items: Vec<FilterItem>) -> FilterItem {
+        FilterItem::Group(FilterGroup { match_all, items })
+    }
+
+    #[test]
+    fn in_list_is_one_placeholder_per_line() {
+        let conditions = vec![
+            condition("id", FilterOp::In, "1\n2,5\n3\n"),
+            condition("name", FilterOp::NotIn, "张三\r\n李四"),
+        ];
+        let stmt = build_view("SELECT * FROM t", &conditions, true, None).unwrap();
+        assert!(
+            stmt.sql.ends_with("WHERE (`id` IN (?, ?, ?)) AND (`name` NOT IN (?, ?))"),
+            "{}",
+            stmt.sql
+        );
+        // 逗号不是分隔符；末尾换行和 \r 是粘贴带进来的，不算值
+        assert_eq!(stmt.params, vec![text("1"), text("2,5"), text("3"), text("张三"), text("李四")]);
+    }
+
+    #[test]
+    fn in_list_refuses_empty_blank_lines_and_null() {
+        for value in ["", "\n", "\r\n"] {
+            let err = filter_in_values(value).unwrap_err();
+            assert!(err.contains("至少要写一个值"), "{value:?} → {err}");
+        }
+        assert!(filter_in_values("1\n\n2").unwrap_err().contains("第 2 行是空的"));
+        // NOT IN (…, NULL) 永远不为真，不能让它静默地返回空结果
+        let err = filter_in_values("1\nnull").unwrap_err();
+        assert!(err.contains("第 2 行是 NULL"), "{err}");
+
+        let conditions = vec![condition("id", FilterOp::NotIn, "1\nNULL")];
+        let err = build_view("SELECT * FROM t", &conditions, true, None).unwrap_err();
+        assert!(err.starts_with("id："), "错误要指出是哪一列：{err}");
+    }
+
+    #[test]
+    fn in_list_keeps_values_verbatim() {
+        // 前后空格、LIKE 通配符都原样绑定，IN 不是 LIKE
+        assert_eq!(filter_in_values(" a \n50%_\nNULLABLE").unwrap(), [" a ", "50%_", "NULLABLE"]);
+    }
+
+    #[test]
+    fn nested_groups_get_their_own_parentheses() {
+        // (a = 1 AND b = 2) OR (c IN (3, 4) AND (d IS NULL OR d < 5))
+        let filter = FilterGroup {
+            match_all: false,
+            items: vec![
+                group(true, vec![leaf("a", FilterOp::Eq, "1"), leaf("b", FilterOp::Eq, "2")]),
+                group(
+                    true,
+                    vec![
+                        leaf("c", FilterOp::In, "3\n4"),
+                        group(false, vec![leaf("d", FilterOp::IsNull, ""), leaf("d", FilterOp::Lt, "5")]),
+                    ],
+                ),
+            ],
+        };
+        let stmt = build_filtered_view("SELECT * FROM t", &filter, Some(("a", true))).unwrap();
+        assert_eq!(
+            stmt.sql,
+            "SELECT * FROM (\nSELECT * FROM t\n) AS cdata_view WHERE \
+             ((`a` = ?) AND (`b` = ?)) OR ((`c` IN (?, ?)) AND ((`d` IS NULL) OR (`d` < ?))) ORDER BY `a` ASC"
+        );
+        // 参数顺序和占位符出现的顺序一致
+        assert_eq!(stmt.params, vec![text("1"), text("2"), text("3"), text("4"), text("5")]);
+    }
+
+    #[test]
+    fn flat_build_view_matches_a_single_group() {
+        let conditions = vec![condition("a", FilterOp::Eq, "1"), condition("b", FilterOp::Contains, "x")];
+        let flat = build_view("SELECT * FROM t", &conditions, false, None).unwrap();
+        let filter = FilterGroup {
+            match_all: false,
+            items: vec![leaf("a", FilterOp::Eq, "1"), leaf("b", FilterOp::Contains, "x")],
+        };
+        assert_eq!(flat, build_filtered_view("SELECT * FROM t", &filter, None).unwrap());
+    }
+
+    #[test]
+    fn empty_inner_group_is_refused_but_empty_top_level_means_no_filter() {
+        let filter = FilterGroup { match_all: true, items: vec![leaf("a", FilterOp::Eq, "1"), group(false, vec![])] };
+        assert!(build_filtered_view("SELECT 1", &filter, None).unwrap_err().contains("分组里没有条件"));
+
+        let empty = FilterGroup { match_all: true, items: vec![] };
+        assert_eq!(build_filtered_view("SELECT 1;", &empty, None).unwrap().sql, "SELECT 1;");
+    }
+
+    #[test]
+    fn too_many_in_values_are_refused_before_mysql_does() {
+        let mut lines = Vec::new();
+        for i in 0..=MAX_PARAMS {
+            lines.push(i.to_string());
+        }
+        let conditions = vec![condition("id", FilterOp::In, &lines.join("\n"))];
+        let err = build_view("SELECT * FROM t", &conditions, true, None).unwrap_err();
+        assert!(err.contains("65535"), "{err}");
     }
 }

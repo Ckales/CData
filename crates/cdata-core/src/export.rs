@@ -298,6 +298,7 @@ mod tests {
             schema: "shop".to_string(),
             is_binary: false,
             kind: ColumnKind::Text,
+            decimals: 0,
         }
     }
 

@@ -15,10 +15,12 @@ pub mod options;
 pub mod preferences;
 pub mod schema;
 pub mod script;
+pub mod server;
 pub mod session;
 pub mod sql;
 pub mod ssh;
 pub mod structure;
+pub mod users;
 pub mod value;
 
 pub use value::{cell_from_value, display_text, value_to_mysql, CellValue};

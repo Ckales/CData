@@ -88,6 +88,62 @@ fn format_time(is_negative: bool, days: u32, hours: u8, minutes: u8, seconds: u8
     )
 }
 
+/// 校验要写进 TIME 列的文本，合法返回 Ok，原文照写不改。
+///
+/// TIME 是一段时长而不是一天里的时刻：范围 -838:59:59 到 838:59:59，小时可以超过 23。
+/// 只收 `[-]H:MM:SS[.ffffff]`（小时 1–3 位），MySQL 另外几种宽松写法（`D HH:MM`、`HHMMSS`）
+/// 一概拒绝，免得 `12:30` 被理解成 12 小时 30 分还是 12 分 30 秒要人去猜。
+///
+/// fsp 是列定义的小数秒位数（列元数据的 decimals），超过 6 表示不固定（表达式）。
+/// 多出来的非零小数位 MySQL 会悄悄舍入，这里拒绝而不是替用户截断。
+/// 超出范围在非严格 sql_mode 下会被夹到 ±838:59:59，同样先拦下
+pub fn check_time_text(text: &str, fsp: u8) -> Result<(), String> {
+    const FORMAT: &str = "格式是 [-]时:分:秒[.微秒]，比如 -12:30:00 或 100:00:00.5";
+    let body = text.strip_prefix('-').unwrap_or(text);
+    let (clock, fraction) = match body.split_once('.') {
+        Some((clock, fraction)) => (clock, Some(fraction)),
+        None => (body, None),
+    };
+
+    let parts: Vec<&str> = clock.split(':').collect();
+    let all_digits = |s: &str| !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit());
+    if parts.len() != 3
+        || !all_digits(parts[0])
+        || parts[0].len() > 3
+        || parts[1].len() != 2
+        || parts[2].len() != 2
+        || !all_digits(parts[1])
+        || !all_digits(parts[2])
+    {
+        return Err(format!("不是合法的 TIME：{FORMAT}"));
+    }
+    let hours: u32 = parts[0].parse().unwrap();
+    let minutes: u32 = parts[1].parse().unwrap();
+    let seconds: u32 = parts[2].parse().unwrap();
+    if minutes > 59 || seconds > 59 {
+        return Err("分和秒都只能是 00–59".to_string());
+    }
+
+    let fraction = fraction.unwrap_or("");
+    if text.contains('.') && (!all_digits(fraction) || fraction.len() > 6) {
+        return Err("小数秒是 1–6 位数字".to_string());
+    }
+    let has_fraction = fraction.bytes().any(|b| b != b'0');
+    if hours > 838 || (hours == 838 && minutes == 59 && seconds == 59 && has_fraction) {
+        return Err("TIME 的范围是 -838:59:59 到 838:59:59".to_string());
+    }
+
+    let fsp = fsp.min(6) as usize;
+    if fraction.len() > fsp && fraction.bytes().skip(fsp).any(|b| b != b'0') {
+        return Err(if fsp == 0 {
+            "这一列不存小数秒，写进去会被 MySQL 舍入；请去掉小数部分".to_string()
+        } else {
+            format!("这一列只存 {fsp} 位小数秒，多出的位数会被 MySQL 舍入；请只写 {fsp} 位")
+        });
+    }
+    Ok(())
+}
+
 /// 单元格在网格里的显示文本。NULL 和不可读内容用明确占位，不返回空串冒充正常值
 pub fn display_text(value: &CellValue) -> String {
     match value {
@@ -239,6 +295,34 @@ mod tests {
             cell_from_value(Value::Time(true, 34, 22, 59, 59, 0), false),
             CellValue::Text("-838:59:59".to_string())
         );
+    }
+
+    #[test]
+    fn time_accepts_durations_beyond_a_day_and_negative() {
+        for ok in ["00:00:00", "-838:59:59", "838:59:59", "838:59:59.000000", "100:00:00.5", "-0:00:00.000001", "8:05:09"] {
+            assert_eq!(check_time_text(ok, 6), Ok(()), "{ok}");
+        }
+    }
+
+    #[test]
+    fn time_refuses_other_shapes_and_out_of_range() {
+        for bad in ["", "-", "12:30", "1 12:00:00", "123000", " 12:00:00", "12:0:00", "1000:00:00", "12:00:00.", "12:00:00.1234567", "12:00:00.1a", "+12:00:00"] {
+            assert!(check_time_text(bad, 6).is_err(), "{bad:?} 不该通过");
+        }
+        assert!(check_time_text("12:60:00", 6).unwrap_err().contains("00–59"));
+        assert!(check_time_text("839:00:00", 6).unwrap_err().contains("范围"));
+        assert!(check_time_text("-838:59:59.5", 6).unwrap_err().contains("范围"));
+    }
+
+    #[test]
+    fn time_refuses_digits_the_column_would_round_away() {
+        // TIME(2)：二进制协议读回来总是 6 位，尾部补零不算多
+        assert_eq!(check_time_text("12:00:00.500000", 2), Ok(()));
+        assert_eq!(check_time_text("12:00:00.12", 2), Ok(()));
+        assert!(check_time_text("12:00:00.125", 2).unwrap_err().contains("只存 2 位"));
+        assert!(check_time_text("12:00:00.5", 0).unwrap_err().contains("不存小数秒"));
+        // decimals = 31 是表达式列，不固定，按 6 位算
+        assert_eq!(check_time_text("12:00:00.123456", 31), Ok(()));
     }
 
     #[test]

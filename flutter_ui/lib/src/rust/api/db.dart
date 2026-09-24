@@ -30,21 +30,19 @@ Future<QuerySummary> execute({
   maxRows: maxRows,
 );
 
-/// 在原查询上套筛选和排序再跑。SQL 在 core 里生成，条件的值走参数化。
-/// 没有条件、sort_column 为 null 时就是原样跑 sql
-Future<QuerySummary> executeView({
+/// 在原查询上套分组筛选（可嵌套、带 IN / NOT IN）和排序再跑。SQL 在 core 里生成，值走参数化。
+/// 空分组、sort_column 为 null 时就是原样跑 sql
+Future<QuerySummary> executeFilteredView({
   required BigInt sessionId,
   required String sql,
-  required List<FilterCondition> conditions,
-  required bool matchAll,
+  required FilterGroup filter,
   String? sortColumn,
   required bool sortAscending,
   required BigInt maxRows,
-}) => RustLib.instance.api.crateApiDbExecuteView(
+}) => RustLib.instance.api.crateApiDbExecuteFilteredView(
   sessionId: sessionId,
   sql: sql,
-  conditions: conditions,
-  matchAll: matchAll,
+  filter: filter,
   sortColumn: sortColumn,
   sortAscending: sortAscending,
   maxRows: maxRows,
@@ -182,6 +180,7 @@ class ColumnMeta {
   final String schema;
   final bool isBinary;
   final ColumnKind kind;
+  final int decimals;
 
   const ColumnMeta({
     required this.name,
@@ -190,6 +189,7 @@ class ColumnMeta {
     required this.schema,
     required this.isBinary,
     required this.kind,
+    required this.decimals,
   });
 
   @override
@@ -199,7 +199,8 @@ class ColumnMeta {
       orgTable.hashCode ^
       schema.hashCode ^
       isBinary.hashCode ^
-      kind.hashCode;
+      kind.hashCode ^
+      decimals.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -211,7 +212,8 @@ class ColumnMeta {
           orgTable == other.orgTable &&
           schema == other.schema &&
           isBinary == other.isBinary &&
-          kind == other.kind;
+          kind == other.kind &&
+          decimals == other.decimals;
 }
 
 class ConnectionConfig {
@@ -381,6 +383,33 @@ class FilterCondition {
           value == other.value;
 }
 
+class FilterGroup {
+  final bool matchAll;
+  final List<FilterItem> items;
+
+  const FilterGroup({required this.matchAll, required this.items});
+
+  @override
+  int get hashCode => matchAll.hashCode ^ items.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is FilterGroup &&
+          runtimeType == other.runtimeType &&
+          matchAll == other.matchAll &&
+          items == other.items;
+}
+
+@freezed
+sealed class FilterItem with _$FilterItem {
+  const FilterItem._();
+
+  const factory FilterItem.condition(FilterCondition field0) =
+      FilterItem_Condition;
+  const factory FilterItem.group(FilterGroup field0) = FilterItem_Group;
+}
+
 enum FilterOp {
   eq,
   notEq,
@@ -394,6 +423,8 @@ enum FilterOp {
   endsWith,
   isNull,
   isNotNull,
+  in_,
+  notIn,
 }
 
 /// 开会话失败。主机密钥没通过校验时带着 host_key，界面据此问用户要不要信任；

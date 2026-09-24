@@ -87,6 +87,7 @@ mod tests {
             schema: "shop".to_string(),
             is_binary: false,
             kind: crate::db::ColumnKind::Text,
+            decimals: 0,
         }
     }
 

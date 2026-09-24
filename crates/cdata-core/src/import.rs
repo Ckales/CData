@@ -1420,6 +1420,7 @@ mod tests {
             schema: "s".to_string(),
             is_binary,
             kind: if is_binary { ColumnKind::Binary } else { ColumnKind::Text },
+            decimals: 0,
         }
     }
 

@@ -3,13 +3,18 @@
 //! 连接信息从 CDATA_TEST_* 环境变量读，没配就跳过。
 //! 数据安全：执行语义用 CREATE TEMPORARY TABLE 测（只在这条连接上，断开自动消失）；
 //! 要走 information_schema 的用 alter_probe_* 探针表（IF NOT EXISTS），每个测试结束时结构改回原样。
+//! 新建表的语句改写成 CREATE TEMPORARY TABLE 执行；临时表建不了外键，带外键的完整路径用
+//! create_probe_child：不存在时走 session 建一次，之后每次只验证「已存在就拒绝」和读回来的结构。
 //! 从不 DROP TABLE / TRUNCATE，也不碰别的表。
 
-use cdata_core::alter::{plan_alter, run_statements, table_draft, ColumnDraft, IndexKind, TableDraft};
+use cdata_core::alter::{
+    new_table_draft, plan_alter, run_statements, table_draft, CheckDraft, ColumnDraft, ForeignKeyDraft, IndexDraft,
+    IndexKind, TableDraft,
+};
 use cdata_core::db::{open_pool, ConnectionConfig};
 use cdata_core::options::ConnectionOptions;
 use cdata_core::session;
-use cdata_core::structure::{ColumnDef, DefaultValue, IndexDef, IndexPart, TableStructure};
+use cdata_core::structure::{CheckDef, ColumnDef, DefaultValue, IndexDef, IndexPart, TableStructure};
 use mysql_async::prelude::Queryable;
 use mysql_async::Conn;
 
@@ -192,6 +197,10 @@ async fn preview_refuses_a_stale_structure_and_counts_nulls() {
     session::close_session(id).await.ok();
 }
 
+const PARENT_DDL: &str = "CREATE TABLE IF NOT EXISTS alter_probe_parent (\
+    id INT UNSIGNED NOT NULL PRIMARY KEY, code VARCHAR(20) NOT NULL, UNIQUE KEY uk_code (code)\
+ ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4";
+
 /// 删掉又加回同名外键要拆两条；第 2 条失败时报告第 1 条已经生效
 #[tokio::test]
 async fn foreign_key_readd_splits_and_reports_partial_failure() {
@@ -201,9 +210,7 @@ async fn foreign_key_readd_splits_and_reports_partial_failure() {
     let database = config.database.clone().unwrap();
     let id = session::open_session(&config).await.unwrap();
     for ddl in [
-        "CREATE TABLE IF NOT EXISTS alter_probe_parent (\
-            id INT UNSIGNED NOT NULL PRIMARY KEY, code VARCHAR(20) NOT NULL, UNIQUE KEY uk_code (code)\
-         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+        PARENT_DDL,
         "CREATE TABLE IF NOT EXISTS alter_probe_child (\
             id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,\
             parent_id INT UNSIGNED NOT NULL,\
@@ -313,13 +320,7 @@ async fn one_alter_moves_renames_and_indexes_on_a_temporary_table() {
         index_type: "BTREE".to_string(),
         comment: String::new(),
     };
-    let original = TableStructure {
-        columns: ["a", "b", "c", "d", "e"].iter().map(|n| simple_column(n, "int")).collect(),
-        indexes: vec![index],
-        foreign_keys: Vec::new(),
-        create_sql: String::new(),
-        table_collation: None,
-    };
+    let original = temp_structure(["a", "b", "c", "d", "e"].iter().map(|n| simple_column(n, "int")).collect(), vec![index]);
 
     // 目标：e, a, bb(原 b), x(新), d；删 c；原来 b 上的索引跟着改名；新建 (bb, x) 索引
     let mut draft = table_draft(&original);
@@ -384,7 +385,7 @@ async fn string_literals_survive_both_sql_modes() {
         let mut id_column = simple_column("id", "int");
         id_column.nullable = false;
         id_column.default = DefaultValue::NoDefault;
-        let original = TableStructure { columns: vec![id_column], indexes: vec![], foreign_keys: vec![], create_sql: String::new(), table_collation: None };
+        let original = temp_structure(vec![id_column], vec![]);
         let mut draft = table_draft(&original);
         draft.columns.push(new_column("s", "varchar(40)", true, DefaultValue::Literal("it's a\\b\\n".to_string()), "c\\d'e"));
 
@@ -402,4 +403,380 @@ async fn string_literals_survive_both_sql_modes() {
 
     drop(conn);
     pool.disconnect().await.ok();
+}
+
+/// 临时表的手写结构：information_schema 看不到临时表，只能照着建表语句写
+fn temp_structure(columns: Vec<ColumnDef>, indexes: Vec<IndexDef>) -> TableStructure {
+    TableStructure {
+        columns,
+        indexes,
+        foreign_keys: Vec::new(),
+        create_sql: String::new(),
+        table_collation: None,
+        table_charset: None,
+        engine: Some("InnoDB".to_string()),
+        table_comment: String::new(),
+        auto_increment: None,
+        row_format: None,
+        checks: Some(Vec::new()),
+    }
+}
+
+fn check(name: &str, expression: &str, enforced: bool) -> CheckDraft {
+    CheckDraft { original_name: None, name: name.to_string(), expression: expression.to_string(), enforced }
+}
+
+/// CREATE TABLE → CREATE TEMPORARY TABLE，别的一个字都不动
+fn as_temporary(statement: &str) -> String {
+    let rest = statement.strip_prefix("CREATE TABLE ").expect("不是 CREATE TABLE");
+    format!("CREATE TEMPORARY TABLE {rest}")
+}
+
+/// 新建表生成的语句原样（只加 TEMPORARY）执行，建出来的和草稿一致
+#[tokio::test]
+async fn create_table_statement_runs_as_written() {
+    let Some(config) = config_from_env() else {
+        return;
+    };
+    let database = config.database.clone().unwrap();
+    let id = session::open_session(&config).await.unwrap();
+
+    let mut draft = new_table_draft();
+    draft.columns.push(new_column("code", "varchar(20)", false, DefaultValue::Literal("a'b\\c".to_string()), "编码"));
+    draft.columns[1].collation = Some("utf8mb4_bin".to_string());
+    draft.columns.push(new_column("u", "char(36)", false, DefaultValue::Expression("uuid()".to_string()), ""));
+    let mut ts = new_column("ts", "datetime(3)", false, DefaultValue::Expression("CURRENT_TIMESTAMP(3)".to_string()), "");
+    ts.on_update = Some("CURRENT_TIMESTAMP(3)".to_string());
+    draft.columns.push(ts);
+    draft.columns.push(new_column("st", "enum('draft','it''s')", false, DefaultValue::Literal("draft".to_string()), ""));
+    draft.columns.push(new_column("qty", "int", true, DefaultValue::Null, ""));
+    draft.indexes.push(IndexDraft {
+        original_name: None,
+        name: "uk_code".to_string(),
+        kind: IndexKind::Unique,
+        parts: vec![IndexPart { column: Some("code".to_string()), prefix: None, descending: false }],
+        comment: "唯一".to_string(),
+        locked: None,
+    });
+    draft.indexes.push(IndexDraft {
+        original_name: None,
+        name: "idx_ts_desc".to_string(),
+        kind: IndexKind::Normal,
+        parts: vec![IndexPart { column: Some("ts".to_string()), prefix: None, descending: true }],
+        comment: String::new(),
+        locked: None,
+    });
+    draft.checks.push(check("chk_create_tmp_qty", "qty >= 0", true));
+    draft.checks.push(check("chk_create_tmp_st", "st <> 'x'", false));
+    draft.options.charset = Some("utf8mb4".to_string());
+    draft.options.collation = Some("utf8mb4_0900_ai_ci".to_string());
+    draft.options.comment = "新建 'probe'".to_string();
+    draft.options.auto_increment = Some(100);
+    draft.options.row_format = Some("DYNAMIC".to_string());
+
+    // 只预览，不建表
+    let plan = session::preview_create_table(id, &database, "create_tmp_probe", &draft).await.unwrap();
+    assert_eq!(plan.statements.len(), 1);
+
+    let pool = open_pool(&config).await.unwrap();
+    let mut conn = pool.get_conn().await.unwrap();
+    conn.query_drop(as_temporary(&plan.statements[0]))
+        .await
+        .unwrap_or_else(|err| panic!("{err}\n{}", plan.statements[0]));
+    let create = show_create(&mut conn, "create_tmp_probe").await;
+    for expected in [
+        "`id` int unsigned NOT NULL AUTO_INCREMENT",
+        // 和表默认不同的排序规则，SHOW CREATE 会连字符集一起写出来
+        "`code` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL DEFAULT 'a''b\\\\c' COMMENT '编码'",
+        "`u` char(36) NOT NULL DEFAULT (uuid())",
+        "`ts` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3)",
+        "`st` enum('draft','it''s') NOT NULL DEFAULT 'draft'",
+        "`qty` int DEFAULT NULL",
+        "PRIMARY KEY (`id`)",
+        "UNIQUE KEY `uk_code` (`code`) COMMENT '唯一'",
+        "KEY `idx_ts_desc` (`ts` DESC)",
+        "CONSTRAINT `chk_create_tmp_qty` CHECK ((`qty` >= 0))",
+        "CONSTRAINT `chk_create_tmp_st` CHECK ((`st` <> _utf8mb4'x')) /*!80016 NOT ENFORCED */",
+        ") ENGINE=InnoDB AUTO_INCREMENT=100 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci ROW_FORMAT=DYNAMIC COMMENT='新建 ''probe'''",
+    ] {
+        assert!(create.contains(expected), "少了 {expected}：\n{create}");
+    }
+
+    // CHECK 真的在执行，不是被解析后忽略
+    let violated = conn.query_drop("INSERT INTO create_tmp_probe (code, qty) VALUES ('x', -1)").await;
+    assert!(violated.is_err(), "qty >= 0 应该拦下 -1");
+    conn.query_drop("INSERT INTO create_tmp_probe (code, qty) VALUES ('y', 1)").await.unwrap();
+    let (code, next_id): (String, u64) = conn.query_first("SELECT code, id FROM create_tmp_probe").await.unwrap().unwrap();
+    assert_eq!((code.as_str(), next_id), ("y", 100), "AUTO_INCREMENT 从 100 起");
+
+    drop(conn);
+    pool.disconnect().await.ok();
+    session::close_session(id).await.ok();
+}
+
+#[tokio::test]
+async fn create_table_refuses_existing_names_and_changed_statements() {
+    let Some(config) = config_from_env() else {
+        return;
+    };
+    let database = config.database.clone().unwrap();
+    let id = session::open_session(&config).await.unwrap();
+    session::execute(id, PARENT_DDL, 1).await.unwrap();
+
+    let draft = new_table_draft();
+    let err = session::preview_create_table(id, &database, "alter_probe_parent", &draft).await.unwrap_err();
+    assert!(err.to_string().contains("已经有叫 alter_probe_parent 的表"), "{err}");
+
+    // 语句对不上就不执行，这张表也就不会被建出来
+    let err = session::create_table(id, &database, "create_tmp_never", &draft, &["SELECT 1".to_string()])
+        .await
+        .unwrap_err();
+    assert!(err.to_string().contains("和预览时不一样"), "{err}");
+    let tables = session::list_tables(id, &database).await.unwrap();
+    assert!(tables.iter().all(|t| t.name != "create_tmp_never"));
+
+    session::close_session(id).await.ok();
+}
+
+/// 带外键的新建表走完整路径（预览 → 执行 → 读回来）。临时表建不了外键，只能用持久的探针表：
+/// 第一次跑时建出来，之后每次跑验证「已存在就拒绝」，读回来的结构每次都验
+#[tokio::test]
+async fn create_table_with_foreign_key_end_to_end() {
+    let Some(config) = config_from_env() else {
+        return;
+    };
+    let database = config.database.clone().unwrap();
+    let id = session::open_session(&config).await.unwrap();
+    session::execute(id, PARENT_DDL, 1).await.unwrap();
+
+    let mut draft = new_table_draft();
+    draft.columns.push(new_column("parent_id", "int unsigned", false, DefaultValue::NoDefault, "父表"));
+    draft.columns.push(new_column("qty", "int", false, DefaultValue::Literal("0".to_string()), ""));
+    draft.foreign_keys.push(ForeignKeyDraft {
+        original_name: None,
+        name: "fk_create_probe_parent".to_string(),
+        columns: vec!["parent_id".to_string()],
+        referenced_schema: database.clone(),
+        referenced_table: "alter_probe_parent".to_string(),
+        referenced_columns: vec!["id".to_string()],
+        on_update: "RESTRICT".to_string(),
+        on_delete: "CASCADE".to_string(),
+    });
+    draft.checks.push(check("chk_create_probe_qty", "qty >= 0", true));
+    draft.options.comment = "新建表探针".to_string();
+
+    match session::preview_create_table(id, &database, "create_probe_child", &draft).await {
+        Ok(plan) => session::create_table(id, &database, "create_probe_child", &draft, &plan.statements)
+            .await
+            .unwrap_or_else(|err| panic!("建表失败：{err}\n{:?}", plan.statements)),
+        Err(err) => assert!(err.to_string().contains("已经有叫 create_probe_child 的表"), "{err}"),
+    }
+
+    let created = session::table_structure(id, &database, "create_probe_child").await.unwrap();
+    let names: Vec<&str> = created.columns.iter().map(|c| c.name.as_str()).collect();
+    assert_eq!(names, ["id", "parent_id", "qty"]);
+    assert_eq!(created.columns[1].comment, "父表");
+    assert_eq!(created.columns[2].default, DefaultValue::Literal("0".to_string()));
+    assert_eq!(created.foreign_keys.len(), 1);
+    assert_eq!(created.foreign_keys[0].name, "fk_create_probe_parent");
+    assert_eq!(created.foreign_keys[0].on_delete, "CASCADE");
+    assert_eq!(
+        created.checks,
+        Some(vec![CheckDef { name: "chk_create_probe_qty".to_string(), expression: "(`qty` >= 0)".to_string(), enforced: true }])
+    );
+    assert_eq!(created.engine.as_deref(), Some("InnoDB"));
+    assert_eq!(created.table_comment, "新建表探针");
+    // 读回来转成草稿再比，不该有任何改动
+    let err = plan_alter(&database, "create_probe_child", &created, &table_draft(&created), false).unwrap_err();
+    assert_eq!(err, "没有任何改动");
+
+    session::close_session(id).await.ok();
+}
+
+/// 表选项在临时表上改：默认字符集、CONVERT、ROW_FORMAT、换引擎，数据都不能坏
+#[tokio::test]
+async fn table_options_on_a_temporary_table() {
+    let Some(config) = config_from_env() else {
+        return;
+    };
+    let database = config.database.clone().unwrap();
+    let pool = open_pool(&config).await.unwrap();
+    let mut conn = pool.get_conn().await.unwrap();
+    conn.query_drop(
+        "CREATE TEMPORARY TABLE alter_tmp_options (\
+            id INT NOT NULL PRIMARY KEY, \
+            a VARCHAR(10) CHARACTER SET latin1 COLLATE latin1_swedish_ci, \
+            b VARCHAR(10)\
+         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci",
+    )
+    .await
+    .unwrap();
+    conn.query_drop("INSERT INTO alter_tmp_options VALUES (1, 'é', '中文')").await.unwrap();
+
+    let mut id_column = simple_column("id", "int");
+    id_column.nullable = false;
+    id_column.default = DefaultValue::NoDefault;
+    let mut a = simple_column("a", "varchar(10)");
+    a.collation = Some("latin1_swedish_ci".to_string());
+    let mut b = simple_column("b", "varchar(10)");
+    b.collation = Some("utf8mb4_0900_ai_ci".to_string());
+    let primary = IndexDef {
+        name: "PRIMARY".to_string(),
+        unique: true,
+        columns: vec!["id".to_string()],
+        parts: vec![IndexPart { column: Some("id".to_string()), prefix: None, descending: false }],
+        index_type: "BTREE".to_string(),
+        comment: String::new(),
+    };
+    let mut original = temp_structure(vec![id_column, a, b], vec![primary]);
+    original.table_charset = Some("utf8mb4".to_string());
+    original.table_collation = Some("utf8mb4_0900_ai_ci".to_string());
+
+    // 1. 只改默认字符集，顺手改 b 的注释：b 必须还是 utf8mb4，数据不动
+    let mut draft = table_draft(&original);
+    draft.options.charset = Some("latin1".to_string());
+    draft.options.collation = Some("latin1_swedish_ci".to_string());
+    draft.columns[2].comment = "x".to_string();
+    let (plan, _) = plan_alter(&database, "alter_tmp_options", &original, &draft, false).unwrap();
+    assert!(plan.dangers.is_empty(), "{:?}", plan.dangers);
+    run_statements(&mut conn, &plan.statements).await.unwrap_or_else(|(_, err)| panic!("{err}\n{:?}", plan.statements));
+    let create = show_create(&mut conn, "alter_tmp_options").await;
+    assert!(create.contains("`b` varchar(10) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci DEFAULT NULL COMMENT 'x'"), "{create}");
+    assert!(create.contains("DEFAULT CHARSET=latin1"), "{create}");
+    let b_value: Option<String> = conn.query_first("SELECT b FROM alter_tmp_options").await.unwrap();
+    assert_eq!(b_value.as_deref(), Some("中文"));
+
+    original.table_charset = Some("latin1".to_string());
+    original.table_collation = Some("latin1_swedish_ci".to_string());
+    original.columns[2].comment = "x".to_string();
+
+    // 2. CONVERT 回 utf8mb4：a 跟着转换，é 不能坏
+    let mut draft = table_draft(&original);
+    draft.options.charset = Some("utf8mb4".to_string());
+    draft.options.collation = Some("utf8mb4_0900_ai_ci".to_string());
+    draft.options.convert_charset = true;
+    let (plan, _) = plan_alter(&database, "alter_tmp_options", &original, &draft, false).unwrap();
+    assert!(plan.dangers.iter().any(|d| d.contains("重写整张表")), "{:?}", plan.dangers);
+    run_statements(&mut conn, &plan.statements).await.unwrap_or_else(|(_, err)| panic!("{err}\n{:?}", plan.statements));
+    let create = show_create(&mut conn, "alter_tmp_options").await;
+    assert!(create.contains("`a` varchar(10) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci DEFAULT NULL"), "a 应该转成 utf8mb4：{create}");
+    let a_value: Option<String> = conn.query_first("SELECT a FROM alter_tmp_options").await.unwrap();
+    assert_eq!(a_value.as_deref(), Some("é"));
+
+    original.table_charset = Some("utf8mb4".to_string());
+    original.table_collation = Some("utf8mb4_0900_ai_ci".to_string());
+    original.columns[1].collation = Some("utf8mb4_0900_ai_ci".to_string());
+
+    // 3. 注释、ROW_FORMAT
+    let mut draft = table_draft(&original);
+    draft.options.comment = "临时 'x'".to_string();
+    draft.options.row_format = Some("COMPACT".to_string());
+    let (plan, _) = plan_alter(&database, "alter_tmp_options", &original, &draft, false).unwrap();
+    run_statements(&mut conn, &plan.statements).await.unwrap_or_else(|(_, err)| panic!("{err}\n{:?}", plan.statements));
+    let create = show_create(&mut conn, "alter_tmp_options").await;
+    assert!(create.contains("ROW_FORMAT=COMPACT COMMENT='临时 ''x'''"), "{create}");
+
+    original.table_comment = "临时 'x'".to_string();
+    original.row_format = Some("COMPACT".to_string());
+
+    // 4. 换引擎是危险项
+    let mut draft = table_draft(&original);
+    draft.options.engine = "MyISAM".to_string();
+    draft.options.row_format = None;
+    let (plan, _) = plan_alter(&database, "alter_tmp_options", &original, &draft, false).unwrap();
+    assert!(plan.dangers.iter().any(|d| d.contains("引擎 InnoDB → MyISAM")), "{:?}", plan.dangers);
+    run_statements(&mut conn, &plan.statements).await.unwrap_or_else(|(_, err)| panic!("{err}\n{:?}", plan.statements));
+    let create = show_create(&mut conn, "alter_tmp_options").await;
+    assert!(create.contains("ENGINE=MyISAM"), "{create}");
+    let count: Option<u64> = conn.query_first("SELECT COUNT(*) FROM alter_tmp_options").await.unwrap();
+    assert_eq!(count, Some(1));
+
+    drop(conn);
+    pool.disconnect().await.ok();
+}
+
+const OPTIONS_DDL: &str = "CREATE TABLE IF NOT EXISTS alter_probe_options (
+  id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  price DECIMAL(12,2) NOT NULL DEFAULT '0.00',
+  st VARCHAR(10) NOT NULL DEFAULT 'draft',
+  CONSTRAINT chk_probe_price CHECK (price >= 0),
+  CONSTRAINT chk_probe_st CHECK (st <> 'x') NOT ENFORCED
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin COMMENT='选项探针' ROW_FORMAT=DYNAMIC AUTO_INCREMENT=100";
+
+/// 把 alter_probe_options 改回建表时的样子（上一次中途失败会留下改动）
+async fn restore_options_probe(id: u64, database: &str) {
+    let current = session::table_structure(id, database, "alter_probe_options").await.unwrap();
+    let mut draft = table_draft(&current);
+    draft.checks.retain(|c| c.name == "chk_probe_price" || c.name == "chk_probe_st");
+    if !draft.checks.iter().any(|c| c.name == "chk_probe_st") {
+        draft.checks.push(check("chk_probe_st", "st <> 'x'", false));
+    }
+    draft.options.comment = "选项探针".to_string();
+    if current.auto_increment != Some(100) {
+        draft.options.auto_increment = Some(100);
+    }
+    if session::preview_alter(id, database, "alter_probe_options", &current, &draft).await.is_ok() {
+        preview_and_apply(id, database, "alter_probe_options", &current, &draft).await;
+    }
+}
+
+/// CHECK 约束和表选项从 information_schema 读出来，加、删、改注释、改自增值走一遍再改回
+#[tokio::test]
+async fn checks_and_options_read_add_drop_on_probe() {
+    let Some(config) = config_from_env() else {
+        return;
+    };
+    let database = config.database.clone().unwrap();
+    let id = session::open_session(&config).await.unwrap();
+    session::execute(id, OPTIONS_DDL, 1).await.expect("建探针表失败");
+    restore_options_probe(id, &database).await;
+
+    let pool = open_pool(&config).await.unwrap();
+    let mut conn = pool.get_conn().await.unwrap();
+    let create_before = show_create(&mut conn, "alter_probe_options").await;
+
+    let before = session::table_structure(id, &database, "alter_probe_options").await.unwrap();
+    assert_eq!(
+        before.checks,
+        Some(vec![
+            CheckDef { name: "chk_probe_price".to_string(), expression: "(`price` >= 0)".to_string(), enforced: true },
+            // information_schema 里的引号是 \'，所以 CHECK 只许加和删
+            CheckDef { name: "chk_probe_st".to_string(), expression: "(`st` <> _utf8mb4\\'x\\')".to_string(), enforced: false },
+        ])
+    );
+    assert_eq!(before.engine.as_deref(), Some("InnoDB"));
+    assert_eq!(before.table_charset.as_deref(), Some("utf8mb4"));
+    assert_eq!(before.table_collation.as_deref(), Some("utf8mb4_bin"));
+    assert_eq!(before.table_comment, "选项探针");
+    assert_eq!(before.row_format.as_deref(), Some("DYNAMIC"));
+    assert_eq!(before.auto_increment, Some(100));
+
+    // 删一条、加一条、改注释和自增值，一条 ALTER
+    let mut draft = table_draft(&before);
+    draft.checks.retain(|c| c.name != "chk_probe_st");
+    draft.checks.push(check("chk_probe_tmp", "price < 1000000", true));
+    draft.options.comment = "改过".to_string();
+    draft.options.auto_increment = Some(200);
+    let plan = session::preview_alter(id, &database, "alter_probe_options", &before, &draft).await.unwrap();
+    assert_eq!(plan.statements.len(), 1, "{:?}", plan.statements);
+    assert!(plan.dangers.iter().any(|d| d.contains("删除 CHECK 约束 chk_probe_st")), "{:?}", plan.dangers);
+    preview_and_apply(id, &database, "alter_probe_options", &before, &draft).await;
+
+    let changed = session::table_structure(id, &database, "alter_probe_options").await.unwrap();
+    let names: Vec<&str> = changed.checks.iter().flatten().map(|c| c.name.as_str()).collect();
+    assert_eq!(names, ["chk_probe_price", "chk_probe_tmp"]);
+    assert_eq!(changed.table_comment, "改过");
+    assert_eq!(changed.auto_increment, Some(200));
+
+    // 结构变了之后拿旧的去预览，要被拒绝
+    let err = session::preview_alter(id, &database, "alter_probe_options", &before, &draft).await.unwrap_err();
+    assert!(err.to_string().contains("被改过"), "{err}");
+
+    restore_options_probe(id, &database).await;
+    let create_after = show_create(&mut conn, "alter_probe_options").await;
+    assert_eq!(sorted_lines(&create_before), sorted_lines(&create_after), "改回去后结构应该和开始时一样");
+
+    drop(conn);
+    pool.disconnect().await.ok();
+    session::close_session(id).await.ok();
 }

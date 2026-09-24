@@ -3,6 +3,10 @@
 //! 只靠词法 token 判断上下文，不做完整语法分析 —— 补全时的 SQL 几乎都是写了一半的。
 //! 作用域按括号层级算：光标所在的那层 SELECT 看得到自己 FROM 里的表，
 //! 也看得到外层的（相关子查询），看不到更里层子查询的。
+//!
+//! 派生表 `(SELECT …) AS x` 和 CTE `WITH x AS (…)` 的列从子查询的 select 列表推：
+//! 有别名用别名，普通列用列名，`*` 展开来源表的列，没别名的表达式不给候选 ——
+//! MySQL 给它起的名字是表达式原文，猜不准就不猜。
 
 use serde::{Deserialize, Serialize};
 
@@ -53,8 +57,25 @@ const MAX_ITEMS: usize = 50;
 /// 语句里引用的一张表：真名和别名（没写别名时别名为空）
 #[derive(Debug, Clone, PartialEq)]
 struct TableRef {
+    /// 派生表没有名字，是空串；CTE 是 CTE 的名字
     name: String,
     alias: String,
+    /// 派生表和 CTE 推出来的输出列；普通表是 None，列去目录里查
+    derived: Option<Vec<String>>,
+}
+
+/// 推断作用域时要一路带着的东西
+struct Ctx<'a> {
+    text_of: &'a dyn Fn(&SqlToken) -> String,
+    catalog: &'a Catalog,
+    /// 光标位置。光标所在的派生表对它自己不可见
+    cursor: u32,
+}
+
+/// 语句开头 WITH 定义的一个 CTE
+struct Cte {
+    name: String,
+    columns: Vec<String>,
 }
 
 pub fn complete(sql: &str, cursor: u32, catalog: &Catalog) -> Completion {
@@ -104,7 +125,8 @@ pub fn complete(sql: &str, cursor: u32, catalog: &Catalog) -> Completion {
         }
     }
 
-    let scope = tables_in_scope(&tokens, &text_of, replace_start);
+    let ctx = Ctx { text_of: &text_of, catalog, cursor: replace_start };
+    let scope = tables_in_scope(&tokens, &ctx);
     let mut items = Vec::new();
 
     // `别名.` 或 `表名.`：只补这张表的列
@@ -113,9 +135,9 @@ pub fn complete(sql: &str, cursor: u32, catalog: &Catalog) -> Completion {
         _ => None,
     };
     if let Some(qualifier) = qualifier {
-        if let Some(table) = resolve(&scope, &qualifier, catalog) {
-            for column in &table.columns {
-                push(&mut items, column, CompletionKind::Column, &table.name, &prefix);
+        if let Some((detail, columns)) = resolve(&scope, &qualifier, catalog) {
+            for column in &columns {
+                push(&mut items, column, CompletionKind::Column, &detail, &prefix);
             }
         }
         return finish(replace_start, replace_end, items);
@@ -131,20 +153,24 @@ pub fn complete(sql: &str, cursor: u32, catalog: &Catalog) -> Completion {
     // 其他位置：作用域里的列（里层优先）、别名、表名，最后是关键字
     let mut seen = Vec::new();
     for table_ref in &scope {
-        if let Some(table) = find_table(catalog, &table_ref.name) {
-            for column in &table.columns {
+        if let Some((detail, columns)) = ref_columns(table_ref, catalog) {
+            for column in &columns {
                 if !seen.contains(column) {
                     seen.push(column.clone());
-                    push(&mut items, column, CompletionKind::Column, &table.name, &prefix);
+                    push(&mut items, column, CompletionKind::Column, &detail, &prefix);
                 }
             }
         }
     }
     for table_ref in &scope {
         if table_ref.alias.is_empty() {
-            push(&mut items, &table_ref.name, CompletionKind::Table, "", &prefix);
+            // 没写别名的派生表（MySQL 本来就不允许）没有名字可补
+            if !table_ref.name.is_empty() {
+                push(&mut items, &table_ref.name, CompletionKind::Table, "", &prefix);
+            }
         } else {
-            push(&mut items, &table_ref.alias, CompletionKind::Alias, &table_ref.name, &prefix);
+            let detail = if table_ref.name.is_empty() { "子查询" } else { &table_ref.name };
+            push(&mut items, &table_ref.alias, CompletionKind::Alias, detail, &prefix);
         }
     }
     for keyword in KEYWORDS {
@@ -218,14 +244,30 @@ fn find_table<'a>(catalog: &'a Catalog, name: &str) -> Option<&'a CatalogTable> 
     catalog.tables.iter().find(|t| t.name.eq_ignore_ascii_case(name))
 }
 
-/// 限定名先按别名找，再按表名找
-fn resolve<'a>(scope: &[TableRef], qualifier: &str, catalog: &'a Catalog) -> Option<&'a CatalogTable> {
+/// 一个表引用的列和补全时显示的来源。派生表 / CTE 用推出来的列，普通表查目录
+fn ref_columns(table_ref: &TableRef, catalog: &Catalog) -> Option<(String, Vec<String>)> {
+    if let Some(columns) = &table_ref.derived {
+        let label = if table_ref.alias.is_empty() { &table_ref.name } else { &table_ref.alias };
+        return Some((label.clone(), columns.clone()));
+    }
+    let table = find_table(catalog, &table_ref.name)?;
+    Some((table.name.clone(), table.columns.clone()))
+}
+
+/// 限定名先按别名找，再按没写别名的表名（含 CTE）找，最后才去目录里找同名表
+fn resolve(scope: &[TableRef], qualifier: &str, catalog: &Catalog) -> Option<(String, Vec<String>)> {
     for table_ref in scope {
         if table_ref.alias.eq_ignore_ascii_case(qualifier) {
-            return find_table(catalog, &table_ref.name);
+            return ref_columns(table_ref, catalog);
         }
     }
-    find_table(catalog, qualifier)
+    for table_ref in scope {
+        if table_ref.alias.is_empty() && table_ref.name.eq_ignore_ascii_case(qualifier) {
+            return ref_columns(table_ref, catalog);
+        }
+    }
+    let table = find_table(catalog, qualifier)?;
+    Some((table.name.clone(), table.columns.clone()))
 }
 
 /// 前一个有意义的 token 是 FROM / JOIN / UPDATE / INTO / TABLE，或者是 FROM 列表里的逗号
@@ -270,11 +312,9 @@ fn is_clause_keyword(upper: &str) -> bool {
 
 /// 光标看得到的表：光标所在括号层及所有外层，里层在前。
 /// 只收同一层的 FROM / JOIN / UPDATE / INTO 后面的表，更里层子查询的表不算
-fn tables_in_scope(
-    tokens: &[SqlToken],
-    text_of: &dyn Fn(&SqlToken) -> String,
-    cursor: u32,
-) -> Vec<TableRef> {
+fn tables_in_scope(tokens: &[SqlToken], ctx: &Ctx) -> Vec<TableRef> {
+    let text_of = ctx.text_of;
+    let cursor = ctx.cursor;
     // 当前语句：光标前后最近的分号之间
     let mut start = 0;
     let mut end = tokens.len();
@@ -324,9 +364,10 @@ fn tables_in_scope(
     }
     levels.push((0, statement.len(), 0));
 
+    let ctes = collect_ctes(statement, &depths, ctx);
     let mut refs = Vec::new();
     for (from, to, depth) in levels {
-        collect_refs(&statement[from..to], &depths[from..to], depth, text_of, &mut refs);
+        collect_refs(&statement[from..to], &depths[from..to], depth, ctx, &ctes, &mut refs);
     }
     refs
 }
@@ -336,9 +377,11 @@ fn collect_refs(
     tokens: &[SqlToken],
     depths: &[usize],
     depth: usize,
-    text_of: &dyn Fn(&SqlToken) -> String,
+    ctx: &Ctx,
+    ctes: &[Cte],
     refs: &mut Vec<TableRef>,
 ) {
+    let text_of = ctx.text_of;
     let mut expecting = false;
     let mut in_from_list = false;
     let mut i = 0;
@@ -367,6 +410,36 @@ fn collect_refs(
             i += 1;
             continue;
         }
+        // 派生表：FROM (SELECT …) [AS] x [(c1, c2)]
+        if expecting && text == "(" {
+            let close = matching_close(tokens, depths, i, depth, text_of);
+            let inner = i + 1..close;
+            if let Some(mut columns) = derived_columns(&tokens[inner.clone()], &depths[inner], depth + 1, ctx, ctes) {
+                let mut next = close + 1;
+                if tokens.get(next).is_some_and(|t| text_of(t).eq_ignore_ascii_case("AS")) {
+                    next += 1;
+                }
+                let mut alias = String::new();
+                if let Some(candidate) = tokens.get(next).filter(|t| is_name(t)) {
+                    alias = unquote(&text_of(candidate));
+                    next += 1;
+                }
+                if tokens.get(next).is_some_and(|t| text_of(t) == "(") {
+                    let list_close = matching_close(tokens, depths, next, depth, text_of);
+                    columns = names_in(&tokens[next + 1..list_close], text_of);
+                    next = list_close + 1;
+                }
+                // 光标在这个子查询里面时，它自己的别名在里面是看不到的
+                let cursor_inside = tokens[i].end <= ctx.cursor
+                    && tokens.get(close).is_none_or(|t| ctx.cursor <= t.start);
+                if !cursor_inside {
+                    refs.push(TableRef { name: String::new(), alias, derived: Some(columns) });
+                }
+                expecting = false;
+                i = next;
+                continue;
+            }
+        }
         if !(expecting && is_name(token)) {
             i += 1;
             continue;
@@ -375,11 +448,23 @@ fn collect_refs(
         // 表名，可能带库名前缀：db.table
         let mut name = unquote(&text);
         let mut next = i + 1;
+        let mut qualified = false;
         if tokens.get(next).is_some_and(|t| text_of(t) == ".")
             && tokens.get(next + 1).is_some_and(is_name)
         {
             name = unquote(&text_of(&tokens[next + 1]));
             next += 2;
+            qualified = true;
+        }
+        // 不带库名时 CTE 优先于同名的表
+        let mut derived = None;
+        if !qualified {
+            for cte in ctes {
+                if cte.name.eq_ignore_ascii_case(&name) {
+                    derived = Some(cte.columns.clone());
+                    break;
+                }
+            }
         }
         // 别名：AS x 或直接跟一个不是关键字的名字
         let mut alias = String::new();
@@ -392,10 +477,252 @@ fn collect_refs(
                 next += 1;
             }
         }
-        refs.push(TableRef { name, alias });
+        refs.push(TableRef { name, alias, derived });
         expecting = false;
         i = next;
     }
+}
+
+/// open 处左括号配对的右括号下标；写了一半没闭合就是末尾
+fn matching_close(
+    tokens: &[SqlToken],
+    depths: &[usize],
+    open: usize,
+    depth: usize,
+    text_of: &dyn Fn(&SqlToken) -> String,
+) -> usize {
+    for index in open + 1..tokens.len() {
+        if depths[index] == depth && text_of(&tokens[index]) == ")" {
+            return index;
+        }
+    }
+    tokens.len()
+}
+
+/// 括号里逗号分隔的名字列表，比如 CTE 和派生表后面写的列名
+fn names_in(tokens: &[SqlToken], text_of: &dyn Fn(&SqlToken) -> String) -> Vec<String> {
+    let mut names = Vec::new();
+    for token in tokens {
+        if is_name(token) {
+            names.push(unquote(&text_of(token)));
+        }
+    }
+    names
+}
+
+/// 语句开头 `WITH [RECURSIVE] a [(c1, c2)] AS (…), b AS (…)` 定义的 CTE。
+/// 后面的 CTE 可以引用前面的，所以按顺序推
+fn collect_ctes(statement: &[SqlToken], depths: &[usize], ctx: &Ctx) -> Vec<Cte> {
+    let text_of = ctx.text_of;
+    let mut ctes = Vec::new();
+    let keyword_at = |index: usize, word: &str| {
+        statement.get(index).is_some_and(|t| t.kind == SqlTokenKind::Keyword && text_of(t).eq_ignore_ascii_case(word))
+    };
+    if !keyword_at(0, "WITH") {
+        return ctes;
+    }
+    let mut i = if keyword_at(1, "RECURSIVE") { 2 } else { 1 };
+
+    while let Some(name_token) = statement.get(i).filter(|t| is_name(t)) {
+        let name = unquote(&text_of(name_token));
+        i += 1;
+
+        let mut explicit = None;
+        if statement.get(i).is_some_and(|t| text_of(t) == "(") {
+            let close = matching_close(statement, depths, i, 0, text_of);
+            explicit = Some(names_in(&statement[i + 1..close], text_of));
+            i = close + 1;
+        }
+        if !keyword_at(i, "AS") || !statement.get(i + 1).is_some_and(|t| text_of(t) == "(") {
+            break;
+        }
+        let open = i + 1;
+        let close = matching_close(statement, depths, open, 0, text_of);
+        let columns = match explicit {
+            Some(columns) => columns,
+            // 递归 CTE 的列名由第一段（非递归部分）决定，和普通子查询一样推
+            None => derived_columns(&statement[open + 1..close], &depths[open + 1..close], 1, ctx, &ctes)
+                .unwrap_or_default(),
+        };
+        ctes.push(Cte { name, columns });
+
+        i = close + 1;
+        if !statement.get(i).is_some_and(|t| text_of(t) == ",") {
+            break;
+        }
+        i += 1;
+    }
+    ctes
+}
+
+/// 子查询的输出列名。tokens 是括号里面的部分，depth 是它们的层级。
+/// 不是 SELECT（比如 `FROM (t1 JOIN t2)`）返回 None
+fn derived_columns(
+    tokens: &[SqlToken],
+    depths: &[usize],
+    depth: usize,
+    ctx: &Ctx,
+    ctes: &[Cte],
+) -> Option<Vec<String>> {
+    let text_of = ctx.text_of;
+    let first = tokens.first()?;
+    // ((SELECT …) UNION …)：列名由第一段决定
+    if text_of(first) == "(" {
+        let close = matching_close(tokens, depths, 0, depth, text_of);
+        return derived_columns(&tokens[1..close], &depths[1..close], depth + 1, ctx, ctes);
+    }
+    if !(first.kind == SqlTokenKind::Keyword && text_of(first).eq_ignore_ascii_case("SELECT")) {
+        return None;
+    }
+
+    // 只看第一段 SELECT：UNION 后面各段的列名不算数，来源表也不算
+    let mut end = tokens.len();
+    for index in 1..tokens.len() {
+        if depths[index] == depth && text_of(&tokens[index]).eq_ignore_ascii_case("UNION") {
+            end = index;
+            break;
+        }
+    }
+
+    // select 列表按本层的逗号切开，到本层的 FROM 之类子句关键字为止
+    let mut items: Vec<Vec<&SqlToken>> = vec![Vec::new()];
+    for index in 1..end {
+        let token = &tokens[index];
+        let upper = text_of(token).to_ascii_uppercase();
+        if depths[index] == depth {
+            if token.kind == SqlTokenKind::Keyword
+                && matches!(upper.as_str(), "FROM" | "WHERE" | "GROUP" | "HAVING" | "ORDER" | "LIMIT" | "INTO" | "WINDOW")
+            {
+                break;
+            }
+            if upper == "," {
+                items.push(Vec::new());
+                continue;
+            }
+            // SELECT DISTINCT a：修饰词不是列
+            if items.len() == 1 && items[0].is_empty() && matches!(upper.as_str(), "DISTINCT" | "ALL") {
+                continue;
+            }
+        }
+        items.last_mut().unwrap().push(token);
+    }
+
+    let mut sources: Option<Vec<TableRef>> = None;
+    let mut columns: Vec<String> = Vec::new();
+    for item in &items {
+        let names = match item_output(item, text_of) {
+            ItemOutput::Name(name) => vec![name],
+            ItemOutput::Star(qualifier) => {
+                // `*` 才需要知道来源表，用到时再找
+                let sources = sources.get_or_insert_with(|| {
+                    let mut refs = Vec::new();
+                    collect_refs(&tokens[..end], &depths[..end], depth, ctx, ctes, &mut refs);
+                    refs
+                });
+                star_columns(sources, qualifier.as_deref(), ctx.catalog)
+            }
+            ItemOutput::Unknown => Vec::new(),
+        };
+        for name in names {
+            if !columns.iter().any(|c| c.eq_ignore_ascii_case(&name)) {
+                columns.push(name);
+            }
+        }
+    }
+    Some(columns)
+}
+
+/// select 列表里一项的输出列
+enum ItemOutput {
+    Name(String),
+    /// `*` 或 `t.*`
+    Star(Option<String>),
+    /// 没有别名的表达式，MySQL 拿表达式原文当列名，不猜
+    Unknown,
+}
+
+fn item_output(item: &[&SqlToken], text_of: &dyn Fn(&SqlToken) -> String) -> ItemOutput {
+    let Some(last) = item.last() else {
+        return ItemOutput::Unknown;
+    };
+    let count = item.len();
+    let last_text = text_of(last);
+
+    // expr AS alias，别名也可以写成字符串：AS 'x'
+    if count >= 3 && text_of(item[count - 2]).eq_ignore_ascii_case("AS") {
+        if is_name(last) {
+            return ItemOutput::Name(unquote(&last_text));
+        }
+        if last.kind == SqlTokenKind::String {
+            return match unquote_string(&last_text) {
+                Some(name) => ItemOutput::Name(name),
+                None => ItemOutput::Unknown,
+            };
+        }
+        return ItemOutput::Unknown;
+    }
+
+    if last_text == "*" {
+        return match item {
+            [_] => ItemOutput::Star(None),
+            [table, dot, _] if is_name(table) && text_of(dot) == "." => ItemOutput::Star(Some(unquote(&text_of(table)))),
+            [_, first_dot, table, dot, _] if text_of(first_dot) == "." && is_name(table) && text_of(dot) == "." => {
+                ItemOutput::Star(Some(unquote(&text_of(table))))
+            }
+            _ => ItemOutput::Unknown,
+        };
+    }
+
+    // 普通列：a、t.a、db.t.a
+    let mut plain = count % 2 == 1;
+    for (index, token) in item.iter().enumerate() {
+        let ok = if index % 2 == 0 { is_name(token) } else { text_of(token) == "." };
+        plain = plain && ok;
+    }
+    if plain {
+        return ItemOutput::Name(unquote(&last_text));
+    }
+
+    // 省略 AS 的别名：COUNT(*) cnt、t.b c、'x' c。前面是运算符（a + b）或关键字（a DIV b）
+    // 时最后那个名字是表达式的一部分，不是别名；CASE … END x 例外
+    if count >= 2 && is_name(last) {
+        let prev = item[count - 2];
+        let prev_text = text_of(prev);
+        let is_expression_tail = prev_text == "."
+            || prev.kind == SqlTokenKind::Operator
+            || (prev.kind == SqlTokenKind::Keyword && !prev_text.eq_ignore_ascii_case("END"));
+        if !is_expression_tail {
+            return ItemOutput::Name(unquote(&last_text));
+        }
+    }
+    ItemOutput::Unknown
+}
+
+/// `*` 展开成来源表的列；`t.*` 只展开 t。来源表不在目录里就少那一截，不编
+fn star_columns(sources: &[TableRef], qualifier: Option<&str>, catalog: &Catalog) -> Vec<String> {
+    let mut columns = Vec::new();
+    for source in sources {
+        if let Some(qualifier) = qualifier {
+            let label = if source.alias.is_empty() { &source.name } else { &source.alias };
+            if !label.eq_ignore_ascii_case(qualifier) {
+                continue;
+            }
+        }
+        if let Some((_, source_columns)) = ref_columns(source, catalog) {
+            columns.extend(source_columns);
+        }
+    }
+    columns
+}
+
+/// 字符串写的别名：'x'、"x"。带反斜杠的转义随 sql_mode 变，不猜
+fn unquote_string(text: &str) -> Option<String> {
+    let quote = text.chars().next()?;
+    if !matches!(quote, '\'' | '"') || text.len() < 2 || !text.ends_with(quote) || text.contains('\\') {
+        return None;
+    }
+    let inner = &text[1..text.len() - 1];
+    Some(inner.replace(&format!("{quote}{quote}"), &quote.to_string()))
 }
 
 #[cfg(test)]
@@ -524,5 +851,77 @@ mod tests {
         assert_eq!(labels(&completion), ["昵称"]);
         assert_eq!(completion.replace_start, 13);
         assert_eq!(completion.replace_end, 14);
+    }
+
+    #[test]
+    fn derived_table_columns_come_from_its_select_list() {
+        // 别名优先，普通列用列名；来源表不在目录里也推得出来
+        assert_eq!(labels(&at("SELECT x.| FROM (SELECT a, b AS c FROM t) AS x")), ["a", "c"]);
+        let completion = at("SELECT x.| FROM (SELECT id, amount AS total FROM orders) AS x");
+        assert_eq!(labels(&completion), ["id", "total"]);
+        assert_eq!(completion.items[0].detail, "x");
+        // 不写 AS、限定列名、反引号别名
+        assert_eq!(labels(&at("SELECT x.| FROM (SELECT o.user_id, o.amount `金额` FROM orders o) x")), ["user_id", "金额"]);
+    }
+
+    #[test]
+    fn expressions_without_alias_give_no_candidate() {
+        let completion = at("SELECT x.| FROM (SELECT id + 1, COUNT(*), amount * 2 AS double_amount, SUM(amount) s FROM orders) x");
+        assert_eq!(labels(&completion), ["double_amount", "s"], "没别名的表达式不能编个名字出来");
+        // a DIV b 里的 b 不是别名；CASE … END 后面的是
+        let completion = at("SELECT x.| FROM (SELECT id DIV user_id, CASE WHEN id THEN 1 END flag FROM orders) x");
+        assert_eq!(labels(&completion), ["flag"]);
+    }
+
+    #[test]
+    fn star_in_derived_table_expands_the_source_tables() {
+        assert_eq!(labels(&at("SELECT x.| FROM (SELECT * FROM orders) x")), ["id", "user_id", "amount"]);
+        // t.* 只展开那一张；同名列只出一次
+        assert_eq!(
+            labels(&at("SELECT x.| FROM (SELECT u.*, o.amount FROM orders o JOIN users u ON 1) x")),
+            ["id", "name", "order", "amount"]
+        );
+        // 来源不在目录里就少那一截，不编
+        assert_eq!(labels(&at("SELECT x.| FROM (SELECT *, 1 AS one FROM nowhere) x")), ["one"]);
+    }
+
+    #[test]
+    fn derived_tables_nest_and_show_up_unqualified() {
+        let sql = "SELECT x.| FROM (SELECT * FROM (SELECT id AS inner_id FROM orders) y) x";
+        assert_eq!(labels(&at(sql)), ["inner_id"]);
+
+        let completion = at("SELECT | FROM (SELECT id, name AS who FROM users) AS x");
+        assert_eq!(labels(&completion)[..2], ["id", "who"]);
+        assert!(completion.items.iter().any(|i| i.kind == CompletionKind::Alias && i.label == "x" && i.detail == "子查询"));
+    }
+
+    #[test]
+    fn derived_table_with_column_list_and_union() {
+        assert_eq!(labels(&at("SELECT x.| FROM (SELECT id, amount FROM orders) AS x (a, b)")), ["a", "b"]);
+        // UNION 的列名由第一段决定
+        assert_eq!(labels(&at("SELECT x.| FROM (SELECT id AS k FROM orders UNION SELECT name FROM users) x")), ["k"]);
+    }
+
+    #[test]
+    fn inside_a_derived_table_its_own_alias_is_not_visible() {
+        let completion = at("SELECT * FROM (SELECT | FROM users) x");
+        assert_eq!(completion.items[0].detail, "users");
+        assert!(!completion.items.iter().any(|i| i.label == "x"), "{:?}", labels(&completion));
+        // 里面照样能用自己的表
+        assert_eq!(labels(&at("SELECT * FROM (SELECT u.| FROM users u) x")), ["id", "name", "order"]);
+    }
+
+    #[test]
+    fn cte_columns() {
+        let sql = "WITH big AS (SELECT id, amount AS total FROM orders WHERE amount > 10) SELECT big.| FROM big";
+        assert_eq!(labels(&at(sql)), ["id", "total"]);
+        // 显式列名、后一个 CTE 引用前一个、给 CTE 起别名
+        let sql = "WITH RECURSIVE a (n) AS (SELECT 1 UNION ALL SELECT n + 1 FROM a), \
+                   b AS (SELECT a.*, 2 AS two FROM a) SELECT q.| FROM b q";
+        assert_eq!(labels(&at(sql)), ["n", "two"]);
+        // CTE 和真表同名时 CTE 优先
+        assert_eq!(labels(&at("WITH orders AS (SELECT 1 AS z) SELECT orders.| FROM orders")), ["z"]);
+        // 不带限定时 CTE 的列也在候选里
+        assert_eq!(labels(&at("WITH big AS (SELECT amount AS total FROM orders) SELECT t| FROM big"))[0], "total");
     }
 }

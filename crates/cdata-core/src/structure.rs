@@ -66,6 +66,14 @@ pub struct ForeignKeyDef {
     pub on_delete: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CheckDef {
+    pub name: String,
+    /// information_schema 的 CHECK_CLAUSE 原文，只用来显示：里面的引号写成了 \'，不能照抄回 DDL
+    pub expression: String,
+    pub enforced: bool,
+}
+
 /// 一张表的完整结构。结构页一次要全部，合成一个接口返回
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TableStructure {
@@ -76,6 +84,33 @@ pub struct TableStructure {
     pub create_sql: String,
     /// 表的默认排序规则。列的排序规则和它相同时，改列不写 COLLATE，免得列变成「显式指定」。视图没有
     pub table_collation: Option<String>,
+    pub table_charset: Option<String>,
+    /// 引擎。视图没有
+    pub engine: Option<String>,
+    pub table_comment: String,
+    /// 取自 SHOW CREATE 的 AUTO_INCREMENT=，只用来显示。information_schema 里那个有统计缓存，会过时
+    pub auto_increment: Option<u64>,
+    /// 显式指定的 ROW_FORMAT（CREATE_OPTIONS 里的），没指定是 None。
+    /// TABLES.ROW_FORMAT 是实际生效的，不能拿来当「指定了」
+    pub row_format: Option<String>,
+    /// CHECK 约束。None 表示这个服务器读不了（MySQL 8.0.16 之前、MariaDB），不等于「没有」
+    pub checks: Option<Vec<CheckDef>>,
+}
+
+/// 是不是 MySQL 并且不低于给定版本。MariaDB 一律 false：很多 information_schema 的规则和 MySQL 不同
+pub fn mysql_at_least(version: &str, min: (u32, u32, u32)) -> bool {
+    if version.to_ascii_lowercase().contains("mariadb") {
+        return false;
+    }
+    let numbers: Vec<u32> = version
+        .split(|c: char| !c.is_ascii_digit())
+        .take(3)
+        .map(|part| part.parse().unwrap_or(0))
+        .collect();
+    let [major, minor, patch] = numbers[..] else {
+        return false;
+    };
+    (major, minor, patch) >= min
 }
 
 pub async fn table_structure(
@@ -179,14 +214,74 @@ pub async fn read_structure(
         .and_then(|row| row.get::<String, usize>(1))
         .unwrap_or_default();
 
-    let table_collation: Option<Option<String>> = conn
+    type TableRow = (Option<String>, Option<String>, Option<String>, Option<String>, Option<String>);
+    let table_row: Option<TableRow> = conn
         .exec_first(
-            "SELECT TABLE_COLLATION FROM information_schema.TABLES WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?",
+            "SELECT t.TABLE_COLLATION, c.CHARACTER_SET_NAME, t.ENGINE, t.TABLE_COMMENT, t.CREATE_OPTIONS \
+             FROM information_schema.TABLES t \
+             LEFT JOIN information_schema.COLLATIONS c ON c.COLLATION_NAME = t.TABLE_COLLATION \
+             WHERE t.TABLE_SCHEMA = ? AND t.TABLE_NAME = ?",
             (schema, table),
         )
         .await?;
+    let (table_collation, table_charset, engine, table_comment, create_options) = table_row.unwrap_or_default();
 
-    Ok(TableStructure { columns, indexes, foreign_keys, create_sql, table_collation: table_collation.flatten() })
+    // CHECK_CONSTRAINTS 是 8.0.16 才有的；MariaDB 也有这张表，但 TABLE_CONSTRAINTS 没有 ENFORCED 列
+    let version: String = conn.query_first("SELECT VERSION()").await?.unwrap_or_default();
+    let checks = if mysql_at_least(&version, (8, 0, 16)) {
+        let rows: Vec<(String, String, String)> = conn
+            .exec(
+                "SELECT tc.CONSTRAINT_NAME, cc.CHECK_CLAUSE, tc.ENFORCED \
+                 FROM information_schema.TABLE_CONSTRAINTS tc \
+                 JOIN information_schema.CHECK_CONSTRAINTS cc \
+                   ON cc.CONSTRAINT_SCHEMA = tc.CONSTRAINT_SCHEMA AND cc.CONSTRAINT_NAME = tc.CONSTRAINT_NAME \
+                 WHERE tc.TABLE_SCHEMA = ? AND tc.TABLE_NAME = ? AND tc.CONSTRAINT_TYPE = 'CHECK' \
+                 ORDER BY tc.CONSTRAINT_NAME",
+                (schema, table),
+            )
+            .await?;
+        let mut checks = Vec::with_capacity(rows.len());
+        for (name, expression, enforced) in rows {
+            checks.push(CheckDef { name, expression, enforced: enforced == "YES" });
+        }
+        Some(checks)
+    } else {
+        None
+    };
+
+    Ok(TableStructure {
+        columns,
+        indexes,
+        foreign_keys,
+        auto_increment: create_auto_increment(&create_sql),
+        create_sql,
+        table_collation,
+        table_charset,
+        engine,
+        table_comment: table_comment.unwrap_or_default(),
+        row_format: explicit_row_format(create_options.as_deref().unwrap_or("")),
+        checks,
+    })
+}
+
+/// CREATE_OPTIONS 形如 `row_format=DYNAMIC stats_persistent=0`
+fn explicit_row_format(create_options: &str) -> Option<String> {
+    for option in create_options.split_whitespace() {
+        if let Some(value) = option.strip_prefix("row_format=") {
+            return Some(value.to_string());
+        }
+    }
+    None
+}
+
+/// SHOW CREATE 的表选项行 `) ENGINE=InnoDB AUTO_INCREMENT=100 DEFAULT CHARSET=… COMMENT='…'`。
+/// 只看 COMMENT= 之前的部分，免得表注释里的字被当成选项
+fn create_auto_increment(create_sql: &str) -> Option<u64> {
+    let line = create_sql.lines().find(|line| line.starts_with(") ENGINE="))?;
+    let options = line.split(" COMMENT=").next().unwrap_or(line);
+    let rest = options.split(" AUTO_INCREMENT=").nth(1)?;
+    let digits: String = rest.chars().take_while(|c| c.is_ascii_digit()).collect();
+    digits.parse().ok()
 }
 
 /// 一张表的列定义，按表里的顺序
@@ -311,6 +406,25 @@ mod tests {
         );
         assert_eq!(parse_choices("set('x','y')"), Some(vec!["x".to_string(), "y".to_string()]));
         assert_eq!(parse_choices("varchar(20)"), None);
+    }
+
+    #[test]
+    fn table_options_come_from_the_right_places() {
+        assert_eq!(explicit_row_format("row_format=DYNAMIC stats_persistent=0"), Some("DYNAMIC".to_string()));
+        assert_eq!(explicit_row_format(""), None);
+        let create = "CREATE TABLE `t` (\n  `id` int NOT NULL AUTO_INCREMENT\n) ENGINE=InnoDB AUTO_INCREMENT=100 DEFAULT CHARSET=utf8mb4 COMMENT='x AUTO_INCREMENT=5'";
+        assert_eq!(create_auto_increment(create), Some(100));
+        let no_counter = "CREATE TABLE `t` (\n  `id` int\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT=' AUTO_INCREMENT=5'";
+        assert_eq!(create_auto_increment(no_counter), None, "注释里的字不能当成选项");
+    }
+
+    #[test]
+    fn version_gate() {
+        assert!(mysql_at_least("8.0.16", (8, 0, 16)));
+        assert!(mysql_at_least("9.6.0", (8, 0, 16)));
+        assert!(!mysql_at_least("8.0.15-log", (8, 0, 16)));
+        assert!(!mysql_at_least("10.11.6-MariaDB", (8, 0, 16)));
+        assert!(!mysql_at_least("garbage", (8, 0, 16)));
     }
 
     #[test]

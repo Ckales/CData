@@ -69,6 +69,9 @@ pub struct ColumnMeta {
     pub is_binary: bool,
     /// 这一列用什么编辑器。只由列元数据决定，不看值
     pub kind: ColumnKind,
+    /// 列定义里的小数位：时间类型是小数秒位数，DECIMAL 是标度；超过 6（通常是 31）表示不固定。
+    /// TIME 编辑器靠它判断输入的小数秒会不会被 MySQL 舍入
+    pub decimals: u8,
 }
 
 /// 列的类别，界面按它选编辑器
@@ -106,6 +109,8 @@ pub struct DbPool {
     connect_timeout: Option<Duration>,
     query_timeout: Option<Duration>,
     tunnel: Option<Arc<Tunnel>>,
+    /// 这个池取出过的连接的线程 id。服务器状态页据此认出 CData 自己的连接，不让用户 KILL 掉
+    connection_ids: Arc<std::sync::Mutex<std::collections::HashSet<u32>>>,
 }
 
 #[derive(Debug)]
@@ -255,6 +260,7 @@ pub async fn open_pool(config: &ConnectionConfig) -> Result<DbPool, OpenError> {
         connect_timeout: timeouts.connect(),
         query_timeout: timeouts.query(),
         tunnel,
+        connection_ids: Arc::default(),
     })
 }
 
@@ -303,11 +309,21 @@ impl DbPool {
             None => attempt.await,
         };
 
+        if let Ok(conn) = &result {
+            self.connection_ids.lock().unwrap().insert(conn.id());
+        }
         result.map_err(|err| {
             // 隧道那头失败时，mysql_async 只看到本地端口的连接被关掉，真正的原因在隧道里
             let reason = self.tunnel_error().unwrap_or_else(|| err.to_string());
             mysql_async::Error::Other(Box::new(ConnectFailed(reason)))
         })
+    }
+
+    /// 取出过的连接的线程 id，包括已经断开的。
+    // ponytail: 只增不减，断开的连接也留着；服务器重启后线程 id 从头编号，旧 id 可能撞上别人的新连接，
+    // 被误认成自己的（只会多拦，不会少拦）。要精确就得在连接断开时移除，mysql_async 没有这个回调
+    pub fn connection_ids(&self) -> Vec<u32> {
+        self.connection_ids.lock().unwrap().iter().copied().collect()
     }
 
     fn tunnel_error(&self) -> Option<String> {
@@ -426,7 +442,7 @@ async fn run_on_conn(
     (Err(err), finished)
 }
 
-async fn read_result(
+pub(crate) async fn read_result(
     conn: &mut Conn,
     sql: &str,
     params: Vec<Value>,
@@ -477,6 +493,7 @@ fn build_columns(columns: &[Column]) -> Vec<ColumnMeta> {
             schema: column.schema_str().to_string(),
             is_binary: is_binary_column(column),
             kind: column_kind(column),
+            decimals: column.decimals(),
         });
     }
     metas

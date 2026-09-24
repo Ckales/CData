@@ -369,3 +369,92 @@ async fn target_columns_and_sql_mode_are_read_from_the_server() {
     assert!(err.contains("req"), "{err}");
     assert!(rows.rows.is_empty());
 }
+
+/// 生成一个够大的文件，每批只写几行：取消一定落在导入中途
+fn many_rows(tag: &str, count: usize) -> String {
+    let mut csv = String::from("run_tag,txt,amount,req,note\r\n");
+    for i in 0..count {
+        csv.push_str(&format!("{tag},r{i},1.00,{i},n\r\n"));
+    }
+    csv
+}
+
+/// 等到已经写进去至少一批再取消，免得取消落在开始之前、测不到「中途」
+async fn cancel_after_first_batch(job: u64) {
+    for _ in 0..3000 {
+        match import::status(job).unwrap() {
+            ImportStatus::Running(progress) if progress.rows_inserted > 0 => break,
+            ImportStatus::Finished(report) => panic!("取消之前导入就结束了，文件不够大：{report:?}"),
+            _ => tokio::time::sleep(Duration::from_millis(5)).await,
+        }
+    }
+    import::cancel(job).unwrap();
+}
+
+async fn count_rows(probe: &Probe) -> usize {
+    probe.rows(&probe.tag).await.rows.len()
+}
+
+#[tokio::test]
+async fn cancel_in_rollback_mode_leaves_nothing_behind() {
+    let Some(probe) = probe("cancel-rollback").await else {
+        eprintln!("跳过：未配置 CDATA_TEST_* 环境变量");
+        return;
+    };
+    let path = probe.dir.join("many.csv");
+    std::fs::write(&path, many_rows(&probe.tag, 50_000)).unwrap();
+    let header = names(&["run_tag", "txt", "amount", "req", "note"]);
+    let target = import::prepare(&probe.pool, &probe.schema, "import_probe").await.unwrap();
+    let request = ImportRequest {
+        path: path.to_string_lossy().into_owned(),
+        options: utf8_options(),
+        schema: probe.schema.clone(),
+        table: "import_probe".to_string(),
+        mapping: import::suggest_mapping(&header, &target.columns),
+        batch_rows: 5,
+        on_error: OnError::RollbackAll,
+    };
+    let job = import::start(probe.pool.clone(), request).await.unwrap();
+    cancel_after_first_batch(job).await;
+    let report = wait(job).await;
+    import::close(job).unwrap();
+    let rows = count_rows(&probe).await;
+    probe.cleanup().await;
+
+    assert!(matches!(report.outcome, ImportOutcome::Stopped(ref reason) if reason.contains("已取消")), "{report:?}");
+    assert_eq!(report.progress.rows_inserted, 0, "整体回滚模式取消后报告的提交行数必须是 0");
+    assert_eq!(rows, 0, "整体回滚模式取消后表里不能留下任何一行");
+}
+
+#[tokio::test]
+async fn cancel_in_skip_mode_keeps_exactly_the_committed_batches() {
+    let Some(probe) = probe("cancel-skip").await else {
+        eprintln!("跳过：未配置 CDATA_TEST_* 环境变量");
+        return;
+    };
+    let path = probe.dir.join("many.csv");
+    std::fs::write(&path, many_rows(&probe.tag, 50_000)).unwrap();
+    let header = names(&["run_tag", "txt", "amount", "req", "note"]);
+    let target = import::prepare(&probe.pool, &probe.schema, "import_probe").await.unwrap();
+    let request = ImportRequest {
+        path: path.to_string_lossy().into_owned(),
+        options: utf8_options(),
+        schema: probe.schema.clone(),
+        table: "import_probe".to_string(),
+        mapping: import::suggest_mapping(&header, &target.columns),
+        batch_rows: 5,
+        on_error: OnError::SkipRow,
+    };
+    let job = import::start(probe.pool.clone(), request).await.unwrap();
+    cancel_after_first_batch(job).await;
+    let report = wait(job).await;
+    import::close(job).unwrap();
+    let rows = count_rows(&probe).await;
+    probe.cleanup().await;
+
+    assert!(matches!(report.outcome, ImportOutcome::Stopped(_)), "{report:?}");
+    assert!(rows > 0 && rows < 50_000, "取消应该落在中途，实际写了 {rows} 行");
+    // 报告说提交了多少，表里就必须正好有多少：用户靠这个数决定从哪里续导
+    assert_eq!(report.progress.rows_inserted as usize, rows);
+    assert_eq!(rows % 5, 0, "跳过模式按批提交，取消只会停在批与批之间");
+}

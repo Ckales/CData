@@ -17,6 +17,11 @@ Future<String> formatJson({required String text}) =>
 Future<String> hexDump({required List<int> bytes, required BigInt limit}) =>
     RustLib.instance.api.crateApiValueHexDump(bytes: bytes, limit: limit);
 
+/// 校验要写进 TIME 列的文本，fsp 是列的小数秒位数（ColumnMeta.decimals）。
+/// 编辑框每次改动都调，所以是同步调用
+void checkTimeText({required String text, required int fsp}) =>
+    RustLib.instance.api.crateApiValueCheckTimeText(text: text, fsp: fsp);
+
 /// 单元格在网格里的显示文本
 Future<String> displayText({required CellValue value}) =>
     RustLib.instance.api.crateApiValueDisplayText(value: value);
