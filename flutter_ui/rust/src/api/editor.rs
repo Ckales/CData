@@ -5,6 +5,9 @@ use flutter_rust_bridge::frb;
 pub use cdata_core::complete::{Completion, CompletionItem, CompletionKind};
 pub use cdata_core::history::{Favorite, HistoryEntry};
 pub use cdata_core::lexer::{SqlToken, SqlTokenKind};
+pub use cdata_core::session::{ScriptSummary, StatementFailure, StatementOutcome};
+
+use crate::api::db::QuerySummary;
 
 use crate::api::db::{on_runtime, to_message, Result};
 
@@ -101,4 +104,46 @@ pub fn save_favorite(name: String, sql: String) -> Result<String> {
 
 pub fn delete_favorite(id: String) -> Result<()> {
     cdata_core::history::delete_favorite(&id).map_err(|err| err.to_string())
+}
+
+#[frb(mirror(StatementOutcome))]
+pub struct _StatementOutcome {
+    pub sql: String,
+    pub session_id: Option<u64>,
+    pub summary: Option<QuerySummary>,
+    pub affected_rows: u64,
+}
+
+#[frb(mirror(StatementFailure))]
+pub struct _StatementFailure {
+    pub index: u32,
+    pub sql: String,
+    pub message: String,
+}
+
+#[frb(mirror(ScriptSummary))]
+pub struct _ScriptSummary {
+    pub outcomes: Vec<StatementOutcome>,
+    pub failure: Option<StatementFailure>,
+}
+
+/// 编辑器里有几条语句。界面据此决定走单条（能筛选排序）还是多条脚本
+#[frb(sync)]
+pub fn split_statements(sql: String) -> Result<Vec<String>> {
+    cdata_core::script::split_statements(&sql)
+}
+
+/// 多条语句按顺序在同一条连接上跑，每个结果集一个子会话
+pub async fn execute_script(session_id: u64, sql: String, max_rows: u64) -> Result<ScriptSummary> {
+    on_runtime(async move { cdata_core::session::execute_script(session_id, &sql, max_rows as usize).await }).await
+}
+
+/// 执行计划，结果放进一个子会话
+pub async fn explain(session_id: u64, sql: String, max_rows: u64) -> Result<StatementOutcome> {
+    on_runtime(async move { cdata_core::session::explain(session_id, &sql, max_rows as usize).await }).await
+}
+
+/// 新一轮运行前关掉上一轮的子结果
+pub fn drop_child_results(session_id: u64) -> Result<()> {
+    cdata_core::session::drop_child_results(session_id).map_err(to_message)
 }

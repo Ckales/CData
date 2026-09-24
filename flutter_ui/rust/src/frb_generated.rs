@@ -39,7 +39,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.13.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 1169614651;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -2080499104;
 
 // Section: executor
 
@@ -76,6 +76,55 @@ fn wire__crate__api__editor__add_history_impl(
                     let output_ok = crate::api::editor::add_history(api_sql)?;
                     std::result::Result::Ok(output_ok)
                 })())
+            }
+        },
+    )
+}
+fn wire__crate__api__schema__apply_alter_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "apply_alter",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_session_id = <u64>::sse_decode(&mut deserializer);
+            let api_database = <String>::sse_decode(&mut deserializer);
+            let api_table = <String>::sse_decode(&mut deserializer);
+            let api_original = <crate::api::schema::TableStructure>::sse_decode(&mut deserializer);
+            let api_draft = <crate::api::schema::TableDraft>::sse_decode(&mut deserializer);
+            let api_statements = <Vec<String>>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| async move {
+                transform_result_sse::<_, String>(
+                    (move || async move {
+                        let output_ok = crate::api::schema::apply_alter(
+                            api_session_id,
+                            api_database,
+                            api_table,
+                            api_original,
+                            api_draft,
+                            api_statements,
+                        )
+                        .await?;
+                        std::result::Result::Ok(output_ok)
+                    })()
+                    .await,
+                )
             }
         },
     )
@@ -152,6 +201,72 @@ fn wire__crate__api__schema__browse_sql_impl(
             move |context| {
                 transform_result_sse::<_, ()>((move || {
                     let output_ok = Ok::<_, ()>(crate::api::schema::browse_sql(api_table))?;
+                    std::result::Result::Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
+fn wire__crate__api__csv_import__cancel_import_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "cancel_import",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_job_id = <u64>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, String>((move || {
+                    let output_ok = crate::api::csv_import::cancel_import(api_job_id)?;
+                    std::result::Result::Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
+fn wire__crate__api__csv_import__close_import_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "close_import",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_job_id = <u64>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, String>((move || {
+                    let output_ok = crate::api::csv_import::close_import(api_job_id)?;
                     std::result::Result::Ok(output_ok)
                 })())
             }
@@ -502,6 +617,39 @@ fn wire__crate__api__value__display_text_impl(
         },
     )
 }
+fn wire__crate__api__editor__drop_child_results_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "drop_child_results",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_session_id = <u64>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, String>((move || {
+                    let output_ok = crate::api::editor::drop_child_results(api_session_id)?;
+                    std::result::Result::Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
 fn wire__crate__api__db__execute_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
@@ -533,6 +681,49 @@ fn wire__crate__api__db__execute_impl(
                     (move || async move {
                         let output_ok =
                             crate::api::db::execute(api_session_id, api_sql, api_max_rows).await?;
+                        std::result::Result::Ok(output_ok)
+                    })()
+                    .await,
+                )
+            }
+        },
+    )
+}
+fn wire__crate__api__editor__execute_script_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "execute_script",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_session_id = <u64>::sse_decode(&mut deserializer);
+            let api_sql = <String>::sse_decode(&mut deserializer);
+            let api_max_rows = <u64>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| async move {
+                transform_result_sse::<_, String>(
+                    (move || async move {
+                        let output_ok = crate::api::editor::execute_script(
+                            api_session_id,
+                            api_sql,
+                            api_max_rows,
+                        )
+                        .await?;
                         std::result::Result::Ok(output_ok)
                     })()
                     .await,
@@ -585,6 +776,46 @@ fn wire__crate__api__db__execute_view_impl(
                             api_max_rows,
                         )
                         .await?;
+                        std::result::Result::Ok(output_ok)
+                    })()
+                    .await,
+                )
+            }
+        },
+    )
+}
+fn wire__crate__api__editor__explain_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "explain",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_session_id = <u64>::sse_decode(&mut deserializer);
+            let api_sql = <String>::sse_decode(&mut deserializer);
+            let api_max_rows = <u64>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| async move {
+                transform_result_sse::<_, String>(
+                    (move || async move {
+                        let output_ok =
+                            crate::api::editor::explain(api_session_id, api_sql, api_max_rows)
+                                .await?;
                         std::result::Result::Ok(output_ok)
                     })()
                     .await,
@@ -771,6 +1002,39 @@ fn wire__crate__api__value__hex_dump_impl(
             move |context| {
                 transform_result_sse::<_, ()>((move || {
                     let output_ok = Ok::<_, ()>(crate::api::value::hex_dump(api_bytes, api_limit))?;
+                    std::result::Result::Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
+fn wire__crate__api__csv_import__import_status_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "import_status",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_job_id = <u64>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, String>((move || {
+                    let output_ok = crate::api::csv_import::import_status(api_job_id)?;
                     std::result::Result::Ok(output_ok)
                 })())
             }
@@ -1271,6 +1535,133 @@ fn wire__crate__api__db__paste_cells_impl(
         },
     )
 }
+fn wire__crate__api__csv_import__prepare_import_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "prepare_import",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_session_id = <u64>::sse_decode(&mut deserializer);
+            let api_database = <String>::sse_decode(&mut deserializer);
+            let api_table = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| async move {
+                transform_result_sse::<_, String>(
+                    (move || async move {
+                        let output_ok = crate::api::csv_import::prepare_import(
+                            api_session_id,
+                            api_database,
+                            api_table,
+                        )
+                        .await?;
+                        std::result::Result::Ok(output_ok)
+                    })()
+                    .await,
+                )
+            }
+        },
+    )
+}
+fn wire__crate__api__schema__preview_alter_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "preview_alter",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_session_id = <u64>::sse_decode(&mut deserializer);
+            let api_database = <String>::sse_decode(&mut deserializer);
+            let api_table = <String>::sse_decode(&mut deserializer);
+            let api_original = <crate::api::schema::TableStructure>::sse_decode(&mut deserializer);
+            let api_draft = <crate::api::schema::TableDraft>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| async move {
+                transform_result_sse::<_, String>(
+                    (move || async move {
+                        let output_ok = crate::api::schema::preview_alter(
+                            api_session_id,
+                            api_database,
+                            api_table,
+                            api_original,
+                            api_draft,
+                        )
+                        .await?;
+                        std::result::Result::Ok(output_ok)
+                    })()
+                    .await,
+                )
+            }
+        },
+    )
+}
+fn wire__crate__api__csv_import__preview_csv_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "preview_csv",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_path = <String>::sse_decode(&mut deserializer);
+            let api_options =
+                <crate::api::csv_import::ImportOptions>::sse_decode(&mut deserializer);
+            let api_limit = <u64>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, String>((move || {
+                    let output_ok =
+                        crate::api::csv_import::preview_csv(api_path, api_options, api_limit)?;
+                    std::result::Result::Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
 fn wire__crate__api__connections__save_connection_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
@@ -1335,6 +1726,41 @@ fn wire__crate__api__editor__save_favorite_impl(
             move |context| {
                 transform_result_sse::<_, String>((move || {
                     let output_ok = crate::api::editor::save_favorite(api_name, api_sql)?;
+                    std::result::Result::Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
+fn wire__crate__api__csv_import__save_import_errors_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "save_import_errors",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_job_id = <u64>::sse_decode(&mut deserializer);
+            let api_path = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, String>((move || {
+                    let output_ok =
+                        crate::api::csv_import::save_import_errors(api_job_id, api_path)?;
                     std::result::Result::Ok(output_ok)
                 })())
             }
@@ -1443,6 +1869,141 @@ fn wire__crate__api__connections__save_ssh_secret_impl(
                     std::result::Result::Ok(output_ok)
                 })())
             }
+        },
+    )
+}
+fn wire__crate__api__editor__split_statements_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "split_statements",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_sql = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            transform_result_sse::<_, String>((move || {
+                let output_ok = crate::api::editor::split_statements(api_sql)?;
+                std::result::Result::Ok(output_ok)
+            })())
+        },
+    )
+}
+fn wire__crate__api__csv_import__start_import_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "start_import",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_session_id = <u64>::sse_decode(&mut deserializer);
+            let api_request =
+                <crate::api::csv_import::ImportRequest>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| async move {
+                transform_result_sse::<_, String>(
+                    (move || async move {
+                        let output_ok =
+                            crate::api::csv_import::start_import(api_session_id, api_request)
+                                .await?;
+                        std::result::Result::Ok(output_ok)
+                    })()
+                    .await,
+                )
+            }
+        },
+    )
+}
+fn wire__crate__api__csv_import__suggest_mapping_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "suggest_mapping",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_header = <Vec<String>>::sse_decode(&mut deserializer);
+            let api_columns =
+                <Vec<crate::api::csv_import::TargetColumn>>::sse_decode(&mut deserializer);
+            deserializer.end();
+            transform_result_sse::<_, ()>((move || {
+                let output_ok = Ok::<_, ()>(crate::api::csv_import::suggest_mapping(
+                    api_header,
+                    api_columns,
+                ))?;
+                std::result::Result::Ok(output_ok)
+            })())
+        },
+    )
+}
+fn wire__crate__api__schema__table_draft_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "table_draft",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_structure = <crate::api::schema::TableStructure>::sse_decode(&mut deserializer);
+            deserializer.end();
+            transform_result_sse::<_, ()>((move || {
+                let output_ok = Ok::<_, ()>(crate::api::schema::table_draft(api_structure))?;
+                std::result::Result::Ok(output_ok)
+            })())
         },
     )
 }
@@ -1560,6 +2121,12 @@ fn wire__crate__api__options__trust_host_key_impl(
 
 #[allow(clippy::unnecessary_literal_unwrap)]
 const _: fn() = || {
+    {
+        let AlterPlan = None::<crate::api::schema::AlterPlan>.unwrap();
+        let _: Vec<String> = AlterPlan.statements;
+        let _: Vec<String> = AlterPlan.dangers;
+        let _: Vec<String> = AlterPlan.notes;
+    }
     match None::<crate::api::value::CellValue>.unwrap() {
         crate::api::value::CellValue::Null => {}
         crate::api::value::CellValue::Int(field0) => {
@@ -1590,6 +2157,19 @@ const _: fn() = || {
         let _: String = ColumnDef.extra;
         let _: String = ColumnDef.comment;
         let _: Option<String> = ColumnDef.collation;
+    }
+    {
+        let ColumnDraft = None::<crate::api::schema::ColumnDraft>.unwrap();
+        let _: Option<String> = ColumnDraft.original_name;
+        let _: String = ColumnDraft.name;
+        let _: String = ColumnDraft.column_type;
+        let _: bool = ColumnDraft.nullable;
+        let _: crate::api::schema::DefaultValue = ColumnDraft.default;
+        let _: bool = ColumnDraft.auto_increment;
+        let _: Option<String> = ColumnDraft.on_update;
+        let _: String = ColumnDraft.comment;
+        let _: Option<String> = ColumnDraft.collation;
+        let _: Option<String> = ColumnDraft.locked;
     }
     {
         let ColumnLayout = None::<crate::api::layouts::ColumnLayout>.unwrap();
@@ -1634,6 +2214,13 @@ const _: fn() = || {
         let _: crate::api::options::SslOptions = ConnectionOptions.ssl;
         let _: crate::api::options::TimeoutOptions = ConnectionOptions.timeouts;
         let _: crate::api::options::SshOptions = ConnectionOptions.ssh;
+    }
+    {
+        let CsvPreview = None::<crate::api::csv_import::CsvPreview>.unwrap();
+        let _: Vec<String> = CsvPreview.header;
+        let _: u64 = CsvPreview.column_count;
+        let _: Vec<crate::api::csv_import::PreviewRow> = CsvPreview.rows;
+        let _: Option<String> = CsvPreview.error;
     }
     match None::<crate::api::schema::DefaultValue>.unwrap() {
         crate::api::schema::DefaultValue::NoDefault => {}
@@ -1701,6 +2288,17 @@ const _: fn() = || {
         let _: String = ForeignKeyDef.on_delete;
     }
     {
+        let ForeignKeyDraft = None::<crate::api::schema::ForeignKeyDraft>.unwrap();
+        let _: Option<String> = ForeignKeyDraft.original_name;
+        let _: String = ForeignKeyDraft.name;
+        let _: Vec<String> = ForeignKeyDraft.columns;
+        let _: String = ForeignKeyDraft.referenced_schema;
+        let _: String = ForeignKeyDraft.referenced_table;
+        let _: Vec<String> = ForeignKeyDraft.referenced_columns;
+        let _: String = ForeignKeyDraft.on_update;
+        let _: String = ForeignKeyDraft.on_delete;
+    }
+    {
         let HistoryEntry = None::<crate::api::editor::HistoryEntry>.unwrap();
         let _: String = HistoryEntry.sql;
         let _: i64 = HistoryEntry.executed_at;
@@ -1714,18 +2312,94 @@ const _: fn() = || {
         let _: crate::api::options::HostKeyIssueKind = HostKeyIssue.kind;
     }
     {
+        let ImportOptions = None::<crate::api::csv_import::ImportOptions>.unwrap();
+        let _: crate::api::db::ExportEncoding = ImportOptions.encoding;
+        let _: String = ImportOptions.delimiter;
+        let _: bool = ImportOptions.header;
+        let _: String = ImportOptions.null_text;
+    }
+    match None::<crate::api::csv_import::ImportOutcome>.unwrap() {
+        crate::api::csv_import::ImportOutcome::Completed => {}
+        crate::api::csv_import::ImportOutcome::RolledBack => {}
+        crate::api::csv_import::ImportOutcome::Stopped(field0) => {
+            let _: String = field0;
+        }
+    }
+    {
+        let ImportProgress = None::<crate::api::csv_import::ImportProgress>.unwrap();
+        let _: u64 = ImportProgress.bytes_read;
+        let _: u64 = ImportProgress.total_bytes;
+        let _: u64 = ImportProgress.rows_read;
+        let _: u64 = ImportProgress.rows_inserted;
+        let _: u64 = ImportProgress.rows_failed;
+    }
+    {
+        let ImportReport = None::<crate::api::csv_import::ImportReport>.unwrap();
+        let _: crate::api::csv_import::ImportProgress = ImportReport.progress;
+        let _: crate::api::csv_import::ImportOutcome = ImportReport.outcome;
+        let _: Vec<crate::api::csv_import::RowError> = ImportReport.errors;
+    }
+    {
+        let ImportRequest = None::<crate::api::csv_import::ImportRequest>.unwrap();
+        let _: String = ImportRequest.path;
+        let _: crate::api::csv_import::ImportOptions = ImportRequest.options;
+        let _: String = ImportRequest.schema;
+        let _: String = ImportRequest.table;
+        let _: Vec<Option<u32>> = ImportRequest.mapping;
+        let _: u32 = ImportRequest.batch_rows;
+        let _: crate::api::csv_import::OnError = ImportRequest.on_error;
+    }
+    match None::<crate::api::csv_import::ImportStatus>.unwrap() {
+        crate::api::csv_import::ImportStatus::Running(field0) => {
+            let _: crate::api::csv_import::ImportProgress = field0;
+        }
+        crate::api::csv_import::ImportStatus::Finished(field0) => {
+            let _: crate::api::csv_import::ImportReport = field0;
+        }
+    }
+    {
+        let ImportTarget = None::<crate::api::csv_import::ImportTarget>.unwrap();
+        let _: String = ImportTarget.schema;
+        let _: String = ImportTarget.table;
+        let _: Vec<crate::api::csv_import::TargetColumn> = ImportTarget.columns;
+        let _: String = ImportTarget.sql_mode;
+        let _: bool = ImportTarget.strict;
+    }
+    {
         let IndexDef = None::<crate::api::schema::IndexDef>.unwrap();
         let _: String = IndexDef.name;
         let _: bool = IndexDef.unique;
         let _: Vec<String> = IndexDef.columns;
+        let _: Vec<crate::api::schema::IndexPart> = IndexDef.parts;
         let _: String = IndexDef.index_type;
         let _: String = IndexDef.comment;
+    }
+    {
+        let IndexDraft = None::<crate::api::schema::IndexDraft>.unwrap();
+        let _: Option<String> = IndexDraft.original_name;
+        let _: String = IndexDraft.name;
+        let _: crate::api::schema::IndexKind = IndexDraft.kind;
+        let _: Vec<crate::api::schema::IndexPart> = IndexDraft.parts;
+        let _: String = IndexDraft.comment;
+        let _: Option<String> = IndexDraft.locked;
+    }
+    {
+        let IndexPart = None::<crate::api::schema::IndexPart>.unwrap();
+        let _: Option<String> = IndexPart.column;
+        let _: Option<u32> = IndexPart.prefix;
+        let _: bool = IndexPart.descending;
     }
     {
         let Preferences = None::<crate::api::preferences::Preferences>.unwrap();
         let _: crate::api::preferences::ThemeMode = Preferences.theme;
         let _: u32 = Preferences.editor_font_size;
         let _: u64 = Preferences.max_rows;
+    }
+    {
+        let PreviewRow = None::<crate::api::csv_import::PreviewRow>.unwrap();
+        let _: u64 = PreviewRow.line;
+        let _: Vec<crate::api::value::DisplayCell> = PreviewRow.cells;
+        let _: Option<String> = PreviewRow.error;
     }
     {
         let QuerySummary = None::<crate::api::db::QuerySummary>.unwrap();
@@ -1736,6 +2410,11 @@ const _: fn() = || {
         let _: Option<String> = QuerySummary.layout_key;
     }
     {
+        let RowError = None::<crate::api::csv_import::RowError>.unwrap();
+        let _: u64 = RowError.line;
+        let _: String = RowError.reason;
+    }
+    {
         let SavedConnection = None::<crate::api::connections::SavedConnection>.unwrap();
         let _: String = SavedConnection.id;
         let _: String = SavedConnection.name;
@@ -1744,6 +2423,11 @@ const _: fn() = || {
         let _: String = SavedConnection.user;
         let _: Option<String> = SavedConnection.database;
         let _: crate::api::options::ConnectionOptions = SavedConnection.options;
+    }
+    {
+        let ScriptSummary = None::<crate::api::editor::ScriptSummary>.unwrap();
+        let _: Vec<crate::api::editor::StatementOutcome> = ScriptSummary.outcomes;
+        let _: Option<crate::api::editor::StatementFailure> = ScriptSummary.failure;
     }
     {
         let SqlToken = None::<crate::api::editor::SqlToken>.unwrap();
@@ -1777,6 +2461,25 @@ const _: fn() = || {
         let _: Option<String> = SslOptions.key_path;
     }
     {
+        let StatementFailure = None::<crate::api::editor::StatementFailure>.unwrap();
+        let _: u32 = StatementFailure.index;
+        let _: String = StatementFailure.sql;
+        let _: String = StatementFailure.message;
+    }
+    {
+        let StatementOutcome = None::<crate::api::editor::StatementOutcome>.unwrap();
+        let _: String = StatementOutcome.sql;
+        let _: Option<u64> = StatementOutcome.session_id;
+        let _: Option<crate::api::db::QuerySummary> = StatementOutcome.summary;
+        let _: u64 = StatementOutcome.affected_rows;
+    }
+    {
+        let TableDraft = None::<crate::api::schema::TableDraft>.unwrap();
+        let _: Vec<crate::api::schema::ColumnDraft> = TableDraft.columns;
+        let _: Vec<crate::api::schema::IndexDraft> = TableDraft.indexes;
+        let _: Vec<crate::api::schema::ForeignKeyDraft> = TableDraft.foreign_keys;
+    }
+    {
         let TableInfo = None::<crate::api::schema::TableInfo>.unwrap();
         let _: String = TableInfo.name;
         let _: u64 = TableInfo.estimated_rows;
@@ -1788,6 +2491,17 @@ const _: fn() = || {
         let _: Vec<crate::api::schema::IndexDef> = TableStructure.indexes;
         let _: Vec<crate::api::schema::ForeignKeyDef> = TableStructure.foreign_keys;
         let _: String = TableStructure.create_sql;
+        let _: Option<String> = TableStructure.table_collation;
+    }
+    {
+        let TargetColumn = None::<crate::api::csv_import::TargetColumn>.unwrap();
+        let _: String = TargetColumn.name;
+        let _: String = TargetColumn.column_type;
+        let _: bool = TargetColumn.nullable;
+        let _: bool = TargetColumn.auto_increment;
+        let _: bool = TargetColumn.is_binary;
+        let _: bool = TargetColumn.generated;
+        let _: bool = TargetColumn.mandatory;
     }
     {
         let TimeoutOptions = None::<crate::api::options::TimeoutOptions>.unwrap();
@@ -1803,6 +2517,20 @@ impl SseDecode for String {
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         let mut inner = <Vec<u8>>::sse_decode(deserializer);
         return String::from_utf8(inner).unwrap();
+    }
+}
+
+impl SseDecode for crate::api::schema::AlterPlan {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_statements = <Vec<String>>::sse_decode(deserializer);
+        let mut var_dangers = <Vec<String>>::sse_decode(deserializer);
+        let mut var_notes = <Vec<String>>::sse_decode(deserializer);
+        return crate::api::schema::AlterPlan {
+            statements: var_statements,
+            dangers: var_dangers,
+            notes: var_notes,
+        };
     }
 }
 
@@ -1870,6 +2598,34 @@ impl SseDecode for crate::api::schema::ColumnDef {
             extra: var_extra,
             comment: var_comment,
             collation: var_collation,
+        };
+    }
+}
+
+impl SseDecode for crate::api::schema::ColumnDraft {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_originalName = <Option<String>>::sse_decode(deserializer);
+        let mut var_name = <String>::sse_decode(deserializer);
+        let mut var_columnType = <String>::sse_decode(deserializer);
+        let mut var_nullable = <bool>::sse_decode(deserializer);
+        let mut var_default_ = <crate::api::schema::DefaultValue>::sse_decode(deserializer);
+        let mut var_autoIncrement = <bool>::sse_decode(deserializer);
+        let mut var_onUpdate = <Option<String>>::sse_decode(deserializer);
+        let mut var_comment = <String>::sse_decode(deserializer);
+        let mut var_collation = <Option<String>>::sse_decode(deserializer);
+        let mut var_locked = <Option<String>>::sse_decode(deserializer);
+        return crate::api::schema::ColumnDraft {
+            original_name: var_originalName,
+            name: var_name,
+            column_type: var_columnType,
+            nullable: var_nullable,
+            default: var_default_,
+            auto_increment: var_autoIncrement,
+            on_update: var_onUpdate,
+            comment: var_comment,
+            collation: var_collation,
+            locked: var_locked,
         };
     }
 }
@@ -2003,6 +2759,22 @@ impl SseDecode for crate::api::options::ConnectionOptions {
             ssl: var_ssl,
             timeouts: var_timeouts,
             ssh: var_ssh,
+        };
+    }
+}
+
+impl SseDecode for crate::api::csv_import::CsvPreview {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_header = <Vec<String>>::sse_decode(deserializer);
+        let mut var_columnCount = <u64>::sse_decode(deserializer);
+        let mut var_rows = <Vec<crate::api::csv_import::PreviewRow>>::sse_decode(deserializer);
+        let mut var_error = <Option<String>>::sse_decode(deserializer);
+        return crate::api::csv_import::CsvPreview {
+            header: var_header,
+            column_count: var_columnCount,
+            rows: var_rows,
+            error: var_error,
         };
     }
 }
@@ -2215,6 +2987,30 @@ impl SseDecode for crate::api::schema::ForeignKeyDef {
     }
 }
 
+impl SseDecode for crate::api::schema::ForeignKeyDraft {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_originalName = <Option<String>>::sse_decode(deserializer);
+        let mut var_name = <String>::sse_decode(deserializer);
+        let mut var_columns = <Vec<String>>::sse_decode(deserializer);
+        let mut var_referencedSchema = <String>::sse_decode(deserializer);
+        let mut var_referencedTable = <String>::sse_decode(deserializer);
+        let mut var_referencedColumns = <Vec<String>>::sse_decode(deserializer);
+        let mut var_onUpdate = <String>::sse_decode(deserializer);
+        let mut var_onDelete = <String>::sse_decode(deserializer);
+        return crate::api::schema::ForeignKeyDraft {
+            original_name: var_originalName,
+            name: var_name,
+            columns: var_columns,
+            referenced_schema: var_referencedSchema,
+            referenced_table: var_referencedTable,
+            referenced_columns: var_referencedColumns,
+            on_update: var_onUpdate,
+            on_delete: var_onDelete,
+        };
+    }
+}
+
 impl SseDecode for crate::api::editor::HistoryEntry {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -2271,20 +3067,203 @@ impl SseDecode for i64 {
     }
 }
 
+impl SseDecode for crate::api::csv_import::ImportOptions {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_encoding = <crate::api::db::ExportEncoding>::sse_decode(deserializer);
+        let mut var_delimiter = <String>::sse_decode(deserializer);
+        let mut var_header = <bool>::sse_decode(deserializer);
+        let mut var_nullText = <String>::sse_decode(deserializer);
+        return crate::api::csv_import::ImportOptions {
+            encoding: var_encoding,
+            delimiter: var_delimiter,
+            header: var_header,
+            null_text: var_nullText,
+        };
+    }
+}
+
+impl SseDecode for crate::api::csv_import::ImportOutcome {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut tag_ = <i32>::sse_decode(deserializer);
+        match tag_ {
+            0 => {
+                return crate::api::csv_import::ImportOutcome::Completed;
+            }
+            1 => {
+                return crate::api::csv_import::ImportOutcome::RolledBack;
+            }
+            2 => {
+                let mut var_field0 = <String>::sse_decode(deserializer);
+                return crate::api::csv_import::ImportOutcome::Stopped(var_field0);
+            }
+            _ => {
+                unimplemented!("");
+            }
+        }
+    }
+}
+
+impl SseDecode for crate::api::csv_import::ImportProgress {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_bytesRead = <u64>::sse_decode(deserializer);
+        let mut var_totalBytes = <u64>::sse_decode(deserializer);
+        let mut var_rowsRead = <u64>::sse_decode(deserializer);
+        let mut var_rowsInserted = <u64>::sse_decode(deserializer);
+        let mut var_rowsFailed = <u64>::sse_decode(deserializer);
+        return crate::api::csv_import::ImportProgress {
+            bytes_read: var_bytesRead,
+            total_bytes: var_totalBytes,
+            rows_read: var_rowsRead,
+            rows_inserted: var_rowsInserted,
+            rows_failed: var_rowsFailed,
+        };
+    }
+}
+
+impl SseDecode for crate::api::csv_import::ImportReport {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_progress = <crate::api::csv_import::ImportProgress>::sse_decode(deserializer);
+        let mut var_outcome = <crate::api::csv_import::ImportOutcome>::sse_decode(deserializer);
+        let mut var_errors = <Vec<crate::api::csv_import::RowError>>::sse_decode(deserializer);
+        return crate::api::csv_import::ImportReport {
+            progress: var_progress,
+            outcome: var_outcome,
+            errors: var_errors,
+        };
+    }
+}
+
+impl SseDecode for crate::api::csv_import::ImportRequest {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_path = <String>::sse_decode(deserializer);
+        let mut var_options = <crate::api::csv_import::ImportOptions>::sse_decode(deserializer);
+        let mut var_schema = <String>::sse_decode(deserializer);
+        let mut var_table = <String>::sse_decode(deserializer);
+        let mut var_mapping = <Vec<Option<u32>>>::sse_decode(deserializer);
+        let mut var_batchRows = <u32>::sse_decode(deserializer);
+        let mut var_onError = <crate::api::csv_import::OnError>::sse_decode(deserializer);
+        return crate::api::csv_import::ImportRequest {
+            path: var_path,
+            options: var_options,
+            schema: var_schema,
+            table: var_table,
+            mapping: var_mapping,
+            batch_rows: var_batchRows,
+            on_error: var_onError,
+        };
+    }
+}
+
+impl SseDecode for crate::api::csv_import::ImportStatus {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut tag_ = <i32>::sse_decode(deserializer);
+        match tag_ {
+            0 => {
+                let mut var_field0 =
+                    <crate::api::csv_import::ImportProgress>::sse_decode(deserializer);
+                return crate::api::csv_import::ImportStatus::Running(var_field0);
+            }
+            1 => {
+                let mut var_field0 =
+                    <crate::api::csv_import::ImportReport>::sse_decode(deserializer);
+                return crate::api::csv_import::ImportStatus::Finished(var_field0);
+            }
+            _ => {
+                unimplemented!("");
+            }
+        }
+    }
+}
+
+impl SseDecode for crate::api::csv_import::ImportTarget {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_schema = <String>::sse_decode(deserializer);
+        let mut var_table = <String>::sse_decode(deserializer);
+        let mut var_columns = <Vec<crate::api::csv_import::TargetColumn>>::sse_decode(deserializer);
+        let mut var_sqlMode = <String>::sse_decode(deserializer);
+        let mut var_strict = <bool>::sse_decode(deserializer);
+        return crate::api::csv_import::ImportTarget {
+            schema: var_schema,
+            table: var_table,
+            columns: var_columns,
+            sql_mode: var_sqlMode,
+            strict: var_strict,
+        };
+    }
+}
+
 impl SseDecode for crate::api::schema::IndexDef {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         let mut var_name = <String>::sse_decode(deserializer);
         let mut var_unique = <bool>::sse_decode(deserializer);
         let mut var_columns = <Vec<String>>::sse_decode(deserializer);
+        let mut var_parts = <Vec<crate::api::schema::IndexPart>>::sse_decode(deserializer);
         let mut var_indexType = <String>::sse_decode(deserializer);
         let mut var_comment = <String>::sse_decode(deserializer);
         return crate::api::schema::IndexDef {
             name: var_name,
             unique: var_unique,
             columns: var_columns,
+            parts: var_parts,
             index_type: var_indexType,
             comment: var_comment,
+        };
+    }
+}
+
+impl SseDecode for crate::api::schema::IndexDraft {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_originalName = <Option<String>>::sse_decode(deserializer);
+        let mut var_name = <String>::sse_decode(deserializer);
+        let mut var_kind = <crate::api::schema::IndexKind>::sse_decode(deserializer);
+        let mut var_parts = <Vec<crate::api::schema::IndexPart>>::sse_decode(deserializer);
+        let mut var_comment = <String>::sse_decode(deserializer);
+        let mut var_locked = <Option<String>>::sse_decode(deserializer);
+        return crate::api::schema::IndexDraft {
+            original_name: var_originalName,
+            name: var_name,
+            kind: var_kind,
+            parts: var_parts,
+            comment: var_comment,
+            locked: var_locked,
+        };
+    }
+}
+
+impl SseDecode for crate::api::schema::IndexKind {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut inner = <i32>::sse_decode(deserializer);
+        return match inner {
+            0 => crate::api::schema::IndexKind::Primary,
+            1 => crate::api::schema::IndexKind::Unique,
+            2 => crate::api::schema::IndexKind::Normal,
+            3 => crate::api::schema::IndexKind::Fulltext,
+            4 => crate::api::schema::IndexKind::Spatial,
+            _ => unreachable!("Invalid variant for IndexKind: {}", inner),
+        };
+    }
+}
+
+impl SseDecode for crate::api::schema::IndexPart {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_column = <Option<String>>::sse_decode(deserializer);
+        let mut var_prefix = <Option<u32>>::sse_decode(deserializer);
+        let mut var_descending = <bool>::sse_decode(deserializer);
+        return crate::api::schema::IndexPart {
+            column: var_column,
+            prefix: var_prefix,
+            descending: var_descending,
         };
     }
 }
@@ -2320,6 +3299,18 @@ impl SseDecode for Vec<crate::api::schema::ColumnDef> {
         let mut ans_ = Vec::with_capacity(len_ as usize);
         for idx_ in 0..len_ {
             ans_.push(<crate::api::schema::ColumnDef>::sse_decode(deserializer));
+        }
+        return ans_;
+    }
+}
+
+impl SseDecode for Vec<crate::api::schema::ColumnDraft> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<crate::api::schema::ColumnDraft>::sse_decode(deserializer));
         }
         return ans_;
     }
@@ -2415,6 +3406,20 @@ impl SseDecode for Vec<crate::api::schema::ForeignKeyDef> {
     }
 }
 
+impl SseDecode for Vec<crate::api::schema::ForeignKeyDraft> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<crate::api::schema::ForeignKeyDraft>::sse_decode(
+                deserializer,
+            ));
+        }
+        return ans_;
+    }
+}
+
 impl SseDecode for Vec<crate::api::editor::HistoryEntry> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -2434,6 +3439,30 @@ impl SseDecode for Vec<crate::api::schema::IndexDef> {
         let mut ans_ = Vec::with_capacity(len_ as usize);
         for idx_ in 0..len_ {
             ans_.push(<crate::api::schema::IndexDef>::sse_decode(deserializer));
+        }
+        return ans_;
+    }
+}
+
+impl SseDecode for Vec<crate::api::schema::IndexDraft> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<crate::api::schema::IndexDraft>::sse_decode(deserializer));
+        }
+        return ans_;
+    }
+}
+
+impl SseDecode for Vec<crate::api::schema::IndexPart> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<crate::api::schema::IndexPart>::sse_decode(deserializer));
         }
         return ans_;
     }
@@ -2493,6 +3522,32 @@ impl SseDecode for Vec<Option<crate::api::value::CellValue>> {
     }
 }
 
+impl SseDecode for Vec<Option<u32>> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<Option<u32>>::sse_decode(deserializer));
+        }
+        return ans_;
+    }
+}
+
+impl SseDecode for Vec<crate::api::csv_import::PreviewRow> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<crate::api::csv_import::PreviewRow>::sse_decode(
+                deserializer,
+            ));
+        }
+        return ans_;
+    }
+}
+
 impl SseDecode for Vec<u64> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -2524,6 +3579,18 @@ impl SseDecode for Vec<usize> {
         let mut ans_ = Vec::with_capacity(len_ as usize);
         for idx_ in 0..len_ {
             ans_.push(<usize>::sse_decode(deserializer));
+        }
+        return ans_;
+    }
+}
+
+impl SseDecode for Vec<crate::api::csv_import::RowError> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<crate::api::csv_import::RowError>::sse_decode(deserializer));
         }
         return ans_;
     }
@@ -2567,6 +3634,20 @@ impl SseDecode for Vec<crate::api::options::SshHop> {
     }
 }
 
+impl SseDecode for Vec<crate::api::editor::StatementOutcome> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<crate::api::editor::StatementOutcome>::sse_decode(
+                deserializer,
+            ));
+        }
+        return ans_;
+    }
+}
+
 impl SseDecode for Vec<crate::api::schema::TableInfo> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -2576,6 +3657,32 @@ impl SseDecode for Vec<crate::api::schema::TableInfo> {
             ans_.push(<crate::api::schema::TableInfo>::sse_decode(deserializer));
         }
         return ans_;
+    }
+}
+
+impl SseDecode for Vec<crate::api::csv_import::TargetColumn> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<crate::api::csv_import::TargetColumn>::sse_decode(
+                deserializer,
+            ));
+        }
+        return ans_;
+    }
+}
+
+impl SseDecode for crate::api::csv_import::OnError {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut inner = <i32>::sse_decode(deserializer);
+        return match inner {
+            0 => crate::api::csv_import::OnError::RollbackAll,
+            1 => crate::api::csv_import::OnError::SkipRow,
+            _ => unreachable!("Invalid variant for OnError: {}", inner),
+        };
     }
 }
 
@@ -2626,6 +3733,30 @@ impl SseDecode for Option<crate::api::options::HostKeyIssue> {
     }
 }
 
+impl SseDecode for Option<crate::api::db::QuerySummary> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        if (<bool>::sse_decode(deserializer)) {
+            return Some(<crate::api::db::QuerySummary>::sse_decode(deserializer));
+        } else {
+            return None;
+        }
+    }
+}
+
+impl SseDecode for Option<crate::api::editor::StatementFailure> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        if (<bool>::sse_decode(deserializer)) {
+            return Some(<crate::api::editor::StatementFailure>::sse_decode(
+                deserializer,
+            ));
+        } else {
+            return None;
+        }
+    }
+}
+
 impl SseDecode for Option<u32> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -2662,6 +3793,20 @@ impl SseDecode for crate::api::preferences::Preferences {
     }
 }
 
+impl SseDecode for crate::api::csv_import::PreviewRow {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_line = <u64>::sse_decode(deserializer);
+        let mut var_cells = <Vec<crate::api::value::DisplayCell>>::sse_decode(deserializer);
+        let mut var_error = <Option<String>>::sse_decode(deserializer);
+        return crate::api::csv_import::PreviewRow {
+            line: var_line,
+            cells: var_cells,
+            error: var_error,
+        };
+    }
+}
+
 impl SseDecode for crate::api::db::QuerySummary {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -2676,6 +3821,18 @@ impl SseDecode for crate::api::db::QuerySummary {
             truncated: var_truncated,
             editability: var_editability,
             layout_key: var_layoutKey,
+        };
+    }
+}
+
+impl SseDecode for crate::api::csv_import::RowError {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_line = <u64>::sse_decode(deserializer);
+        let mut var_reason = <String>::sse_decode(deserializer);
+        return crate::api::csv_import::RowError {
+            line: var_line,
+            reason: var_reason,
         };
     }
 }
@@ -2698,6 +3855,20 @@ impl SseDecode for crate::api::connections::SavedConnection {
             user: var_user,
             database: var_database,
             options: var_options,
+        };
+    }
+}
+
+impl SseDecode for crate::api::editor::ScriptSummary {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_outcomes =
+            <Vec<crate::api::editor::StatementOutcome>>::sse_decode(deserializer);
+        let mut var_failure =
+            <Option<crate::api::editor::StatementFailure>>::sse_decode(deserializer);
+        return crate::api::editor::ScriptSummary {
+            outcomes: var_outcomes,
+            failure: var_failure,
         };
     }
 }
@@ -2810,6 +3981,51 @@ impl SseDecode for crate::api::options::SslOptions {
     }
 }
 
+impl SseDecode for crate::api::editor::StatementFailure {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_index = <u32>::sse_decode(deserializer);
+        let mut var_sql = <String>::sse_decode(deserializer);
+        let mut var_message = <String>::sse_decode(deserializer);
+        return crate::api::editor::StatementFailure {
+            index: var_index,
+            sql: var_sql,
+            message: var_message,
+        };
+    }
+}
+
+impl SseDecode for crate::api::editor::StatementOutcome {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_sql = <String>::sse_decode(deserializer);
+        let mut var_sessionId = <Option<u64>>::sse_decode(deserializer);
+        let mut var_summary = <Option<crate::api::db::QuerySummary>>::sse_decode(deserializer);
+        let mut var_affectedRows = <u64>::sse_decode(deserializer);
+        return crate::api::editor::StatementOutcome {
+            sql: var_sql,
+            session_id: var_sessionId,
+            summary: var_summary,
+            affected_rows: var_affectedRows,
+        };
+    }
+}
+
+impl SseDecode for crate::api::schema::TableDraft {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_columns = <Vec<crate::api::schema::ColumnDraft>>::sse_decode(deserializer);
+        let mut var_indexes = <Vec<crate::api::schema::IndexDraft>>::sse_decode(deserializer);
+        let mut var_foreignKeys =
+            <Vec<crate::api::schema::ForeignKeyDraft>>::sse_decode(deserializer);
+        return crate::api::schema::TableDraft {
+            columns: var_columns,
+            indexes: var_indexes,
+            foreign_keys: var_foreignKeys,
+        };
+    }
+}
+
 impl SseDecode for crate::api::schema::TableInfo {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -2832,11 +4048,35 @@ impl SseDecode for crate::api::schema::TableStructure {
         let mut var_foreignKeys =
             <Vec<crate::api::schema::ForeignKeyDef>>::sse_decode(deserializer);
         let mut var_createSql = <String>::sse_decode(deserializer);
+        let mut var_tableCollation = <Option<String>>::sse_decode(deserializer);
         return crate::api::schema::TableStructure {
             columns: var_columns,
             indexes: var_indexes,
             foreign_keys: var_foreignKeys,
             create_sql: var_createSql,
+            table_collation: var_tableCollation,
+        };
+    }
+}
+
+impl SseDecode for crate::api::csv_import::TargetColumn {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_name = <String>::sse_decode(deserializer);
+        let mut var_columnType = <String>::sse_decode(deserializer);
+        let mut var_nullable = <bool>::sse_decode(deserializer);
+        let mut var_autoIncrement = <bool>::sse_decode(deserializer);
+        let mut var_isBinary = <bool>::sse_decode(deserializer);
+        let mut var_generated = <bool>::sse_decode(deserializer);
+        let mut var_mandatory = <bool>::sse_decode(deserializer);
+        return crate::api::csv_import::TargetColumn {
+            name: var_name,
+            column_type: var_columnType,
+            nullable: var_nullable,
+            auto_increment: var_autoIncrement,
+            is_binary: var_isBinary,
+            generated: var_generated,
+            mandatory: var_mandatory,
         };
     }
 }
@@ -2916,55 +4156,69 @@ fn pde_ffi_dispatcher_primary_impl(
     // Codec=Pde (Serialization + dispatch), see doc to use other codecs
     match func_id {
         1 => wire__crate__api__editor__add_history_impl(port, ptr, rust_vec_len, data_len),
-        2 => wire__crate__api__db__apply_edit_impl(port, ptr, rust_vec_len, data_len),
-        3 => wire__crate__api__schema__browse_sql_impl(port, ptr, rust_vec_len, data_len),
-        4 => wire__crate__api__db__close_session_impl(port, ptr, rust_vec_len, data_len),
-        5 => wire__crate__api__db__column_choices_impl(port, ptr, rust_vec_len, data_len),
-        7 => wire__crate__api__db__copy_range_impl(port, ptr, rust_vec_len, data_len),
-        10 => {
+        2 => wire__crate__api__schema__apply_alter_impl(port, ptr, rust_vec_len, data_len),
+        3 => wire__crate__api__db__apply_edit_impl(port, ptr, rust_vec_len, data_len),
+        4 => wire__crate__api__schema__browse_sql_impl(port, ptr, rust_vec_len, data_len),
+        5 => wire__crate__api__csv_import__cancel_import_impl(port, ptr, rust_vec_len, data_len),
+        6 => wire__crate__api__csv_import__close_import_impl(port, ptr, rust_vec_len, data_len),
+        7 => wire__crate__api__db__close_session_impl(port, ptr, rust_vec_len, data_len),
+        8 => wire__crate__api__db__column_choices_impl(port, ptr, rust_vec_len, data_len),
+        10 => wire__crate__api__db__copy_range_impl(port, ptr, rust_vec_len, data_len),
+        13 => {
             wire__crate__api__connections__delete_connection_impl(port, ptr, rust_vec_len, data_len)
         }
-        11 => wire__crate__api__editor__delete_favorite_impl(port, ptr, rust_vec_len, data_len),
-        12 => wire__crate__api__db__delete_rows_impl(port, ptr, rust_vec_len, data_len),
-        13 => wire__crate__api__value__display_text_impl(port, ptr, rust_vec_len, data_len),
-        14 => wire__crate__api__db__execute_impl(port, ptr, rust_vec_len, data_len),
-        15 => wire__crate__api__db__execute_view_impl(port, ptr, rust_vec_len, data_len),
-        16 => wire__crate__api__db__export_rows_impl(port, ptr, rust_vec_len, data_len),
-        17 => wire__crate__api__db__fetch_window_impl(port, ptr, rust_vec_len, data_len),
-        18 => wire__crate__api__db__fetch_window_text_impl(port, ptr, rust_vec_len, data_len),
-        19 => wire__crate__api__value__format_json_impl(port, ptr, rust_vec_len, data_len),
-        20 => wire__crate__api__value__hex_dump_impl(port, ptr, rust_vec_len, data_len),
-        21 => wire__crate__api__init_app_impl(port, ptr, rust_vec_len, data_len),
-        22 => wire__crate__api__db__insert_row_impl(port, ptr, rust_vec_len, data_len),
-        23 => {
+        14 => wire__crate__api__editor__delete_favorite_impl(port, ptr, rust_vec_len, data_len),
+        15 => wire__crate__api__db__delete_rows_impl(port, ptr, rust_vec_len, data_len),
+        16 => wire__crate__api__value__display_text_impl(port, ptr, rust_vec_len, data_len),
+        17 => wire__crate__api__editor__drop_child_results_impl(port, ptr, rust_vec_len, data_len),
+        18 => wire__crate__api__db__execute_impl(port, ptr, rust_vec_len, data_len),
+        19 => wire__crate__api__editor__execute_script_impl(port, ptr, rust_vec_len, data_len),
+        20 => wire__crate__api__db__execute_view_impl(port, ptr, rust_vec_len, data_len),
+        21 => wire__crate__api__editor__explain_impl(port, ptr, rust_vec_len, data_len),
+        22 => wire__crate__api__db__export_rows_impl(port, ptr, rust_vec_len, data_len),
+        23 => wire__crate__api__db__fetch_window_impl(port, ptr, rust_vec_len, data_len),
+        24 => wire__crate__api__db__fetch_window_text_impl(port, ptr, rust_vec_len, data_len),
+        25 => wire__crate__api__value__format_json_impl(port, ptr, rust_vec_len, data_len),
+        26 => wire__crate__api__value__hex_dump_impl(port, ptr, rust_vec_len, data_len),
+        27 => wire__crate__api__csv_import__import_status_impl(port, ptr, rust_vec_len, data_len),
+        28 => wire__crate__api__init_app_impl(port, ptr, rust_vec_len, data_len),
+        29 => wire__crate__api__db__insert_row_impl(port, ptr, rust_vec_len, data_len),
+        30 => {
             wire__crate__api__connections__list_connections_impl(port, ptr, rust_vec_len, data_len)
         }
-        24 => wire__crate__api__schema__list_databases_impl(port, ptr, rust_vec_len, data_len),
-        25 => wire__crate__api__editor__list_favorites_impl(port, ptr, rust_vec_len, data_len),
-        26 => wire__crate__api__editor__list_history_impl(port, ptr, rust_vec_len, data_len),
-        27 => wire__crate__api__schema__list_tables_impl(port, ptr, rust_vec_len, data_len),
-        28 => wire__crate__api__editor__load_catalog_impl(port, ptr, rust_vec_len, data_len),
-        29 => wire__crate__api__layouts__load_layout_impl(port, ptr, rust_vec_len, data_len),
-        30 => wire__crate__api__connections__load_password_impl(port, ptr, rust_vec_len, data_len),
-        31 => {
+        31 => wire__crate__api__schema__list_databases_impl(port, ptr, rust_vec_len, data_len),
+        32 => wire__crate__api__editor__list_favorites_impl(port, ptr, rust_vec_len, data_len),
+        33 => wire__crate__api__editor__list_history_impl(port, ptr, rust_vec_len, data_len),
+        34 => wire__crate__api__schema__list_tables_impl(port, ptr, rust_vec_len, data_len),
+        35 => wire__crate__api__editor__load_catalog_impl(port, ptr, rust_vec_len, data_len),
+        36 => wire__crate__api__layouts__load_layout_impl(port, ptr, rust_vec_len, data_len),
+        37 => wire__crate__api__connections__load_password_impl(port, ptr, rust_vec_len, data_len),
+        38 => {
             wire__crate__api__preferences__load_preferences_impl(port, ptr, rust_vec_len, data_len)
         }
-        32 => wire__crate__api__db__open_session_impl(port, ptr, rust_vec_len, data_len),
-        33 => wire__crate__api__db__parse_clipboard_impl(port, ptr, rust_vec_len, data_len),
-        34 => wire__crate__api__db__paste_cells_impl(port, ptr, rust_vec_len, data_len),
-        35 => {
+        39 => wire__crate__api__db__open_session_impl(port, ptr, rust_vec_len, data_len),
+        40 => wire__crate__api__db__parse_clipboard_impl(port, ptr, rust_vec_len, data_len),
+        41 => wire__crate__api__db__paste_cells_impl(port, ptr, rust_vec_len, data_len),
+        42 => wire__crate__api__csv_import__prepare_import_impl(port, ptr, rust_vec_len, data_len),
+        43 => wire__crate__api__schema__preview_alter_impl(port, ptr, rust_vec_len, data_len),
+        44 => wire__crate__api__csv_import__preview_csv_impl(port, ptr, rust_vec_len, data_len),
+        45 => {
             wire__crate__api__connections__save_connection_impl(port, ptr, rust_vec_len, data_len)
         }
-        36 => wire__crate__api__editor__save_favorite_impl(port, ptr, rust_vec_len, data_len),
-        37 => wire__crate__api__layouts__save_layout_impl(port, ptr, rust_vec_len, data_len),
-        38 => {
+        46 => wire__crate__api__editor__save_favorite_impl(port, ptr, rust_vec_len, data_len),
+        47 => {
+            wire__crate__api__csv_import__save_import_errors_impl(port, ptr, rust_vec_len, data_len)
+        }
+        48 => wire__crate__api__layouts__save_layout_impl(port, ptr, rust_vec_len, data_len),
+        49 => {
             wire__crate__api__preferences__save_preferences_impl(port, ptr, rust_vec_len, data_len)
         }
-        39 => {
+        50 => {
             wire__crate__api__connections__save_ssh_secret_impl(port, ptr, rust_vec_len, data_len)
         }
-        40 => wire__crate__api__schema__table_structure_impl(port, ptr, rust_vec_len, data_len),
-        42 => wire__crate__api__options__trust_host_key_impl(port, ptr, rust_vec_len, data_len),
+        52 => wire__crate__api__csv_import__start_import_impl(port, ptr, rust_vec_len, data_len),
+        55 => wire__crate__api__schema__table_structure_impl(port, ptr, rust_vec_len, data_len),
+        57 => wire__crate__api__options__trust_host_key_impl(port, ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -2977,18 +4231,43 @@ fn pde_ffi_dispatcher_sync_impl(
 ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
     // Codec=Pde (Serialization + dispatch), see doc to use other codecs
     match func_id {
-        6 => wire__crate__api__editor__complete_sql_impl(ptr, rust_vec_len, data_len),
-        8 => {
+        9 => wire__crate__api__editor__complete_sql_impl(ptr, rust_vec_len, data_len),
+        11 => {
             wire__crate__api__options__default_connection_options_impl(ptr, rust_vec_len, data_len)
         }
-        9 => wire__crate__api__preferences__default_preferences_impl(ptr, rust_vec_len, data_len),
-        41 => wire__crate__api__editor__tokenize_sql_impl(ptr, rust_vec_len, data_len),
+        12 => wire__crate__api__preferences__default_preferences_impl(ptr, rust_vec_len, data_len),
+        51 => wire__crate__api__editor__split_statements_impl(ptr, rust_vec_len, data_len),
+        53 => wire__crate__api__csv_import__suggest_mapping_impl(ptr, rust_vec_len, data_len),
+        54 => wire__crate__api__schema__table_draft_impl(ptr, rust_vec_len, data_len),
+        56 => wire__crate__api__editor__tokenize_sql_impl(ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
 
 // Section: rust2dart
 
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::schema::AlterPlan> {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.0.statements.into_into_dart().into_dart(),
+            self.0.dangers.into_into_dart().into_dart(),
+            self.0.notes.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for FrbWrapper<crate::api::schema::AlterPlan>
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<crate::api::schema::AlterPlan>>
+    for crate::api::schema::AlterPlan
+{
+    fn into_into_dart(self) -> FrbWrapper<crate::api::schema::AlterPlan> {
+        self.into()
+    }
+}
 // Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::value::CellValue> {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
@@ -3052,6 +4331,35 @@ impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<crate::api::schema::ColumnDef>
     for crate::api::schema::ColumnDef
 {
     fn into_into_dart(self) -> FrbWrapper<crate::api::schema::ColumnDef> {
+        self.into()
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::schema::ColumnDraft> {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.0.original_name.into_into_dart().into_dart(),
+            self.0.name.into_into_dart().into_dart(),
+            self.0.column_type.into_into_dart().into_dart(),
+            self.0.nullable.into_into_dart().into_dart(),
+            self.0.default.into_into_dart().into_dart(),
+            self.0.auto_increment.into_into_dart().into_dart(),
+            self.0.on_update.into_into_dart().into_dart(),
+            self.0.comment.into_into_dart().into_dart(),
+            self.0.collation.into_into_dart().into_dart(),
+            self.0.locked.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for FrbWrapper<crate::api::schema::ColumnDraft>
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<crate::api::schema::ColumnDraft>>
+    for crate::api::schema::ColumnDraft
+{
+    fn into_into_dart(self) -> FrbWrapper<crate::api::schema::ColumnDraft> {
         self.into()
     }
 }
@@ -3243,6 +4551,29 @@ impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<crate::api::options::Connectio
     for crate::api::options::ConnectionOptions
 {
     fn into_into_dart(self) -> FrbWrapper<crate::api::options::ConnectionOptions> {
+        self.into()
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::csv_import::CsvPreview> {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.0.header.into_into_dart().into_dart(),
+            self.0.column_count.into_into_dart().into_dart(),
+            self.0.rows.into_into_dart().into_dart(),
+            self.0.error.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for FrbWrapper<crate::api::csv_import::CsvPreview>
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<crate::api::csv_import::CsvPreview>>
+    for crate::api::csv_import::CsvPreview
+{
+    fn into_into_dart(self) -> FrbWrapper<crate::api::csv_import::CsvPreview> {
         self.into()
     }
 }
@@ -3536,6 +4867,33 @@ impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<crate::api::schema::ForeignKey
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::schema::ForeignKeyDraft> {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.0.original_name.into_into_dart().into_dart(),
+            self.0.name.into_into_dart().into_dart(),
+            self.0.columns.into_into_dart().into_dart(),
+            self.0.referenced_schema.into_into_dart().into_dart(),
+            self.0.referenced_table.into_into_dart().into_dart(),
+            self.0.referenced_columns.into_into_dart().into_dart(),
+            self.0.on_update.into_into_dart().into_dart(),
+            self.0.on_delete.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for FrbWrapper<crate::api::schema::ForeignKeyDraft>
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<crate::api::schema::ForeignKeyDraft>>
+    for crate::api::schema::ForeignKeyDraft
+{
+    fn into_into_dart(self) -> FrbWrapper<crate::api::schema::ForeignKeyDraft> {
+        self.into()
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::editor::HistoryEntry> {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
@@ -3602,12 +4960,185 @@ impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<crate::api::options::HostKeyIs
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::csv_import::ImportOptions> {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.0.encoding.into_into_dart().into_dart(),
+            self.0.delimiter.into_into_dart().into_dart(),
+            self.0.header.into_into_dart().into_dart(),
+            self.0.null_text.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for FrbWrapper<crate::api::csv_import::ImportOptions>
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<crate::api::csv_import::ImportOptions>>
+    for crate::api::csv_import::ImportOptions
+{
+    fn into_into_dart(self) -> FrbWrapper<crate::api::csv_import::ImportOptions> {
+        self.into()
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::csv_import::ImportOutcome> {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        match self.0 {
+            crate::api::csv_import::ImportOutcome::Completed => [0.into_dart()].into_dart(),
+            crate::api::csv_import::ImportOutcome::RolledBack => [1.into_dart()].into_dart(),
+            crate::api::csv_import::ImportOutcome::Stopped(field0) => {
+                [2.into_dart(), field0.into_into_dart().into_dart()].into_dart()
+            }
+            _ => {
+                unimplemented!("");
+            }
+        }
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for FrbWrapper<crate::api::csv_import::ImportOutcome>
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<crate::api::csv_import::ImportOutcome>>
+    for crate::api::csv_import::ImportOutcome
+{
+    fn into_into_dart(self) -> FrbWrapper<crate::api::csv_import::ImportOutcome> {
+        self.into()
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::csv_import::ImportProgress> {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.0.bytes_read.into_into_dart().into_dart(),
+            self.0.total_bytes.into_into_dart().into_dart(),
+            self.0.rows_read.into_into_dart().into_dart(),
+            self.0.rows_inserted.into_into_dart().into_dart(),
+            self.0.rows_failed.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for FrbWrapper<crate::api::csv_import::ImportProgress>
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<crate::api::csv_import::ImportProgress>>
+    for crate::api::csv_import::ImportProgress
+{
+    fn into_into_dart(self) -> FrbWrapper<crate::api::csv_import::ImportProgress> {
+        self.into()
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::csv_import::ImportReport> {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.0.progress.into_into_dart().into_dart(),
+            self.0.outcome.into_into_dart().into_dart(),
+            self.0.errors.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for FrbWrapper<crate::api::csv_import::ImportReport>
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<crate::api::csv_import::ImportReport>>
+    for crate::api::csv_import::ImportReport
+{
+    fn into_into_dart(self) -> FrbWrapper<crate::api::csv_import::ImportReport> {
+        self.into()
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::csv_import::ImportRequest> {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.0.path.into_into_dart().into_dart(),
+            self.0.options.into_into_dart().into_dart(),
+            self.0.schema.into_into_dart().into_dart(),
+            self.0.table.into_into_dart().into_dart(),
+            self.0.mapping.into_into_dart().into_dart(),
+            self.0.batch_rows.into_into_dart().into_dart(),
+            self.0.on_error.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for FrbWrapper<crate::api::csv_import::ImportRequest>
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<crate::api::csv_import::ImportRequest>>
+    for crate::api::csv_import::ImportRequest
+{
+    fn into_into_dart(self) -> FrbWrapper<crate::api::csv_import::ImportRequest> {
+        self.into()
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::csv_import::ImportStatus> {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        match self.0 {
+            crate::api::csv_import::ImportStatus::Running(field0) => {
+                [0.into_dart(), field0.into_into_dart().into_dart()].into_dart()
+            }
+            crate::api::csv_import::ImportStatus::Finished(field0) => {
+                [1.into_dart(), field0.into_into_dart().into_dart()].into_dart()
+            }
+            _ => {
+                unimplemented!("");
+            }
+        }
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for FrbWrapper<crate::api::csv_import::ImportStatus>
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<crate::api::csv_import::ImportStatus>>
+    for crate::api::csv_import::ImportStatus
+{
+    fn into_into_dart(self) -> FrbWrapper<crate::api::csv_import::ImportStatus> {
+        self.into()
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::csv_import::ImportTarget> {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.0.schema.into_into_dart().into_dart(),
+            self.0.table.into_into_dart().into_dart(),
+            self.0.columns.into_into_dart().into_dart(),
+            self.0.sql_mode.into_into_dart().into_dart(),
+            self.0.strict.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for FrbWrapper<crate::api::csv_import::ImportTarget>
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<crate::api::csv_import::ImportTarget>>
+    for crate::api::csv_import::ImportTarget
+{
+    fn into_into_dart(self) -> FrbWrapper<crate::api::csv_import::ImportTarget> {
+        self.into()
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::schema::IndexDef> {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
             self.0.name.into_into_dart().into_dart(),
             self.0.unique.into_into_dart().into_dart(),
             self.0.columns.into_into_dart().into_dart(),
+            self.0.parts.into_into_dart().into_dart(),
             self.0.index_type.into_into_dart().into_dart(),
             self.0.comment.into_into_dart().into_dart(),
         ]
@@ -3622,6 +5153,98 @@ impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<crate::api::schema::IndexDef>>
     for crate::api::schema::IndexDef
 {
     fn into_into_dart(self) -> FrbWrapper<crate::api::schema::IndexDef> {
+        self.into()
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::schema::IndexDraft> {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.0.original_name.into_into_dart().into_dart(),
+            self.0.name.into_into_dart().into_dart(),
+            self.0.kind.into_into_dart().into_dart(),
+            self.0.parts.into_into_dart().into_dart(),
+            self.0.comment.into_into_dart().into_dart(),
+            self.0.locked.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for FrbWrapper<crate::api::schema::IndexDraft>
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<crate::api::schema::IndexDraft>>
+    for crate::api::schema::IndexDraft
+{
+    fn into_into_dart(self) -> FrbWrapper<crate::api::schema::IndexDraft> {
+        self.into()
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::schema::IndexKind> {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        match self.0 {
+            crate::api::schema::IndexKind::Primary => 0.into_dart(),
+            crate::api::schema::IndexKind::Unique => 1.into_dart(),
+            crate::api::schema::IndexKind::Normal => 2.into_dart(),
+            crate::api::schema::IndexKind::Fulltext => 3.into_dart(),
+            crate::api::schema::IndexKind::Spatial => 4.into_dart(),
+            _ => unreachable!(),
+        }
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for FrbWrapper<crate::api::schema::IndexKind>
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<crate::api::schema::IndexKind>>
+    for crate::api::schema::IndexKind
+{
+    fn into_into_dart(self) -> FrbWrapper<crate::api::schema::IndexKind> {
+        self.into()
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::schema::IndexPart> {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.0.column.into_into_dart().into_dart(),
+            self.0.prefix.into_into_dart().into_dart(),
+            self.0.descending.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for FrbWrapper<crate::api::schema::IndexPart>
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<crate::api::schema::IndexPart>>
+    for crate::api::schema::IndexPart
+{
+    fn into_into_dart(self) -> FrbWrapper<crate::api::schema::IndexPart> {
+        self.into()
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::csv_import::OnError> {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        match self.0 {
+            crate::api::csv_import::OnError::RollbackAll => 0.into_dart(),
+            crate::api::csv_import::OnError::SkipRow => 1.into_dart(),
+            _ => unreachable!(),
+        }
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for FrbWrapper<crate::api::csv_import::OnError>
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<crate::api::csv_import::OnError>>
+    for crate::api::csv_import::OnError
+{
+    fn into_into_dart(self) -> FrbWrapper<crate::api::csv_import::OnError> {
         self.into()
     }
 }
@@ -3669,6 +5292,28 @@ impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<crate::api::preferences::Prefe
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::csv_import::PreviewRow> {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.0.line.into_into_dart().into_dart(),
+            self.0.cells.into_into_dart().into_dart(),
+            self.0.error.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for FrbWrapper<crate::api::csv_import::PreviewRow>
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<crate::api::csv_import::PreviewRow>>
+    for crate::api::csv_import::PreviewRow
+{
+    fn into_into_dart(self) -> FrbWrapper<crate::api::csv_import::PreviewRow> {
+        self.into()
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::db::QuerySummary> {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
@@ -3689,6 +5334,27 @@ impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<crate::api::db::QuerySummary>>
     for crate::api::db::QuerySummary
 {
     fn into_into_dart(self) -> FrbWrapper<crate::api::db::QuerySummary> {
+        self.into()
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::csv_import::RowError> {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.0.line.into_into_dart().into_dart(),
+            self.0.reason.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for FrbWrapper<crate::api::csv_import::RowError>
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<crate::api::csv_import::RowError>>
+    for crate::api::csv_import::RowError
+{
+    fn into_into_dart(self) -> FrbWrapper<crate::api::csv_import::RowError> {
         self.into()
     }
 }
@@ -3715,6 +5381,27 @@ impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<crate::api::connections::Saved
     for crate::api::connections::SavedConnection
 {
     fn into_into_dart(self) -> FrbWrapper<crate::api::connections::SavedConnection> {
+        self.into()
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::editor::ScriptSummary> {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.0.outcomes.into_into_dart().into_dart(),
+            self.0.failure.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for FrbWrapper<crate::api::editor::ScriptSummary>
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<crate::api::editor::ScriptSummary>>
+    for crate::api::editor::ScriptSummary
+{
+    fn into_into_dart(self) -> FrbWrapper<crate::api::editor::ScriptSummary> {
         self.into()
     }
 }
@@ -3880,6 +5567,73 @@ impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<crate::api::options::SslOption
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::editor::StatementFailure> {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.0.index.into_into_dart().into_dart(),
+            self.0.sql.into_into_dart().into_dart(),
+            self.0.message.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for FrbWrapper<crate::api::editor::StatementFailure>
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<crate::api::editor::StatementFailure>>
+    for crate::api::editor::StatementFailure
+{
+    fn into_into_dart(self) -> FrbWrapper<crate::api::editor::StatementFailure> {
+        self.into()
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::editor::StatementOutcome> {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.0.sql.into_into_dart().into_dart(),
+            self.0.session_id.into_into_dart().into_dart(),
+            self.0.summary.into_into_dart().into_dart(),
+            self.0.affected_rows.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for FrbWrapper<crate::api::editor::StatementOutcome>
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<crate::api::editor::StatementOutcome>>
+    for crate::api::editor::StatementOutcome
+{
+    fn into_into_dart(self) -> FrbWrapper<crate::api::editor::StatementOutcome> {
+        self.into()
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::schema::TableDraft> {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.0.columns.into_into_dart().into_dart(),
+            self.0.indexes.into_into_dart().into_dart(),
+            self.0.foreign_keys.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for FrbWrapper<crate::api::schema::TableDraft>
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<crate::api::schema::TableDraft>>
+    for crate::api::schema::TableDraft
+{
+    fn into_into_dart(self) -> FrbWrapper<crate::api::schema::TableDraft> {
+        self.into()
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::schema::TableInfo> {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
@@ -3909,6 +5663,7 @@ impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::schema::TableStruc
             self.0.indexes.into_into_dart().into_dart(),
             self.0.foreign_keys.into_into_dart().into_dart(),
             self.0.create_sql.into_into_dart().into_dart(),
+            self.0.table_collation.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -3921,6 +5676,32 @@ impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<crate::api::schema::TableStruc
     for crate::api::schema::TableStructure
 {
     fn into_into_dart(self) -> FrbWrapper<crate::api::schema::TableStructure> {
+        self.into()
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::csv_import::TargetColumn> {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.0.name.into_into_dart().into_dart(),
+            self.0.column_type.into_into_dart().into_dart(),
+            self.0.nullable.into_into_dart().into_dart(),
+            self.0.auto_increment.into_into_dart().into_dart(),
+            self.0.is_binary.into_into_dart().into_dart(),
+            self.0.generated.into_into_dart().into_dart(),
+            self.0.mandatory.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for FrbWrapper<crate::api::csv_import::TargetColumn>
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<crate::api::csv_import::TargetColumn>>
+    for crate::api::csv_import::TargetColumn
+{
+    fn into_into_dart(self) -> FrbWrapper<crate::api::csv_import::TargetColumn> {
         self.into()
     }
 }
@@ -3972,6 +5753,15 @@ impl SseEncode for String {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         <Vec<u8>>::sse_encode(self.into_bytes(), serializer);
+    }
+}
+
+impl SseEncode for crate::api::schema::AlterPlan {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <Vec<String>>::sse_encode(self.statements, serializer);
+        <Vec<String>>::sse_encode(self.dangers, serializer);
+        <Vec<String>>::sse_encode(self.notes, serializer);
     }
 }
 
@@ -4030,6 +5820,22 @@ impl SseEncode for crate::api::schema::ColumnDef {
         <String>::sse_encode(self.extra, serializer);
         <String>::sse_encode(self.comment, serializer);
         <Option<String>>::sse_encode(self.collation, serializer);
+    }
+}
+
+impl SseEncode for crate::api::schema::ColumnDraft {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <Option<String>>::sse_encode(self.original_name, serializer);
+        <String>::sse_encode(self.name, serializer);
+        <String>::sse_encode(self.column_type, serializer);
+        <bool>::sse_encode(self.nullable, serializer);
+        <crate::api::schema::DefaultValue>::sse_encode(self.default, serializer);
+        <bool>::sse_encode(self.auto_increment, serializer);
+        <Option<String>>::sse_encode(self.on_update, serializer);
+        <String>::sse_encode(self.comment, serializer);
+        <Option<String>>::sse_encode(self.collation, serializer);
+        <Option<String>>::sse_encode(self.locked, serializer);
     }
 }
 
@@ -4133,6 +5939,16 @@ impl SseEncode for crate::api::options::ConnectionOptions {
         <crate::api::options::SslOptions>::sse_encode(self.ssl, serializer);
         <crate::api::options::TimeoutOptions>::sse_encode(self.timeouts, serializer);
         <crate::api::options::SshOptions>::sse_encode(self.ssh, serializer);
+    }
+}
+
+impl SseEncode for crate::api::csv_import::CsvPreview {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <Vec<String>>::sse_encode(self.header, serializer);
+        <u64>::sse_encode(self.column_count, serializer);
+        <Vec<crate::api::csv_import::PreviewRow>>::sse_encode(self.rows, serializer);
+        <Option<String>>::sse_encode(self.error, serializer);
     }
 }
 
@@ -4314,6 +6130,20 @@ impl SseEncode for crate::api::schema::ForeignKeyDef {
     }
 }
 
+impl SseEncode for crate::api::schema::ForeignKeyDraft {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <Option<String>>::sse_encode(self.original_name, serializer);
+        <String>::sse_encode(self.name, serializer);
+        <Vec<String>>::sse_encode(self.columns, serializer);
+        <String>::sse_encode(self.referenced_schema, serializer);
+        <String>::sse_encode(self.referenced_table, serializer);
+        <Vec<String>>::sse_encode(self.referenced_columns, serializer);
+        <String>::sse_encode(self.on_update, serializer);
+        <String>::sse_encode(self.on_delete, serializer);
+    }
+}
+
 impl SseEncode for crate::api::editor::HistoryEntry {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -4363,14 +6193,149 @@ impl SseEncode for i64 {
     }
 }
 
+impl SseEncode for crate::api::csv_import::ImportOptions {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <crate::api::db::ExportEncoding>::sse_encode(self.encoding, serializer);
+        <String>::sse_encode(self.delimiter, serializer);
+        <bool>::sse_encode(self.header, serializer);
+        <String>::sse_encode(self.null_text, serializer);
+    }
+}
+
+impl SseEncode for crate::api::csv_import::ImportOutcome {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        match self {
+            crate::api::csv_import::ImportOutcome::Completed => {
+                <i32>::sse_encode(0, serializer);
+            }
+            crate::api::csv_import::ImportOutcome::RolledBack => {
+                <i32>::sse_encode(1, serializer);
+            }
+            crate::api::csv_import::ImportOutcome::Stopped(field0) => {
+                <i32>::sse_encode(2, serializer);
+                <String>::sse_encode(field0, serializer);
+            }
+            _ => {
+                unimplemented!("");
+            }
+        }
+    }
+}
+
+impl SseEncode for crate::api::csv_import::ImportProgress {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <u64>::sse_encode(self.bytes_read, serializer);
+        <u64>::sse_encode(self.total_bytes, serializer);
+        <u64>::sse_encode(self.rows_read, serializer);
+        <u64>::sse_encode(self.rows_inserted, serializer);
+        <u64>::sse_encode(self.rows_failed, serializer);
+    }
+}
+
+impl SseEncode for crate::api::csv_import::ImportReport {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <crate::api::csv_import::ImportProgress>::sse_encode(self.progress, serializer);
+        <crate::api::csv_import::ImportOutcome>::sse_encode(self.outcome, serializer);
+        <Vec<crate::api::csv_import::RowError>>::sse_encode(self.errors, serializer);
+    }
+}
+
+impl SseEncode for crate::api::csv_import::ImportRequest {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.path, serializer);
+        <crate::api::csv_import::ImportOptions>::sse_encode(self.options, serializer);
+        <String>::sse_encode(self.schema, serializer);
+        <String>::sse_encode(self.table, serializer);
+        <Vec<Option<u32>>>::sse_encode(self.mapping, serializer);
+        <u32>::sse_encode(self.batch_rows, serializer);
+        <crate::api::csv_import::OnError>::sse_encode(self.on_error, serializer);
+    }
+}
+
+impl SseEncode for crate::api::csv_import::ImportStatus {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        match self {
+            crate::api::csv_import::ImportStatus::Running(field0) => {
+                <i32>::sse_encode(0, serializer);
+                <crate::api::csv_import::ImportProgress>::sse_encode(field0, serializer);
+            }
+            crate::api::csv_import::ImportStatus::Finished(field0) => {
+                <i32>::sse_encode(1, serializer);
+                <crate::api::csv_import::ImportReport>::sse_encode(field0, serializer);
+            }
+            _ => {
+                unimplemented!("");
+            }
+        }
+    }
+}
+
+impl SseEncode for crate::api::csv_import::ImportTarget {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.schema, serializer);
+        <String>::sse_encode(self.table, serializer);
+        <Vec<crate::api::csv_import::TargetColumn>>::sse_encode(self.columns, serializer);
+        <String>::sse_encode(self.sql_mode, serializer);
+        <bool>::sse_encode(self.strict, serializer);
+    }
+}
+
 impl SseEncode for crate::api::schema::IndexDef {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         <String>::sse_encode(self.name, serializer);
         <bool>::sse_encode(self.unique, serializer);
         <Vec<String>>::sse_encode(self.columns, serializer);
+        <Vec<crate::api::schema::IndexPart>>::sse_encode(self.parts, serializer);
         <String>::sse_encode(self.index_type, serializer);
         <String>::sse_encode(self.comment, serializer);
+    }
+}
+
+impl SseEncode for crate::api::schema::IndexDraft {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <Option<String>>::sse_encode(self.original_name, serializer);
+        <String>::sse_encode(self.name, serializer);
+        <crate::api::schema::IndexKind>::sse_encode(self.kind, serializer);
+        <Vec<crate::api::schema::IndexPart>>::sse_encode(self.parts, serializer);
+        <String>::sse_encode(self.comment, serializer);
+        <Option<String>>::sse_encode(self.locked, serializer);
+    }
+}
+
+impl SseEncode for crate::api::schema::IndexKind {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(
+            match self {
+                crate::api::schema::IndexKind::Primary => 0,
+                crate::api::schema::IndexKind::Unique => 1,
+                crate::api::schema::IndexKind::Normal => 2,
+                crate::api::schema::IndexKind::Fulltext => 3,
+                crate::api::schema::IndexKind::Spatial => 4,
+                _ => {
+                    unimplemented!("");
+                }
+            },
+            serializer,
+        );
+    }
+}
+
+impl SseEncode for crate::api::schema::IndexPart {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <Option<String>>::sse_encode(self.column, serializer);
+        <Option<u32>>::sse_encode(self.prefix, serializer);
+        <bool>::sse_encode(self.descending, serializer);
     }
 }
 
@@ -4400,6 +6365,16 @@ impl SseEncode for Vec<crate::api::schema::ColumnDef> {
         <i32>::sse_encode(self.len() as _, serializer);
         for item in self {
             <crate::api::schema::ColumnDef>::sse_encode(item, serializer);
+        }
+    }
+}
+
+impl SseEncode for Vec<crate::api::schema::ColumnDraft> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::api::schema::ColumnDraft>::sse_encode(item, serializer);
         }
     }
 }
@@ -4474,6 +6449,16 @@ impl SseEncode for Vec<crate::api::schema::ForeignKeyDef> {
     }
 }
 
+impl SseEncode for Vec<crate::api::schema::ForeignKeyDraft> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::api::schema::ForeignKeyDraft>::sse_encode(item, serializer);
+        }
+    }
+}
+
 impl SseEncode for Vec<crate::api::editor::HistoryEntry> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -4490,6 +6475,26 @@ impl SseEncode for Vec<crate::api::schema::IndexDef> {
         <i32>::sse_encode(self.len() as _, serializer);
         for item in self {
             <crate::api::schema::IndexDef>::sse_encode(item, serializer);
+        }
+    }
+}
+
+impl SseEncode for Vec<crate::api::schema::IndexDraft> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::api::schema::IndexDraft>::sse_encode(item, serializer);
+        }
+    }
+}
+
+impl SseEncode for Vec<crate::api::schema::IndexPart> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::api::schema::IndexPart>::sse_encode(item, serializer);
         }
     }
 }
@@ -4534,6 +6539,26 @@ impl SseEncode for Vec<Option<crate::api::value::CellValue>> {
     }
 }
 
+impl SseEncode for Vec<Option<u32>> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <Option<u32>>::sse_encode(item, serializer);
+        }
+    }
+}
+
+impl SseEncode for Vec<crate::api::csv_import::PreviewRow> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::api::csv_import::PreviewRow>::sse_encode(item, serializer);
+        }
+    }
+}
+
 impl SseEncode for Vec<u64> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -4560,6 +6585,16 @@ impl SseEncode for Vec<usize> {
         <i32>::sse_encode(self.len() as _, serializer);
         for item in self {
             <usize>::sse_encode(item, serializer);
+        }
+    }
+}
+
+impl SseEncode for Vec<crate::api::csv_import::RowError> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::api::csv_import::RowError>::sse_encode(item, serializer);
         }
     }
 }
@@ -4594,6 +6629,16 @@ impl SseEncode for Vec<crate::api::options::SshHop> {
     }
 }
 
+impl SseEncode for Vec<crate::api::editor::StatementOutcome> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::api::editor::StatementOutcome>::sse_encode(item, serializer);
+        }
+    }
+}
+
 impl SseEncode for Vec<crate::api::schema::TableInfo> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -4601,6 +6646,32 @@ impl SseEncode for Vec<crate::api::schema::TableInfo> {
         for item in self {
             <crate::api::schema::TableInfo>::sse_encode(item, serializer);
         }
+    }
+}
+
+impl SseEncode for Vec<crate::api::csv_import::TargetColumn> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::api::csv_import::TargetColumn>::sse_encode(item, serializer);
+        }
+    }
+}
+
+impl SseEncode for crate::api::csv_import::OnError {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(
+            match self {
+                crate::api::csv_import::OnError::RollbackAll => 0,
+                crate::api::csv_import::OnError::SkipRow => 1,
+                _ => {
+                    unimplemented!("");
+                }
+            },
+            serializer,
+        );
     }
 }
 
@@ -4642,6 +6713,26 @@ impl SseEncode for Option<crate::api::options::HostKeyIssue> {
     }
 }
 
+impl SseEncode for Option<crate::api::db::QuerySummary> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <bool>::sse_encode(self.is_some(), serializer);
+        if let Some(value) = self {
+            <crate::api::db::QuerySummary>::sse_encode(value, serializer);
+        }
+    }
+}
+
+impl SseEncode for Option<crate::api::editor::StatementFailure> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <bool>::sse_encode(self.is_some(), serializer);
+        if let Some(value) = self {
+            <crate::api::editor::StatementFailure>::sse_encode(value, serializer);
+        }
+    }
+}
+
 impl SseEncode for Option<u32> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -4671,6 +6762,15 @@ impl SseEncode for crate::api::preferences::Preferences {
     }
 }
 
+impl SseEncode for crate::api::csv_import::PreviewRow {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <u64>::sse_encode(self.line, serializer);
+        <Vec<crate::api::value::DisplayCell>>::sse_encode(self.cells, serializer);
+        <Option<String>>::sse_encode(self.error, serializer);
+    }
+}
+
 impl SseEncode for crate::api::db::QuerySummary {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -4679,6 +6779,14 @@ impl SseEncode for crate::api::db::QuerySummary {
         <bool>::sse_encode(self.truncated, serializer);
         <crate::api::db::Editability>::sse_encode(self.editability, serializer);
         <Option<String>>::sse_encode(self.layout_key, serializer);
+    }
+}
+
+impl SseEncode for crate::api::csv_import::RowError {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <u64>::sse_encode(self.line, serializer);
+        <String>::sse_encode(self.reason, serializer);
     }
 }
 
@@ -4692,6 +6800,14 @@ impl SseEncode for crate::api::connections::SavedConnection {
         <String>::sse_encode(self.user, serializer);
         <Option<String>>::sse_encode(self.database, serializer);
         <crate::api::options::ConnectionOptions>::sse_encode(self.options, serializer);
+    }
+}
+
+impl SseEncode for crate::api::editor::ScriptSummary {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <Vec<crate::api::editor::StatementOutcome>>::sse_encode(self.outcomes, serializer);
+        <Option<crate::api::editor::StatementFailure>>::sse_encode(self.failure, serializer);
     }
 }
 
@@ -4792,6 +6908,34 @@ impl SseEncode for crate::api::options::SslOptions {
     }
 }
 
+impl SseEncode for crate::api::editor::StatementFailure {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <u32>::sse_encode(self.index, serializer);
+        <String>::sse_encode(self.sql, serializer);
+        <String>::sse_encode(self.message, serializer);
+    }
+}
+
+impl SseEncode for crate::api::editor::StatementOutcome {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.sql, serializer);
+        <Option<u64>>::sse_encode(self.session_id, serializer);
+        <Option<crate::api::db::QuerySummary>>::sse_encode(self.summary, serializer);
+        <u64>::sse_encode(self.affected_rows, serializer);
+    }
+}
+
+impl SseEncode for crate::api::schema::TableDraft {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <Vec<crate::api::schema::ColumnDraft>>::sse_encode(self.columns, serializer);
+        <Vec<crate::api::schema::IndexDraft>>::sse_encode(self.indexes, serializer);
+        <Vec<crate::api::schema::ForeignKeyDraft>>::sse_encode(self.foreign_keys, serializer);
+    }
+}
+
 impl SseEncode for crate::api::schema::TableInfo {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -4808,6 +6952,20 @@ impl SseEncode for crate::api::schema::TableStructure {
         <Vec<crate::api::schema::IndexDef>>::sse_encode(self.indexes, serializer);
         <Vec<crate::api::schema::ForeignKeyDef>>::sse_encode(self.foreign_keys, serializer);
         <String>::sse_encode(self.create_sql, serializer);
+        <Option<String>>::sse_encode(self.table_collation, serializer);
+    }
+}
+
+impl SseEncode for crate::api::csv_import::TargetColumn {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.name, serializer);
+        <String>::sse_encode(self.column_type, serializer);
+        <bool>::sse_encode(self.nullable, serializer);
+        <bool>::sse_encode(self.auto_increment, serializer);
+        <bool>::sse_encode(self.is_binary, serializer);
+        <bool>::sse_encode(self.generated, serializer);
+        <bool>::sse_encode(self.mandatory, serializer);
     }
 }
 

@@ -29,11 +29,26 @@ TableStructure sampleStructure() {
       columnDef('created_at', 'datetime', const DefaultValue.expression('CURRENT_TIMESTAMP')),
     ],
     indexes: [
-      const IndexDef(name: 'PRIMARY', unique: true, columns: ['id'], indexType: 'BTREE', comment: ''),
-      const IndexDef(name: 'idx_title', unique: false, columns: ['title(10)'], indexType: 'BTREE', comment: ''),
+      const IndexDef(
+        name: 'PRIMARY',
+        unique: true,
+        columns: ['id'],
+        parts: [IndexPart(column: 'id', descending: false)],
+        indexType: 'BTREE',
+        comment: '',
+      ),
+      const IndexDef(
+        name: 'idx_title',
+        unique: false,
+        columns: ['title(10)'],
+        parts: [IndexPart(column: 'title', prefix: 10, descending: false)],
+        indexType: 'BTREE',
+        comment: '',
+      ),
     ],
     foreignKeys: const [],
     createSql: 'CREATE TABLE `posts` (\n  `id` int unsigned NOT NULL AUTO_INCREMENT\n)',
+    tableCollation: 'utf8mb4_0900_ai_ci',
   );
 }
 

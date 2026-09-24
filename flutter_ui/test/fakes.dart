@@ -4,6 +4,7 @@
 // 让 widget 测试不用起 app、不用连库。
 
 import 'package:cdata_flutter/data_source.dart';
+import 'package:cdata_flutter/src/rust/api/csv_import.dart';
 import 'package:cdata_flutter/src/rust/api/db.dart';
 import 'package:cdata_flutter/src/rust/api/layouts.dart';
 import 'package:cdata_flutter/src/rust/api/schema.dart';
@@ -308,10 +309,205 @@ class FakeSchemaSource implements SchemaSource {
   /// 表名 → 结构。没有的表 structure 会抛错，用来测失败提示
   final Map<String, TableStructure> structures = {};
 
+  /// structure 被调了几次，测执行后是否重读
+  int structureLoads = 0;
+
   @override
   Future<TableStructure> structure(String database, String table) async {
+    structureLoads++;
     final structure = structures[table];
     if (structure == null) throw Exception('表 $table 不存在');
     return structure;
   }
+
+  /// 给了就原样返回，测锁定列用；没给按结构直接转，不判锁定（锁定规则由 core 的测试保证）
+  TableDraft? draft;
+
+  @override
+  TableDraft draftOf(TableStructure structure) {
+    final configured = draft;
+    if (configured != null) return configured;
+    return TableDraft(
+      columns: [
+        for (final column in structure.columns)
+          ColumnDraft(
+            originalName: column.name,
+            name: column.name,
+            columnType: column.columnType,
+            nullable: column.nullable,
+            default_: column.default_,
+            autoIncrement: column.extra.contains('auto_increment'),
+            comment: column.comment,
+            collation: column.collation,
+          ),
+      ],
+      indexes: [
+        for (final index in structure.indexes)
+          IndexDraft(
+            originalName: index.name,
+            name: index.name,
+            kind: index.name == 'PRIMARY'
+                ? IndexKind.primary
+                : (index.unique ? IndexKind.unique : IndexKind.normal),
+            parts: index.parts,
+            comment: index.comment,
+          ),
+      ],
+      foreignKeys: [
+        for (final fk in structure.foreignKeys)
+          ForeignKeyDraft(
+            originalName: fk.name,
+            name: fk.name,
+            columns: fk.columns,
+            referencedSchema: fk.referencedSchema,
+            referencedTable: fk.referencedTable,
+            referencedColumns: fk.referencedColumns,
+            onUpdate: fk.onUpdate,
+            onDelete: fk.onDelete,
+          ),
+      ],
+    );
+  }
+
+  /// 预览返回的计划；previewError 不为空时预览抛它
+  AlterPlan plan = const AlterPlan(statements: ['ALTER TABLE `shop`.`posts`\n  RENAME COLUMN `a` TO `b`'], dangers: [], notes: []);
+  Object? previewError;
+  Object? applyError;
+
+  /// 收到的预览草稿、执行的语句
+  final List<TableDraft> previews = [];
+  final List<List<String>> applied = [];
+
+  @override
+  Future<AlterPlan> previewAlter(String database, String table, TableStructure original, TableDraft draft) async {
+    previews.add(draft);
+    final error = previewError;
+    if (error != null) throw error;
+    return plan;
+  }
+
+  @override
+  Future<void> applyAlter(
+    String database,
+    String table,
+    TableStructure original,
+    TableDraft draft,
+    List<String> statements,
+  ) async {
+    final error = applyError;
+    if (error != null) throw error;
+    applied.add(statements);
+  }
+}
+
+TargetColumn targetColumn(
+  String name, {
+  bool mandatory = false,
+  bool generated = false,
+  bool autoIncrement = false,
+}) {
+  return TargetColumn(
+    name: name,
+    columnType: 'varchar(20)',
+    nullable: !mandatory && !autoIncrement,
+    autoIncrement: autoIncrement,
+    isBinary: false,
+    generated: generated,
+    mandatory: mandatory,
+  );
+}
+
+ImportProgress importProgress({int read = 0, int inserted = 0, int failed = 0, int bytes = 0, int total = 100}) {
+  return ImportProgress(
+    bytesRead: BigInt.from(bytes),
+    totalBytes: BigInt.from(total),
+    rowsRead: BigInt.from(read),
+    rowsInserted: BigInt.from(inserted),
+    rowsFailed: BigInt.from(failed),
+  );
+}
+
+/// 内存导入数据源。解析、映射校验、写库的真实规则由 cdata-core 的测试保证，这里只按剧本回放
+class FakeImportSource implements ImportSource {
+  ImportTarget targetResult;
+  String? targetError;
+
+  CsvPreview previewResult;
+
+  /// preview 的调用记录：(路径, 选项)
+  final List<(String, ImportOptions)> previews = [];
+
+  final List<ImportRequest> starts = [];
+
+  /// 设成非 null 就让 start 抛错，模拟 core 拒绝映射
+  String? startError;
+
+  /// status 依次返回的状态，用完后一直返回最后一个
+  List<ImportStatus> statuses;
+  int statusCalls = 0;
+
+  final List<int> cancels = [];
+  final List<int> closes = [];
+  final List<(int, String)> saves = [];
+
+  FakeImportSource({required this.targetResult, required this.previewResult, required this.statuses});
+
+  @override
+  Future<ImportTarget> target(String database, String table) async {
+    final error = targetError;
+    if (error != null) throw Exception(error);
+    return targetResult;
+  }
+
+  @override
+  Future<CsvPreview> preview(String path, ImportOptions options, int limit) async {
+    previews.add((path, options));
+    return previewResult;
+  }
+
+  /// 简化版：名字完全相同才对上
+  @override
+  List<int?> suggestMapping(List<String> header, List<TargetColumn> columns) {
+    final mapping = <int?>[];
+    for (final name in header) {
+      final index = columns.indexWhere((column) => column.name == name && !column.generated);
+      mapping.add(index < 0 ? null : index);
+    }
+    return mapping;
+  }
+
+  @override
+  Future<int> start(ImportRequest request) async {
+    final error = startError;
+    if (error != null) throw Exception(error);
+    starts.add(request);
+    return 7;
+  }
+
+  @override
+  Future<ImportStatus> status(int job) async {
+    final index = statusCalls < statuses.length ? statusCalls : statuses.length - 1;
+    statusCalls++;
+    return statuses[index];
+  }
+
+  @override
+  Future<void> cancel(int job) async {
+    cancels.add(job);
+    statuses = [ImportStatus.finished(ImportReport(
+      progress: importProgress(read: 1, inserted: 0),
+      outcome: const ImportOutcome.stopped('已取消。没有提交任何行'),
+      errors: const [],
+    ))];
+    statusCalls = 0;
+  }
+
+  @override
+  Future<int> saveErrors(int job, String path) async {
+    saves.add((job, path));
+    return 2;
+  }
+
+  @override
+  Future<void> close(int job) async => closes.add(job);
 }

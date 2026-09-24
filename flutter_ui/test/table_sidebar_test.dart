@@ -14,6 +14,7 @@ Future<void> pumpSidebar(
   void Function(String table)? onTableSelected,
   void Function(String database)? onDatabaseChanged,
   void Function(String table)? onShowStructure,
+  void Function(String table)? onImport,
 }) async {
   await tester.pumpWidget(
     MaterialApp(
@@ -24,6 +25,7 @@ Future<void> pumpSidebar(
           onDatabaseChanged: onDatabaseChanged ?? (_) {},
           onTableSelected: onTableSelected ?? (_) {},
           onShowStructure: onShowStructure,
+          onImport: onImport,
         ),
       ),
     ),
@@ -74,6 +76,22 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(tapped, 'order_items');
+  });
+
+  testWidgets('右键菜单的「导入 CSV」把表名交给调用方；不给回调就没有这一项', (tester) async {
+    String? importInto;
+    await pumpSidebar(tester, FakeSchemaSource.simple(), onImport: (table) => importInto = table);
+
+    await tester.tap(find.text('users'), buttons: kSecondaryButton);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('导入 CSV…'));
+    await tester.pumpAndSettle();
+    expect(importInto, 'users');
+
+    await pumpSidebar(tester, FakeSchemaSource.simple());
+    await tester.tap(find.text('users'), buttons: kSecondaryButton);
+    await tester.pumpAndSettle();
+    expect(find.text('导入 CSV…'), findsNothing);
   });
 
   testWidgets('空库显示 0 张表而不是报错', (tester) async {

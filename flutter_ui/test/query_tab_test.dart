@@ -7,6 +7,7 @@ import 'package:cdata_flutter/sql_editor.dart';
 import 'package:cdata_flutter/sql_library.dart';
 import 'package:cdata_flutter/src/rust/api/db.dart';
 import 'package:cdata_flutter/src/rust/api/editor.dart';
+import 'package:cdata_flutter/src/rust/api/value.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -36,8 +37,71 @@ class FakeRunner implements QueryRunner {
   @override
   GridSource gridSource(QuerySummary summary) => FakeGridSource.rows(2);
 
+  /// 多语句脚本：runScript 返回它，childSource 按子会话 id 给各自的内容，好分辨切到了哪个结果
+  ScriptSummary? script;
+  final scripts = <String>[];
+  final explains = <String>[];
+  final childSources = <BigInt, GridSource>{};
+  String? splitError;
+  var droppedChildren = 0;
+
+  /// 简化版切分：按分号切、去掉空的。真实规则（字符串、注释里的分号）在 core 测
+  @override
+  List<String> split(String sql) {
+    final message = splitError;
+    if (message != null) throw Exception(message);
+    return [
+      for (final part in sql.split(';'))
+        if (part.trim().isNotEmpty) part.trim(),
+    ];
+  }
+
+  @override
+  Future<ScriptSummary> runScript(String sql) async {
+    scripts.add(sql);
+    return script!;
+  }
+
+  @override
+  Future<StatementOutcome> explain(String sql) async {
+    explains.add(sql);
+    final message = error;
+    if (message != null) throw Exception(message);
+    final id = BigInt.from(99);
+    childSources[id] = textGrid('plan', ['计划行']);
+    return StatementOutcome(sql: 'EXPLAIN $sql', sessionId: id, summary: childSources[id]!.summary, affectedRows: BigInt.zero);
+  }
+
+  @override
+  GridSource childSource(StatementOutcome outcome) => childSources[outcome.sessionId]!;
+
+  @override
+  Future<void> dropChildResults() async => droppedChildren++;
+
   @override
   Future<void> close() async => closed = true;
+}
+
+/// 一列文本的内存结果
+FakeGridSource textGrid(String name, List<String> values) {
+  return FakeGridSource(
+    summary: summaryOf(columns: [column(name)], totalRows: values.length),
+    rows: [
+      for (final value in values) [CellValue.text(value)],
+    ],
+  );
+}
+
+/// 脚本里一条有结果集的语句，结果内容放进 runner 的 childSources
+StatementOutcome resultOutcome(FakeRunner runner, int id, String sql, List<String> values) {
+  final sessionId = BigInt.from(id);
+  final grid = textGrid('v', values);
+  runner.childSources[sessionId] = grid;
+  return StatementOutcome(sql: sql, sessionId: sessionId, summary: grid.summary, affectedRows: BigInt.zero);
+}
+
+StatementOutcome writeOutcome(String sql, int affected) {
+  return StatementOutcome(sql: sql, sessionId: null, summary: null, affectedRows: BigInt.from(affected));
 }
 
 class FakeLibrary implements SqlLibrary {
@@ -255,6 +319,91 @@ void main() {
     expect(span.toPlainText(), 'SELECT 中文');
     final styles = [for (final child in span.children!.cast<TextSpan>()) child.style];
     expect(styles.any((style) => style?.decoration == TextDecoration.underline), isTrue);
+  });
+
+  testWidgets('多条语句：每个结果集一个标签，写语句汇总成影响行数', (tester) async {
+    final runner = FakeRunner();
+    runner.script = ScriptSummary(
+      outcomes: [
+        resultOutcome(runner, 11, 'SELECT a', ['甲']),
+        writeOutcome('UPDATE t SET v = 1', 2),
+        resultOutcome(runner, 12, 'SELECT b', ['乙']),
+      ],
+      failure: null,
+    );
+    await pumpTab(tester, runner, FakeLibrary(), sql: 'SELECT a; UPDATE t SET v = 1; SELECT b');
+
+    await tester.tap(find.text('运行'));
+    await tester.pumpAndSettle();
+
+    expect(runner.runs, isEmpty, reason: '多条语句不走单条路径');
+    expect(runner.scripts.single, 'SELECT a; UPDATE t SET v = 1; SELECT b');
+    expect(runner.droppedChildren, 1, reason: '新一轮运行先清掉上一轮的子结果');
+    expect(find.textContaining('执行了 3 条语句，其中 1 条没有结果集，共影响 2 行'), findsOneWidget);
+    expect(find.text('甲'), findsOneWidget);
+    expect(find.text('乙'), findsNothing, reason: '第二个结果在后台标签里');
+
+    await tester.tap(find.byKey(const ValueKey('result-tab-1')));
+    await tester.pumpAndSettle();
+    expect(find.text('乙'), findsOneWidget);
+    expect(find.text('甲'), findsNothing);
+  });
+
+  testWidgets('脚本中途失败：说清第几条、前面的已经执行', (tester) async {
+    final runner = FakeRunner();
+    runner.script = ScriptSummary(
+      outcomes: [writeOutcome('INSERT INTO t VALUES (1)', 1)],
+      failure: StatementFailure(index: 1, sql: 'SELECT * FROM nope', message: "Table 'nope' doesn't exist"),
+    );
+    await pumpTab(tester, runner, FakeLibrary(), sql: 'INSERT INTO t VALUES (1); SELECT * FROM nope; SELECT 3');
+
+    await tester.tap(find.text('运行'));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('第 2 条语句失败，后面的没有执行；前面 1 条已经执行'), findsOneWidget);
+    expect(find.textContaining("Table 'nope' doesn't exist"), findsOneWidget);
+    expect(find.textContaining('执行了 1 条语句'), findsOneWidget, reason: '失败时也要看到失败前执行了几条');
+    expect(find.text('这段 SQL 没有返回结果集'), findsOneWidget);
+  });
+
+  testWidgets('切分被拒绝（比如 DELIMITER）：显示原因，什么都不跑', (tester) async {
+    final runner = FakeRunner()..splitError = 'DELIMITER 是命令行客户端的指令';
+    final library = FakeLibrary();
+    await pumpTab(tester, runner, library, sql: 'DELIMITER //');
+
+    await tester.tap(find.text('运行'));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('DELIMITER 是命令行客户端的指令'), findsOneWidget);
+    expect(runner.runs, isEmpty);
+    expect(runner.scripts, isEmpty);
+    expect(library.entries, isEmpty, reason: '没跑的语句不记历史');
+  });
+
+  testWidgets('执行计划：单独一个标签，筛选条只跟着单条结果', (tester) async {
+    final runner = FakeRunner();
+    await pumpTab(tester, runner, FakeLibrary());
+
+    await tester.tap(find.text('运行'));
+    await tester.pumpAndSettle();
+    expect(find.text('筛选'), findsOneWidget);
+
+    await tester.tap(find.widgetWithText(OutlinedButton, '执行计划'));
+    await tester.pumpAndSettle();
+
+    expect(runner.explains.single, 'SELECT * FROM t');
+    expect(find.text('计划行'), findsOneWidget, reason: '看完计划直接切到计划标签');
+    expect(find.text('筛选'), findsNothing, reason: '筛选作用在单条结果上，看计划时不显示');
+
+    await tester.tap(find.byKey(const ValueKey('result-tab-0')));
+    await tester.pumpAndSettle();
+    expect(find.text('用户1'), findsOneWidget);
+    expect(find.text('筛选'), findsOneWidget);
+
+    // 再看一次是替换，不会堆出两个计划标签
+    await tester.tap(find.widgetWithText(OutlinedButton, '执行计划'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('result-tab-2')), findsNothing);
   });
 }
 
