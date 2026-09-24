@@ -126,7 +126,7 @@ class _StructureDialogState extends State<_StructureDialog> {
     if (structure == null) return const Center(child: Text('加载中…'));
 
     return DefaultTabController(
-      length: 4,
+      length: 5,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -138,6 +138,8 @@ class _StructureDialogState extends State<_StructureDialog> {
               Tab(text: '列 ${structure.columns.length}'),
               Tab(text: '索引 ${structure.indexes.length}'),
               Tab(text: '外键 ${structure.foreignKeys.length}'),
+              // null 是服务器读不了，不是没有，标签上不写 0
+              Tab(text: structure.checks == null ? 'CHECK' : 'CHECK ${structure.checks!.length}'),
               const Tab(text: '建表语句'),
             ],
           ),
@@ -147,6 +149,7 @@ class _StructureDialogState extends State<_StructureDialog> {
                 _columnsTab(structure),
                 _indexesTab(structure),
                 _foreignKeysTab(structure),
+                _checksTab(structure),
                 _ddlTab(structure),
               ],
             ),
@@ -228,6 +231,24 @@ class _StructureDialogState extends State<_StructureDialog> {
             ),
             _text(fk.onUpdate),
             _text(fk.onDelete),
+          ],
+      ],
+    );
+  }
+
+  Widget _checksTab(TableStructure structure) {
+    final checks = structure.checks;
+    if (checks == null) return const Center(child: Text('这个服务器读不到 CHECK 约束（要 MySQL 8.0.16+）'));
+    if (checks.isEmpty) return const Center(child: Text('没有 CHECK 约束'));
+    return _Grid(
+      headers: const ['名称', '表达式', '强制执行'],
+      widths: const [200, 480, 80],
+      rows: [
+        for (final check in checks)
+          [
+            _text(check.name, bold: true),
+            _text(check.expression, mono: true),
+            _text(check.enforced ? '是' : '否（NOT ENFORCED）', muted: !check.enforced),
           ],
       ],
     );

@@ -32,7 +32,7 @@ class _ConnectionOptionsDialog extends StatefulWidget {
   State<_ConnectionOptionsDialog> createState() => _ConnectionOptionsDialogState();
 }
 
-/// 一跳 SSH 的输入框。目标机和跳板机各一份
+/// 一跳 SSH 的输入框。SSH 主机一份，每台跳板机各一份
 class _HopInput {
   final host = TextEditingController();
   final port = TextEditingController(text: '22');
@@ -78,12 +78,15 @@ class _ConnectionOptionsDialogState extends State<_ConnectionOptionsDialog> {
   late final _querySecs = TextEditingController(text: widget.initial.timeouts.querySecs?.toString() ?? '');
 
   late final List<SshHop> _initialHops = widget.initial.ssh.hops;
-  // 界面只编辑「目标机 + 至多一台跳板机」。更多跳的配置不是这里建的，原样保留、不让改，免得悄悄丢掉中间几跳
-  late final bool _sshTooLong = _initialHops.length > 2;
   late bool _useSsh = _initialHops.isNotEmpty;
-  late bool _useJump = _initialHops.length == 2;
-  late final _target = _initialHops.isEmpty || _sshTooLong ? _HopInput() : _HopInput.from(_initialHops.last);
-  late final _jump = _initialHops.length == 2 ? _HopInput.from(_initialHops.first) : _HopInput();
+
+  /// 最后一跳：MySQL 的连接从这台机器发出
+  late final _target = _initialHops.isEmpty ? _HopInput() : _HopInput.from(_initialHops.last);
+
+  /// 跳板机，按连接顺序：第一个是本机最先连上的那台
+  late final List<_HopInput> _jumps = [
+    for (var i = 0; i < _initialHops.length - 1; i++) _HopInput.from(_initialHops[i]),
+  ];
 
   String? _error;
 
@@ -93,7 +96,9 @@ class _ConnectionOptionsDialogState extends State<_ConnectionOptionsDialog> {
       controller.dispose();
     }
     _target.dispose();
-    _jump.dispose();
+    for (final jump in _jumps) {
+      jump.dispose();
+    }
     super.dispose();
   }
 
@@ -155,18 +160,19 @@ class _ConnectionOptionsDialogState extends State<_ConnectionOptionsDialog> {
 
       SshOptions ssh;
       List<String?> secrets;
-      if (_sshTooLong) {
-        ssh = widget.initial.ssh;
-        secrets = List.filled(_initialHops.length, null);
-      } else if (!_useSsh) {
+      if (!_useSsh) {
         ssh = const SshOptions(hops: []);
         secrets = const [];
-      } else if (_useJump) {
-        ssh = SshOptions(hops: [_readHop('跳板机', _jump), _readHop('SSH 主机', _target)]);
-        secrets = [_readSecret(_jump), _readSecret(_target)];
       } else {
-        ssh = SshOptions(hops: [_readHop('SSH 主机', _target)]);
-        secrets = [_readSecret(_target)];
+        final hops = <SshHop>[];
+        secrets = [];
+        for (var i = 0; i < _jumps.length; i++) {
+          hops.add(_readHop('跳板机 ${i + 1} ', _jumps[i]));
+          secrets.add(_readSecret(_jumps[i]));
+        }
+        hops.add(_readHop('SSH 主机', _target));
+        secrets.add(_readSecret(_target));
+        ssh = SshOptions(hops: hops);
       }
 
       final options = ConnectionOptions(ssl: ssl, timeouts: timeouts, ssh: ssh);
@@ -210,18 +216,25 @@ class _ConnectionOptionsDialogState extends State<_ConnectionOptionsDialog> {
               _row('查询（秒）', _textField('query-timeout', _querySecs, '留空不限；超时后让服务器停止这条语句')),
               const SizedBox(height: 8),
               _section('SSH 隧道'),
-              if (_sshTooLong)
-                Text(
-                  '这个连接配置了 ${_initialHops.length} 跳 SSH，这里只能编辑两跳以内的配置，保持原样。',
-                  style: TextStyle(fontSize: 12, color: colors.onSurfaceVariant),
-                )
-              else ...[
-                _row('启用', _checkbox('ssh-enabled', _useSsh, (value) => _useSsh = value)),
-                if (_useSsh) ...[
-                  ..._hopFields('ssh', _target),
-                  _row('经跳板机', _checkbox('jump-enabled', _useJump, (value) => _useJump = value)),
-                  if (_useJump) ..._hopFields('jump', _jump),
+              _row('启用', _checkbox('ssh-enabled', _useSsh, (value) => _useSsh = value)),
+              if (_useSsh) ...[
+                // 跳板机按连接顺序排在前面，SSH 主机是最后一跳
+                for (var i = 0; i < _jumps.length; i++) ...[
+                  _jumpHeader(i, colors),
+                  ..._hopFields('jump-$i', _jumps[i]),
                 ],
+                if (_jumps.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: Text('SSH 主机（最后一跳）', style: TextStyle(fontSize: 12, color: colors.onSurfaceVariant)),
+                  ),
+                ..._hopFields('ssh', _target),
+                TextButton.icon(
+                  key: const ValueKey('jump-add'),
+                  onPressed: () => setState(() => _jumps.add(_HopInput())),
+                  icon: const Icon(Icons.add, size: 16),
+                  label: Text(_jumps.isEmpty ? '经跳板机' : '再加一台跳板机', style: const TextStyle(fontSize: 12)),
+                ),
               ],
               if (_error != null)
                 Padding(
@@ -235,6 +248,28 @@ class _ConnectionOptionsDialogState extends State<_ConnectionOptionsDialog> {
       actions: [
         TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('取消')),
         FilledButton(onPressed: _submit, child: const Text('确定')),
+      ],
+    );
+  }
+
+  Widget _jumpHeader(int index, ColorScheme colors) {
+    final order = index == 0 ? '，本机最先连这台' : '';
+    return Row(
+      children: [
+        Text('跳板机 ${index + 1}$order', style: TextStyle(fontSize: 12, color: colors.onSurfaceVariant)),
+        const Spacer(),
+        IconButton(
+          key: ValueKey('jump-$index-remove'),
+          tooltip: '去掉这台跳板机',
+          iconSize: 16,
+          onPressed: () {
+            final removed = _jumps[index];
+            setState(() => _jumps.removeAt(index));
+            // 这一帧里输入框还挂着，等它们卸下来再释放控制器
+            WidgetsBinding.instance.addPostFrameCallback((_) => removed.dispose());
+          },
+          icon: const Icon(Icons.close),
+        ),
       ],
     );
   }
@@ -291,7 +326,6 @@ class _ConnectionOptionsDialogState extends State<_ConnectionOptionsDialog> {
         isDense: true,
         border: const OutlineInputBorder(),
         hintText: hint,
-        hintStyle: const TextStyle(fontSize: 11),
       ),
     );
   }

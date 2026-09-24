@@ -16,6 +16,10 @@ class TableSidebar extends StatefulWidget {
   /// 右键菜单里的「导入 CSV」。null 就不给这一项
   final void Function(String table)? onImport;
 
+  /// 右键菜单里的「新建表…」，参数是当前库。返回建好的表名，侧栏据此重读并选中；
+  /// 取消返回 null。null 就不给这一项
+  final Future<String?> Function(String database)? onCreateTable;
+
   const TableSidebar({
     super.key,
     required this.source,
@@ -24,6 +28,7 @@ class TableSidebar extends StatefulWidget {
     required this.onTableSelected,
     this.onShowStructure,
     this.onImport,
+    this.onCreateTable,
   });
 
   @override
@@ -98,6 +103,34 @@ class _TableSidebarState extends State<TableSidebar> {
     widget.onTableSelected(table);
   }
 
+  /// 建好之后重读清单并选中新表，不顺带跑查询
+  Future<void> _createTable() async {
+    final onCreateTable = widget.onCreateTable;
+    if (onCreateTable == null) return;
+    final created = await onCreateTable(widget.database);
+    if (created == null || !mounted) return;
+    setState(() => _selectedTable = created);
+    await _reload();
+  }
+
+  static const _createTableItem = PopupMenuItem(
+    value: 'create',
+    height: 32,
+    child: Text('新建表…', style: TextStyle(fontSize: 12)),
+  );
+
+  /// 没有表可以右键时（空库、过滤后没有匹配），在空白处右键只给「新建表…」
+  Future<void> _showBlankMenu(Offset position) async {
+    if (widget.onCreateTable == null) return;
+    final choice = await showMenu<String>(
+      context: context,
+      position: RelativeRect.fromLTRB(position.dx, position.dy, position.dx, position.dy),
+      items: const [_createTableItem],
+    );
+    if (!mounted) return;
+    if (choice == 'create') await _createTable();
+  }
+
   /// 右键菜单，出现在鼠标位置
   Future<void> _showMenu(String table, Offset position) async {
     final onShowStructure = widget.onShowStructure;
@@ -123,12 +156,14 @@ class _TableSidebarState extends State<TableSidebar> {
             height: 32,
             child: Text('导入 CSV…', style: TextStyle(fontSize: 12)),
           ),
+        if (widget.onCreateTable != null) ...[const PopupMenuDivider(height: 8), _createTableItem],
       ],
     );
     if (!mounted) return;
     if (choice == 'browse') _browse(table);
     if (choice == 'structure' && onShowStructure != null) onShowStructure(table);
     if (choice == 'import' && onImport != null) onImport(table);
+    if (choice == 'create') await _createTable();
   }
 
   @override
@@ -160,7 +195,6 @@ class _TableSidebarState extends State<TableSidebar> {
               style: const TextStyle(fontSize: 12),
               decoration: const InputDecoration(
                 hintText: '过滤表名',
-                hintStyle: TextStyle(fontSize: 12),
                 isDense: true,
                 prefixIcon: Icon(Icons.search, size: 14),
                 prefixIconConstraints: BoxConstraints(minWidth: 28, minHeight: 28),
@@ -175,19 +209,27 @@ class _TableSidebarState extends State<TableSidebar> {
               child: Text(_error!, style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.error)),
             ),
           Expanded(
-            child: ListView.builder(
-              itemCount: visible.length,
-              itemExtent: 26,
-              itemBuilder: (context, index) {
-                final table = visible[index];
-                return _TableRow(
-                  table: table,
-                  selected: table.name == _selectedTable,
-                  onTap: () => _browse(table.name),
-                  onSecondaryTapDown: (position) => _showMenu(table.name, position),
-                );
-              },
-            ),
+            // 只在没有行的时候接空白处的右键：行和外层都接右键的话，按住稍久两边都会弹菜单
+            child: visible.isEmpty
+                ? GestureDetector(
+                    key: const ValueKey('sidebar-blank'),
+                    behavior: HitTestBehavior.opaque,
+                    onSecondaryTapDown: (details) => _showBlankMenu(details.globalPosition),
+                    child: const SizedBox.expand(),
+                  )
+                : ListView.builder(
+                    itemCount: visible.length,
+                    itemExtent: 26,
+                    itemBuilder: (context, index) {
+                      final table = visible[index];
+                      return _TableRow(
+                        table: table,
+                        selected: table.name == _selectedTable,
+                        onTap: () => _browse(table.name),
+                        onSecondaryTapDown: (position) => _showMenu(table.name, position),
+                      );
+                    },
+                  ),
           ),
           _SidebarFooter(count: visible.length, total: _tables.length, loading: _loading),
         ],

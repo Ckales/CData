@@ -1,7 +1,8 @@
+import 'dart:async' show Timer;
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart' show listEquals;
-import 'package:flutter/gestures.dart' show DragStartBehavior, kPrimaryButton;
+import 'package:flutter/gestures.dart' show DragStartBehavior, PointerDeviceKind, kPrimaryButton;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -44,6 +45,9 @@ class ResultGrid extends StatefulWidget {
   /// 选导出文件的保存位置，返回 null 表示取消。不传就弹系统保存对话框，测试里换掉
   final Future<String?> Function(String suggestedName)? pickSavePath;
 
+  /// 校验 TIME 输入，返回错误说明，合法返回 null。不传就调 core 的 checkTimeText，测试里换掉
+  final String? Function(String text, int fsp)? checkTime;
+
   const ResultGrid({
     super.key,
     required this.source,
@@ -51,6 +55,7 @@ class ResultGrid extends StatefulWidget {
     this.sortColumn,
     this.sortAscending = true,
     this.pickSavePath,
+    this.checkTime,
   });
 
   QuerySummary get summary => source.summary;
@@ -109,8 +114,19 @@ class _ResultGridState extends State<ResultGrid> {
   ({int row, int position})? _anchor;
   ({int row, int position})? _corner;
 
-  /// 网格本身的焦点。复制粘贴快捷键只在它拿着焦点时接管，编辑框里的 ⌘C 归编辑框
+  /// 网格本身的焦点。复制粘贴、方向键只在它拿着焦点时接管：编辑框里的 ⌘C 归编辑框，
+  /// SQL 编辑器里的方向键归编辑器（它不在网格下面，事件根本到不了这里）
   final _gridFocus = FocusNode(debugLabel: 'result-grid');
+
+  /// 横向滚动。键盘移到屏幕外的列、拖选到边缘时要滚过去
+  final _hScroll = ScrollController();
+
+  /// 鼠标按在单元格上拖动选区中。只认鼠标：触摸和触控板的拖动是滚动
+  bool _dragging = false;
+
+  /// 拖选时指针相对可视区的位置，自动滚动每一拍都按它重新算落在哪一格
+  Offset? _dragPointer;
+  Timer? _autoScroll;
 
   @override
   void initState() {
@@ -125,7 +141,9 @@ class _ResultGridState extends State<ResultGrid> {
     _editController.dispose();
     _editFocus.dispose();
     _scroll.dispose();
+    _hScroll.dispose();
     _gridFocus.dispose();
+    _autoScroll?.cancel();
     super.dispose();
   }
 
@@ -367,15 +385,34 @@ class _ResultGridState extends State<ResultGrid> {
           initial: current ?? '',
           withTime: column.kind == ColumnKind.dateTime,
         );
+      case ColumnKind.time:
+        value = await showTimeEditor(
+          context,
+          column: column.name,
+          initial: current ?? '',
+          fsp: column.decimals,
+          check: (text) => _checkTime(text, column.decimals),
+        );
       case ColumnKind.text:
       case ColumnKind.number:
-      case ColumnKind.time:
         _editController.text = current ?? '';
         _startInlineEdit(rowIndex, columnIndex);
         return;
     }
 
     if (value != null) await _writeCell(rowIndex, columnIndex, value);
+  }
+
+  /// TIME 的格式和范围只在 core 里判断，这里把错误说明交给编辑器显示
+  String? _checkTime(String text, int fsp) {
+    final check = widget.checkTime;
+    if (check != null) return check(text, fsp);
+    try {
+      checkTimeText(text: text, fsp: fsp);
+      return null;
+    } catch (e) {
+      return '$e';
+    }
   }
 
   Future<void> _showHex(String column, Uint8List bytes, {required bool invalidText}) async {
@@ -409,7 +446,14 @@ class _ResultGridState extends State<ResultGrid> {
     if (editing == null) return;
 
     setState(() => _editing = null);
+    // 编辑框拆掉后焦点会退到路由那一层，收回来才能接着用方向键
+    _gridFocus.requestFocus();
     await _writeCell(editing.row, editing.column, newValue);
+  }
+
+  void _cancelEdit() {
+    setState(() => _editing = null);
+    _gridFocus.requestFocus();
   }
 
   Future<void> _writeCell(int rowIndex, int columnIndex, CellValue value) async {
@@ -506,8 +550,9 @@ class _ResultGridState extends State<ResultGrid> {
     );
   }
 
-  void _selectCell(int row, int position) {
+  void _selectCell(PointerDownEvent event, int row, int position) {
     _gridFocus.requestFocus();
+    _dragging = event.kind == PointerDeviceKind.mouse;
     setState(() {
       _notice = null;
       if (HardwareKeyboard.instance.isShiftPressed && _anchor != null) {
@@ -519,23 +564,235 @@ class _ResultGridState extends State<ResultGrid> {
     });
   }
 
+  /// 按下单元格后拖动：另一角跟着指针走，贴近或越过可视区边缘时自动滚动。
+  /// local 是数据区里的坐标，横向已经含了滚动偏移
+  void _dragMove(PointerMoveEvent event) {
+    if (!_dragging) return;
+    final horizontal = _hScroll.hasClients ? _hScroll.offset : 0.0;
+    _dragPointer = Offset(event.localPosition.dx - horizontal, event.localPosition.dy);
+    _dragExtend();
+    _autoScroll ??= Timer.periodic(const Duration(milliseconds: 50), (_) => _autoScrollTick());
+  }
+
+  void _dragEnd(PointerEvent event) {
+    _dragging = false;
+    _dragPointer = null;
+    _autoScroll?.cancel();
+    _autoScroll = null;
+  }
+
+  /// 把选区的另一角放到指针所在的格。越出上下左右边界的按最近的格算
+  void _dragExtend() {
+    final pointer = _dragPointer;
+    if (pointer == null || _anchor == null || _totalRows == 0 || _order.isEmpty) return;
+
+    final vertical = _scroll.hasClients ? _scroll.offset : 0.0;
+    final horizontal = _hScroll.hasClients ? _hScroll.offset : 0.0;
+    final row = ((pointer.dy + vertical) / _rowHeight).floor().clamp(0, _totalRows - 1);
+    final x = pointer.dx + horizontal;
+    var left = _rowNumberWidth;
+    var position = _order.length - 1;
+    for (var i = 0; i < _order.length; i++) {
+      left += _widths[_order[i]];
+      if (x < left) {
+        position = i;
+        break;
+      }
+    }
+
+    final corner = (row: row, position: position);
+    if (corner != _corner) setState(() => _corner = corner);
+  }
+
+  /// 拖选时指针离边缘越近（或越出越远）滚得越快，一拍最多三行
+  void _autoScrollTick() {
+    final pointer = _dragPointer;
+    if (pointer == null || !_scroll.hasClients) return;
+    const edge = 24.0;
+    const maxStep = _rowHeight * 3;
+
+    double overshoot(double at, double extent) {
+      if (at < edge) return (at - edge).clamp(-maxStep, 0);
+      if (at > extent - edge) return (at - extent + edge).clamp(0, maxStep);
+      return 0;
+    }
+
+    var moved = false;
+    final vertical = _scroll.position;
+    final dy = overshoot(pointer.dy, vertical.viewportDimension);
+    if (dy != 0) {
+      final target = (vertical.pixels + dy).clamp(0.0, vertical.maxScrollExtent);
+      moved = target != vertical.pixels;
+      vertical.jumpTo(target);
+    }
+    if (_hScroll.hasClients) {
+      final horizontal = _hScroll.position;
+      final dx = overshoot(pointer.dx, horizontal.viewportDimension);
+      if (dx != 0) {
+        final target = (horizontal.pixels + dx).clamp(0.0, horizontal.maxScrollExtent);
+        moved = moved || target != horizontal.pixels;
+        horizontal.jumpTo(target);
+      }
+    }
+    // 滚动时内容在指针下移动了，另一角要跟着换
+    if (moved) _dragExtend();
+  }
+
+  /// 可视区能放下几行，PageUp / PageDown 按这个翻
+  int get _pageRows {
+    if (!_scroll.hasClients) return 10;
+    return math.max(1, (_scroll.position.viewportDimension / _rowHeight).floor() - 1);
+  }
+
+  /// 键盘移动当前格。extend 为 true 时只动选区的另一角（Shift），当前格不变
+  void _moveTo(int row, int position, {required bool extend}) {
+    final cell = (row: row.clamp(0, _totalRows - 1), position: position.clamp(0, _order.length - 1));
+    setState(() {
+      _notice = null;
+      if (extend && _anchor != null) {
+        _corner = cell;
+      } else {
+        _anchor = cell;
+        _corner = cell;
+      }
+    });
+    _reveal(cell.row, cell.position);
+  }
+
+  /// 把这一格滚进可视区。滚过去之后 ListView 建出那几行，_rowAt 会去取这一段的数据
+  void _reveal(int row, int position) {
+    if (_scroll.hasClients) {
+      final vertical = _scroll.position;
+      final top = row * _rowHeight;
+      var target = vertical.pixels;
+      if (top < target) target = top;
+      if (top + _rowHeight > target + vertical.viewportDimension) {
+        target = top + _rowHeight - vertical.viewportDimension;
+      }
+      vertical.jumpTo(target.clamp(0.0, vertical.maxScrollExtent));
+    }
+    if (_hScroll.hasClients) {
+      final horizontal = _hScroll.position;
+      var left = _rowNumberWidth;
+      for (var i = 0; i < position; i++) {
+        left += _widths[_order[i]];
+      }
+      final right = left + _widths[_order[position]];
+      // 行号列跟着内容横向滚动；回到第一列时连行号一起露出来
+      var target = horizontal.pixels;
+      if (left < target) target = position == 0 ? 0 : left;
+      if (right > target + horizontal.viewportDimension) target = right - horizontal.viewportDimension;
+      horizontal.jumpTo(target.clamp(0.0, horizontal.maxScrollExtent));
+    }
+  }
+
   KeyEventResult _handleKey(FocusNode node, KeyEvent event) {
-    // 编辑框拿着焦点时事件也会冒泡到这里，那时的 ⌘C / ⌘V 归编辑框
-    if (!node.hasPrimaryFocus || event is! KeyDownEvent) return KeyEventResult.ignored;
+    // 编辑框拿着焦点时事件也会冒泡到这里，那时的按键都归编辑框
+    if (!node.hasPrimaryFocus) return KeyEventResult.ignored;
+    if (event is! KeyDownEvent && event is! KeyRepeatEvent) return KeyEventResult.ignored;
 
     // macOS 用 ⌘，Windows 用 Ctrl，两个都认
     final keyboard = HardwareKeyboard.instance;
-    if (!keyboard.isMetaPressed && !keyboard.isControlPressed) return KeyEventResult.ignored;
+    final command = keyboard.isMetaPressed || keyboard.isControlPressed;
+    final key = event.logicalKey;
 
-    if (event.logicalKey == LogicalKeyboardKey.keyC) {
+    // 复制粘贴不跟着按住连发，否则按久了会弹出一串确认框
+    if (command && event is KeyDownEvent && key == LogicalKeyboardKey.keyC) {
       _copySelection();
       return KeyEventResult.handled;
     }
-    if (event.logicalKey == LogicalKeyboardKey.keyV) {
+    if (command && event is KeyDownEvent && key == LogicalKeyboardKey.keyV) {
       _pasteFromClipboard();
       return KeyEventResult.handled;
     }
-    return KeyEventResult.ignored;
+    return _handleNavigationKey(key, command: command, shift: keyboard.isShiftPressed, alt: keyboard.isAltPressed);
+  }
+
+  /// 方向键、Home / End、翻页、Enter / F2、Esc。不认的组合一律放行，
+  /// 外层的 ⌘T / ⌘W 之类快捷键要能收到
+  KeyEventResult _handleNavigationKey(
+    LogicalKeyboardKey key, {
+    required bool command,
+    required bool shift,
+    required bool alt,
+  }) {
+    if (alt || _totalRows == 0 || _order.isEmpty) return KeyEventResult.ignored;
+    final anchor = _anchor;
+
+    if (!command && key == LogicalKeyboardKey.escape) {
+      if (anchor == null) return KeyEventResult.ignored;
+      setState(() {
+        _anchor = null;
+        _corner = null;
+      });
+      return KeyEventResult.handled;
+    }
+    if (!command &&
+        !shift &&
+        (key == LogicalKeyboardKey.enter || key == LogicalKeyboardKey.numpadEnter || key == LogicalKeyboardKey.f2)) {
+      if (anchor == null) return KeyEventResult.ignored;
+      _reveal(anchor.row, anchor.position);
+      _beginEdit(anchor.row, _order[anchor.position]);
+      return KeyEventResult.handled;
+    }
+
+    final isHomeEnd = key == LogicalKeyboardKey.home || key == LogicalKeyboardKey.end;
+    // ⌘ 只和 Home / End 组合（跳到首行 / 末行），⌘ + 方向键留给别人
+    if (command && !isHomeEnd) return KeyEventResult.ignored;
+
+    // Shift 挪的是选区的另一角，普通移动从当前格出发
+    final from = shift ? _corner : anchor;
+    final lastRow = _totalRows - 1;
+    final lastPosition = _order.length - 1;
+    int row;
+    int position;
+    if (from == null) {
+      // 还没有当前格：第一下只选中可视区左上角那一格，不急着挪
+      final firstVisible = _scroll.hasClients ? (_scroll.offset / _rowHeight).ceil() : 0;
+      row = firstVisible;
+      position = 0;
+      if (!_isNavigationKey(key)) return KeyEventResult.ignored;
+    } else if (key == LogicalKeyboardKey.arrowUp) {
+      row = from.row - 1;
+      position = from.position;
+    } else if (key == LogicalKeyboardKey.arrowDown) {
+      row = from.row + 1;
+      position = from.position;
+    } else if (key == LogicalKeyboardKey.arrowLeft) {
+      row = from.row;
+      position = from.position - 1;
+    } else if (key == LogicalKeyboardKey.arrowRight) {
+      row = from.row;
+      position = from.position + 1;
+    } else if (key == LogicalKeyboardKey.pageUp) {
+      row = from.row - _pageRows;
+      position = from.position;
+    } else if (key == LogicalKeyboardKey.pageDown) {
+      row = from.row + _pageRows;
+      position = from.position;
+    } else if (key == LogicalKeyboardKey.home) {
+      row = command ? 0 : from.row;
+      position = 0;
+    } else if (key == LogicalKeyboardKey.end) {
+      row = command ? lastRow : from.row;
+      position = lastPosition;
+    } else {
+      return KeyEventResult.ignored;
+    }
+
+    _moveTo(row, position, extend: shift && from != null);
+    return KeyEventResult.handled;
+  }
+
+  bool _isNavigationKey(LogicalKeyboardKey key) {
+    return key == LogicalKeyboardKey.arrowUp ||
+        key == LogicalKeyboardKey.arrowDown ||
+        key == LogicalKeyboardKey.arrowLeft ||
+        key == LogicalKeyboardKey.arrowRight ||
+        key == LogicalKeyboardKey.pageUp ||
+        key == LogicalKeyboardKey.pageDown ||
+        key == LogicalKeyboardKey.home ||
+        key == LogicalKeyboardKey.end;
   }
 
   /// 复制选区。编码在 Rust 侧做，NULL、二进制、带制表符的文本怎么写都在那里定
@@ -733,6 +990,7 @@ class _ResultGridState extends State<ResultGrid> {
             focusNode: _gridFocus,
             onKeyEvent: _handleKey,
             child: SingleChildScrollView(
+              controller: _hScroll,
               scrollDirection: Axis.horizontal,
               child: SizedBox(
                 width: totalWidth,
@@ -752,37 +1010,44 @@ class _ResultGridState extends State<ResultGrid> {
                       sortAscending: widget.sortAscending,
                     ),
                     Expanded(
-                      child: ListView.builder(
-                        controller: _scroll,
-                        itemCount: _totalRows,
-                        itemExtent: _rowHeight,
-                        itemBuilder: (context, index) {
-                          final cells = _rowAt(index);
-                          final editing = _editing;
-                          final range = _range;
-                          return _DataRow(
-                            selectedPositions:
-                                range != null && index >= range.top && index <= range.bottom
-                                ? (left: range.left, right: range.right)
-                                : null,
-                            onPointerDownCell: (position) => _selectCell(index, position),
-                            rowNumber: index + 1,
-                            selected: _selected.contains(index),
-                            onTapRowNumber: () => _toggleSelected(index),
-                            cells: cells,
-                            order: _order,
-                            widths: _widths,
-                            editingColumn: editing != null && editing.row == index
-                                ? editing.column
-                                : null,
-                            editController: _editController,
-                            editFocus: _editFocus,
-                            onDoubleTapCell: (column) => _beginEdit(index, column),
-                            onCommit: (text) => _commitEdit(CellValue.text(text)),
-                            onSetNull: () => _commitEdit(const CellValue.null_()),
-                            onCancel: () => setState(() => _editing = null),
-                          );
-                        },
+                      // 拖选：按下由单元格自己接（知道是哪一格），之后的移动都送到这里，
+                      // 指针拖出网格也照样收得到
+                      child: Listener(
+                        onPointerMove: _dragMove,
+                        onPointerUp: _dragEnd,
+                        onPointerCancel: _dragEnd,
+                        child: ListView.builder(
+                          controller: _scroll,
+                          itemCount: _totalRows,
+                          itemExtent: _rowHeight,
+                          itemBuilder: (context, index) {
+                            final cells = _rowAt(index);
+                            final editing = _editing;
+                            final range = _range;
+                            return _DataRow(
+                              selectedPositions:
+                                  range != null && index >= range.top && index <= range.bottom
+                                  ? (left: range.left, right: range.right)
+                                  : null,
+                              onPointerDownCell: (event, position) => _selectCell(event, index, position),
+                              rowNumber: index + 1,
+                              selected: _selected.contains(index),
+                              onTapRowNumber: () => _toggleSelected(index),
+                              cells: cells,
+                              order: _order,
+                              widths: _widths,
+                              editingColumn: editing != null && editing.row == index
+                                  ? editing.column
+                                  : null,
+                              editController: _editController,
+                              editFocus: _editFocus,
+                              onDoubleTapCell: (column) => _beginEdit(index, column),
+                              onCommit: (text) => _commitEdit(CellValue.text(text)),
+                              onSetNull: () => _commitEdit(const CellValue.null_()),
+                              onCancel: _cancelEdit,
+                            );
+                          },
+                        ),
                       ),
                     ),
                   ],
@@ -976,7 +1241,7 @@ class _DataRow extends StatelessWidget {
 
   /// 这一行里落在选区内的显示位置，null 表示这一行不在选区里
   final ({int left, int right})? selectedPositions;
-  final void Function(int position) onPointerDownCell;
+  final void Function(PointerDownEvent event, int position) onPointerDownCell;
   final int? editingColumn;
   final TextEditingController editController;
   final FocusNode editFocus;
@@ -1062,7 +1327,7 @@ class _DataRow extends StatelessWidget {
           // 按下就选中。用 Listener 而不是 onTap：onTap 要等双击判定超时才触发，点了会慢半拍
           : Listener(
               onPointerDown: (event) {
-                if (event.buttons == kPrimaryButton) onPointerDownCell(position);
+                if (event.buttons == kPrimaryButton) onPointerDownCell(event, position);
               },
               child: GestureDetector(
                 behavior: HitTestBehavior.opaque,
@@ -1236,7 +1501,7 @@ class _StatusBar extends StatelessWidget {
           else
             Expanded(
               child: Text(
-                '双击编辑，Shift 点选区域后可复制粘贴，点行号选中行',
+                '双击或 Enter 编辑，拖动或 Shift+方向键选区域后可复制粘贴，点行号选中行',
                 style: TextStyle(fontSize: 11, color: scheme.outline),
               ),
             ),

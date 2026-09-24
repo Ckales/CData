@@ -320,6 +320,95 @@ class _DateEditorState extends State<_DateEditor> {
   }
 }
 
+/// TIME：一段时长，范围 -838:59:59 到 838:59:59，不是一天里的时刻，所以不用 TimePicker
+/// （它只能选 0–23 点，也丢小数秒）。纯文本输入，格式和范围由 core 的 check 判断，
+/// 这里只显示它给的错误；原文照写，不补零也不截断小数秒
+Future<CellValue?> showTimeEditor(
+  BuildContext context, {
+  required String column,
+  required String initial,
+  required int fsp,
+  required String? Function(String text) check,
+}) {
+  return showDialog<CellValue>(
+    context: context,
+    builder: (context) => _TimeEditor(column: column, initial: initial, fsp: fsp, check: check),
+  );
+}
+
+class _TimeEditor extends StatefulWidget {
+  final String column;
+  final String initial;
+  final int fsp;
+  final String? Function(String text) check;
+
+  const _TimeEditor({required this.column, required this.initial, required this.fsp, required this.check});
+
+  @override
+  State<_TimeEditor> createState() => _TimeEditorState();
+}
+
+class _TimeEditorState extends State<_TimeEditor> {
+  late final _controller = TextEditingController(text: widget.initial);
+
+  /// 当前输入的问题，null 表示合法。原值是 NULL 时输入框是空的，先不报错，等人开始输入
+  late String? _error = widget.initial.isEmpty ? null : widget.check(widget.initial);
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _save() {
+    final error = widget.check(_controller.text);
+    if (error != null) {
+      setState(() => _error = error);
+      return;
+    }
+    Navigator.of(context).pop(CellValue.text(_controller.text));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // 超过 6 是表达式列，小数秒位数不固定
+    final precision = widget.fsp > 6 ? '最多 6 位小数秒' : (widget.fsp == 0 ? '不存小数秒' : '保留 ${widget.fsp} 位小数秒');
+    return AlertDialog(
+      title: _title(widget.column, 'TIME'),
+      content: SizedBox(
+        width: 360,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            TextField(
+              key: const ValueKey('time-text'),
+              controller: _controller,
+              style: const TextStyle(fontSize: 13, fontFamily: 'Menlo'),
+              decoration: const InputDecoration(
+                isDense: true,
+                border: OutlineInputBorder(),
+                hintText: '[-]时:分:秒[.微秒]',
+              ),
+              onChanged: (text) => setState(() => _error = widget.check(text)),
+              onSubmitted: (_) => _save(),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              _error ?? '范围 -838:59:59 到 838:59:59，小时可以超过 24；这一列$precision',
+              style: TextStyle(
+                fontSize: 12,
+                color: _error == null ? Theme.of(context).colorScheme.onSurfaceVariant : Theme.of(context).colorScheme.error,
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: _actions(context, onSave: _save),
+    );
+  }
+}
+
 /// 二进制内容只读查看。声明成文本却解不了码的列也走这里，并说明原因
 Future<void> showHexViewer(
   BuildContext context, {

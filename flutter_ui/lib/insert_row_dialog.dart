@@ -118,7 +118,6 @@ class _InsertRowDialogState extends State<_InsertRowDialog> {
                 border: const OutlineInputBorder(),
                 contentPadding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
                 hintText: column.isBinary ? '二进制列暂不支持输入' : _hint(_modes[index]),
-                hintStyle: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.outline),
               ),
               // 一打字就是要写这个值，省得再去切下拉框
               onChanged: (_) => setState(() => _modes[index] = _Mode.value),

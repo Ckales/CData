@@ -147,7 +147,6 @@ class _ExportDialogState extends State<_ExportDialog> {
                     isDense: true,
                     border: OutlineInputBorder(),
                     hintText: '留空用结果集的来源表',
-                    hintStyle: TextStyle(fontSize: 11),
                   ),
                 ),
               ),

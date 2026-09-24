@@ -12,12 +12,26 @@ Future<bool> showStructureEditor(
   required String table,
   required TableStructure structure,
 }) async {
-  final applied = await showDialog<bool>(
+  final applied = await showDialog<String>(
     context: context,
     barrierDismissible: false,
     builder: (context) => _EditorDialog(source: source, database: database, table: table, structure: structure),
   );
-  return applied ?? false;
+  return applied != null;
+}
+
+/// 新建表：同一个编辑器，草稿从 core 的起始草稿开始，生成 CREATE TABLE。
+/// 建成返回表名，取消返回 null
+Future<String?> showTableCreator(
+  BuildContext context, {
+  required SchemaSource source,
+  required String database,
+}) {
+  return showDialog<String>(
+    context: context,
+    barrierDismissible: false,
+    builder: (context) => _EditorDialog(source: source, database: database, table: null, structure: null),
+  );
 }
 
 enum _DefaultKind { none, null_, literal, expression }
@@ -149,11 +163,32 @@ class _ForeignKeyRow {
         referencedTable = TextEditingController(text: referencedTable);
 }
 
+class _CheckRow {
+  /// 原有的约束只能删，不能改
+  final String? originalName;
+  final TextEditingController name;
+  final TextEditingController expression;
+  bool enforced;
+
+  _CheckRow(CheckDraft draft)
+      : originalName = draft.originalName,
+        name = TextEditingController(text: draft.name),
+        expression = TextEditingController(text: draft.expression),
+        enforced = draft.enforced;
+
+  void dispose() {
+    name.dispose();
+    expression.dispose();
+  }
+}
+
 class _EditorDialog extends StatefulWidget {
   final SchemaSource source;
   final String database;
-  final String table;
-  final TableStructure structure;
+
+  /// 新建表时 table 和 structure 都是 null
+  final String? table;
+  final TableStructure? structure;
 
   const _EditorDialog({required this.source, required this.database, required this.table, required this.structure});
 
@@ -166,13 +201,36 @@ class _EditorDialogState extends State<_EditorDialog> {
   final List<_IndexRow> _indexes = [];
   final List<_ForeignKeyRow> _foreignKeys = [];
   final List<_ColumnRow> _removedColumns = [];
+  final List<_CheckRow> _checks = [];
+  final List<_CheckRow> _removedChecks = [];
+  final _tableName = TextEditingController();
+  final _engine = TextEditingController();
+  final _charset = TextEditingController();
+  final _collation = TextEditingController();
+  final _tableComment = TextEditingController();
+  final _autoIncrement = TextEditingController();
+  final _rowFormat = TextEditingController();
+  bool _convertCharset = false;
   String? _error;
   bool _previewing = false;
+
+  bool get _creating => widget.structure == null;
 
   @override
   void initState() {
     super.initState();
-    final draft = widget.source.draftOf(widget.structure);
+    final structure = widget.structure;
+    final draft = structure == null ? widget.source.newTableDraft() : widget.source.draftOf(structure);
+    final options = draft.options;
+    _engine.text = options.engine;
+    _charset.text = options.charset ?? '';
+    _collation.text = options.collation ?? '';
+    _tableComment.text = options.comment;
+    _autoIncrement.text = options.autoIncrement?.toString() ?? '';
+    _rowFormat.text = options.rowFormat ?? '';
+    for (final check in draft.checks) {
+      _checks.add(_CheckRow(check));
+    }
     for (final column in draft.columns) {
       _columns.add(_ColumnRow(column));
     }
@@ -205,10 +263,11 @@ class _EditorDialogState extends State<_EditorDialog> {
     }
   }
 
+  /// 草稿里索引、外键按列名引用列。改表时是原列名；新建表的起始草稿没有原列名，按名字找
   _ColumnRow? _columnNamed(String? name) {
     if (name == null) return null;
     for (final column in _columns) {
-      if (column.originalName == name) return column;
+      if ((column.originalName ?? column.name.text) == name) return column;
     }
     return null;
   }
@@ -217,6 +276,12 @@ class _EditorDialogState extends State<_EditorDialog> {
   void dispose() {
     for (final column in [..._columns, ..._removedColumns]) {
       column.dispose();
+    }
+    for (final check in [..._checks, ..._removedChecks]) {
+      check.dispose();
+    }
+    for (final controller in [_tableName, _engine, _charset, _collation, _tableComment, _autoIncrement, _rowFormat]) {
+      controller.dispose();
     }
     for (final index in _indexes) {
       index.name.dispose();
@@ -261,6 +326,12 @@ class _EditorDialogState extends State<_EditorDialog> {
       ));
     }
 
+    final autoIncrementText = _autoIncrement.text.trim();
+    final autoIncrement = autoIncrementText.isEmpty ? null : BigInt.tryParse(autoIncrementText);
+    if (autoIncrementText.isNotEmpty && (autoIncrement == null || autoIncrement.isNegative)) {
+      throw FormatException('AUTO_INCREMENT「$autoIncrementText」不是正整数');
+    }
+
     return TableDraft(
       columns: [
         for (final column in _columns)
@@ -291,6 +362,24 @@ class _EditorDialogState extends State<_EditorDialog> {
             onDelete: fk.onDelete,
           ),
       ],
+      checks: [
+        for (final check in _checks)
+          CheckDraft(
+            originalName: check.originalName,
+            name: check.name.text,
+            expression: check.expression.text,
+            enforced: check.enforced,
+          ),
+      ],
+      options: TableOptionsDraft(
+        engine: _engine.text.trim(),
+        charset: _optional(_charset.text.trim()),
+        collation: _optional(_collation.text.trim()),
+        comment: _tableComment.text,
+        autoIncrement: autoIncrement,
+        rowFormat: _optional(_rowFormat.text.trim()),
+        convertCharset: _convertCharset,
+      ),
     );
   }
 
@@ -303,13 +392,18 @@ class _EditorDialogState extends State<_EditorDialog> {
       return;
     }
 
+    // 新建表的表名原样交给 core，不在界面上修剪：修剪过的名字和用户看到的不是同一个
+    final table = widget.table ?? _tableName.text;
+    final structure = widget.structure;
     setState(() {
       _error = null;
       _previewing = true;
     });
     AlterPlan plan;
     try {
-      plan = await widget.source.previewAlter(widget.database, widget.table, widget.structure, draft);
+      plan = structure == null
+          ? await widget.source.previewCreateTable(widget.database, table, draft)
+          : await widget.source.previewAlter(widget.database, table, structure, draft);
     } catch (e) {
       if (mounted) {
         setState(() {
@@ -327,16 +421,12 @@ class _EditorDialogState extends State<_EditorDialog> {
       barrierDismissible: false,
       builder: (context) => _PreviewDialog(
         plan: plan,
-        apply: () => widget.source.applyAlter(
-          widget.database,
-          widget.table,
-          widget.structure,
-          draft,
-          plan.statements,
-        ),
+        apply: () => structure == null
+            ? widget.source.createTable(widget.database, table, draft, plan.statements)
+            : widget.source.applyAlter(widget.database, table, structure, draft, plan.statements),
       ),
     );
-    if (applied == true && mounted) Navigator.of(context).pop(true);
+    if (applied == true && mounted) Navigator.of(context).pop(table);
   }
 
   void _addColumn() {
@@ -382,14 +472,25 @@ class _EditorDialogState extends State<_EditorDialog> {
         child: Padding(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
           child: DefaultTabController(
-            length: 3,
+            length: 5,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Text(
-                  '编辑结构：${widget.database}.${widget.table}',
-                  style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
-                ),
+                if (_creating)
+                  Row(
+                    children: [
+                      Text(
+                        '新建表：${widget.database}.',
+                        style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+                      ),
+                      SizedBox(width: 260, child: _field(_tableName, hint: '表名', key: const ValueKey('table-name'))),
+                    ],
+                  )
+                else
+                  Text(
+                    '编辑结构：${widget.database}.${widget.table}',
+                    style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+                  ),
                 TabBar(
                   isScrollable: true,
                   tabAlignment: TabAlignment.start,
@@ -398,10 +499,14 @@ class _EditorDialogState extends State<_EditorDialog> {
                     Tab(text: '列 ${_columns.length}'),
                     Tab(text: '索引 ${_indexes.length}'),
                     Tab(text: '外键 ${_foreignKeys.length}'),
+                    Tab(text: 'CHECK ${_checks.length}'),
+                    const Tab(text: '表选项'),
                   ],
                 ),
                 Expanded(
-                  child: TabBarView(children: [_columnsTab(), _indexesTab(), _foreignKeysTab()]),
+                  child: TabBarView(
+                    children: [_columnsTab(), _indexesTab(), _foreignKeysTab(), _checksTab(), _optionsTab()],
+                  ),
                 ),
                 if (error != null)
                   Padding(
@@ -413,7 +518,7 @@ class _EditorDialogState extends State<_EditorDialog> {
                   children: [
                     Text('改动在预览确认之前不会写入数据库', style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant)),
                     const Spacer(),
-                    TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('取消')),
+                    TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('取消')),
                     const SizedBox(width: 8),
                     FilledButton(
                       onPressed: _previewing ? null : _preview,
@@ -499,7 +604,8 @@ class _EditorDialogState extends State<_EditorDialog> {
         value: column.autoIncrement,
         onChanged: editable ? (value) => setState(() => column.autoIncrement = value ?? false) : null,
       ),
-      _field(column.onUpdate, enabled: editable, hint: 'CURRENT_TIMESTAMP'),
+      // 空着就是没有 ON UPDATE。提示写成例子的话，一排空框看起来像每列都设了 CURRENT_TIMESTAMP
+      _field(column.onUpdate, enabled: editable, hint: '无'),
       _field(column.collation, enabled: editable, hint: '表默认'),
       _field(column.comment, enabled: editable, key: ValueKey('column-comment-$i')),
     ];
@@ -699,6 +805,126 @@ class _EditorDialogState extends State<_EditorDialog> {
     );
   }
 
+  // ---- CHECK ----
+
+  Widget _checksTab() {
+    final scheme = Theme.of(context).colorScheme;
+    // 改表时 checks 是 null：服务器读不了 CHECK，加了 core 也会拒绝，这里直接说明
+    final unsupported = !_creating && widget.structure!.checks == null;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (unsupported)
+          Padding(
+            padding: const EdgeInsets.all(8),
+            child: Text(
+              '这个服务器读不到 CHECK 约束（要 MySQL 8.0.16+）。更早的版本会解析 CHECK 但不执行，所以这里不能加。',
+              style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
+            ),
+          ),
+        Padding(
+          padding: const EdgeInsets.all(8),
+          child: Text(
+            '已有的 CHECK 约束只能删除，要改就删掉再新加一条。表达式里不能有括号外的逗号、分号、注释。',
+            style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
+          ),
+        ),
+        Expanded(
+          child: _Table(
+            widths: const [44, 200, 520, 80],
+            headers: const ['', '约束名', '表达式', '强制执行'],
+            rows: [for (var i = 0; i < _checks.length; i++) _checkRow(i)],
+          ),
+        ),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: TextButton.icon(
+            key: const ValueKey('add-check'),
+            onPressed: unsupported
+                ? null
+                : () => setState(() {
+                      _checks.add(_CheckRow(const CheckDraft(name: '', expression: '', enforced: true)));
+                    }),
+            icon: const Icon(Icons.add, size: 16),
+            label: const Text('添加 CHECK'),
+          ),
+        ),
+      ],
+    );
+  }
+
+  List<Widget> _checkRow(int i) {
+    final check = _checks[i];
+    final editable = check.originalName == null;
+    return [
+      _iconButton(Icons.delete_outline, '删除 CHECK', () {
+        setState(() {
+          _checks.removeAt(i);
+          _removedChecks.add(check);
+        });
+      }, key: ValueKey('check-delete-$i')),
+      _field(check.name, enabled: editable, hint: '留空自动起名', key: ValueKey('check-name-$i')),
+      _field(check.expression, enabled: editable, hint: 'price >= 0', key: ValueKey('check-expression-$i')),
+      Checkbox(
+        key: ValueKey('check-enforced-$i'),
+        value: check.enforced,
+        onChanged: editable ? (value) => setState(() => check.enforced = value ?? true) : null,
+      ),
+    ];
+  }
+
+  // ---- 表选项 ----
+
+  Widget _optionsTab() {
+    final scheme = Theme.of(context).colorScheme;
+    final current = widget.structure?.autoIncrement;
+    final autoIncrementHint = _creating ? '留空从 1 开始' : (current == null ? '留空不改' : '当前 $current，留空不改');
+    return ListView(
+      padding: const EdgeInsets.all(8),
+      children: [
+        _optionRow('引擎', _field(_engine, key: const ValueKey('option-engine'))),
+        _optionRow('默认字符集', _field(_charset, hint: _creating ? '跟库的默认' : null, key: const ValueKey('option-charset'))),
+        _optionRow('排序规则', _field(_collation, hint: _creating ? '字符集的默认' : null, key: const ValueKey('option-collation'))),
+        if (!_creating)
+          Padding(
+            padding: const EdgeInsets.only(left: 132, bottom: 8),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Checkbox(
+                  key: const ValueKey('option-convert'),
+                  value: _convertCharset,
+                  onChanged: (value) => setState(() => _convertCharset = value ?? false),
+                ),
+                Expanded(
+                  child: Text(
+                    '转换已有列（CONVERT TO CHARACTER SET）。不勾只改表的默认值，已有的列不动、之后新加的列才用它；'
+                    '勾上会把所有字符串列的数据转换过去，重写整张表。',
+                    style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        _optionRow('表注释', _field(_tableComment, key: const ValueKey('option-comment'))),
+        _optionRow('AUTO_INCREMENT', _field(_autoIncrement, hint: autoIncrementHint, key: const ValueKey('option-auto-increment'))),
+        _optionRow('ROW_FORMAT', _field(_rowFormat, hint: '引擎默认', key: const ValueKey('option-row-format'))),
+      ],
+    );
+  }
+
+  Widget _optionRow(String label, Widget field) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        children: [
+          SizedBox(width: 132, child: _label(label)),
+          SizedBox(width: 360, child: field),
+        ],
+      ),
+    );
+  }
+
   Widget _actionPicker(String value, ValueChanged<String> onChanged) {
     return DropdownButton<String>(
       value: value,
@@ -741,7 +967,6 @@ class _EditorDialogState extends State<_EditorDialog> {
       decoration: InputDecoration(
         isDense: true,
         hintText: hint,
-        hintStyle: const TextStyle(fontSize: 11),
         contentPadding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
         border: const OutlineInputBorder(),
       ),

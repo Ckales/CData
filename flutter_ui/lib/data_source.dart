@@ -9,7 +9,8 @@ import 'src/rust/api/db.dart' as db
 import 'src/rust/api/layouts.dart';
 import 'src/rust/api/layouts.dart' as layouts show loadLayout, saveLayout;
 import 'src/rust/api/schema.dart';
-import 'src/rust/api/schema.dart' as schema show tableDraft, previewAlter, applyAlter;
+import 'src/rust/api/schema.dart' as schema
+    show tableDraft, previewAlter, applyAlter, newTableDraft, previewCreateTable, createTable;
 import 'src/rust/api/value.dart';
 import 'src/rust/api/value.dart' as value show formatJson, hexDump;
 import 'dart:typed_data' show Uint8List;
@@ -99,6 +100,15 @@ abstract class SchemaSource {
     TableDraft draft,
     List<String> statements,
   );
+
+  /// 新建表的起始草稿，默认值由 core 定
+  TableDraft newTableDraft();
+
+  /// 预览新建表。同名的表或视图已经存在就抛错
+  Future<AlterPlan> previewCreateTable(String database, String table, TableDraft draft);
+
+  /// 执行预览过的建表。statements 是预览时拿到的语句，core 重新生成的不一致就拒绝
+  Future<void> createTable(String database, String table, TableDraft draft, List<String> statements);
 }
 
 class RustGridSource implements GridSource {
@@ -265,6 +275,25 @@ class RustSchemaSource implements SchemaSource {
       database: database,
       table: table,
       original: original,
+      draft: draft,
+      statements: statements,
+    );
+  }
+
+  @override
+  TableDraft newTableDraft() => schema.newTableDraft();
+
+  @override
+  Future<AlterPlan> previewCreateTable(String database, String table, TableDraft draft) {
+    return schema.previewCreateTable(sessionId: sessionId, database: database, table: table, draft: draft);
+  }
+
+  @override
+  Future<void> createTable(String database, String table, TableDraft draft, List<String> statements) {
+    return schema.createTable(
+      sessionId: sessionId,
+      database: database,
+      table: table,
       draft: draft,
       statements: statements,
     );

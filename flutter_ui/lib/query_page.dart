@@ -8,6 +8,8 @@ import 'data_source.dart';
 import 'import_dialog.dart';
 import 'preferences_dialog.dart';
 import 'query_tab.dart';
+import 'server_source.dart';
+import 'server_status.dart';
 import 'sql_library.dart';
 import 'src/rust/api/connections.dart';
 import 'src/rust/api/db.dart';
@@ -15,8 +17,11 @@ import 'src/rust/api/editor.dart';
 import 'src/rust/api/options.dart';
 import 'src/rust/api/preferences.dart' as prefs;
 import 'src/rust/api/schema.dart';
+import 'structure_editor.dart';
 import 'structure_view.dart';
 import 'table_sidebar.dart';
+import 'user_admin.dart';
+import 'user_source.dart';
 
 /// 主窗口：连接栏 + 侧栏 + 多个查询标签。
 ///
@@ -518,6 +523,15 @@ class _QueryPageState extends State<QueryPage> {
                   onPickSaved: _applySaved,
                   onSave: _saveCurrent,
                   onPreferences: _editPreferences,
+                  // 还没连上时没有会话可用，按钮置灰
+                  onServerStatus: schema == null
+                      ? null
+                      : () => showServerStatus(
+                          context,
+                          source: schema.server,
+                          serverLabel: '${schema.config.host}:${schema.config.port}',
+                        ),
+                  onUserAdmin: schema == null ? null : () => showUserAdmin(context, source: schema.users),
                   optionsSummary: _optionsSummary(_options),
                   onOptions: _editOptions,
                 ),
@@ -556,6 +570,12 @@ class _QueryPageState extends State<QueryPage> {
                           // 改表不增删表，侧栏清单不用刷；列变了，补全目录要重读
                           onAltered: () => _loadCatalog(schema, entry.config!),
                         ),
+                        // 建表之后补全目录要多一张表；侧栏自己会重读并选中新表
+                        onCreateTable: (database) async {
+                          final created = await showTableCreator(context, source: schema.source, database: database);
+                          if (created != null) await _loadCatalog(schema, entry.config!);
+                          return created;
+                        },
                         // 导入用侧栏的会话开自己独占的连接，不占标签的会话。
                         // 导完不自动重跑当前标签：标签里的 SQL 不一定和这张表有关，结果在对话框里看
                         onImport: (table) => showImportDialog(
@@ -636,8 +656,13 @@ class _SchemaSession {
   final ConnectionConfig config;
   final BigInt id;
   final RustSchemaSource source;
+  final RustServerSource server;
+  final RustUserSource users;
 
-  _SchemaSession(this.config, this.id) : source = RustSchemaSource(id);
+  _SchemaSession(this.config, this.id)
+    : source = RustSchemaSource(id),
+      server = RustServerSource(id),
+      users = RustUserSource(id);
 }
 
 class _TabEntry {
@@ -779,6 +804,8 @@ class _ConnectionBar extends StatelessWidget {
   final void Function(SavedConnection connection) onPickSaved;
   final VoidCallback? onSave;
   final VoidCallback onPreferences;
+  final VoidCallback? onServerStatus;
+  final VoidCallback? onUserAdmin;
   final String optionsSummary;
   final VoidCallback onOptions;
 
@@ -796,6 +823,8 @@ class _ConnectionBar extends StatelessWidget {
     required this.onPickSaved,
     required this.onSave,
     required this.onPreferences,
+    required this.onServerStatus,
+    required this.onUserAdmin,
     required this.optionsSummary,
     required this.onOptions,
   });
@@ -894,6 +923,16 @@ class _ConnectionBar extends StatelessWidget {
               ),
             ),
           const Spacer(),
+          IconButton(
+            tooltip: '服务器状态：进程、变量、状态计数、慢日志',
+            onPressed: onServerStatus,
+            icon: const Icon(Icons.monitor_heart_outlined, size: 18),
+          ),
+          IconButton(
+            tooltip: '用户与权限',
+            onPressed: onUserAdmin,
+            icon: const Icon(Icons.manage_accounts_outlined, size: 18),
+          ),
           IconButton(
             tooltip: '偏好设置（${commandLabel(',')}）',
             onPressed: onPreferences,

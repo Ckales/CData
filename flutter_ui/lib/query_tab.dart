@@ -13,13 +13,8 @@ import 'src/rust/api/options.dart';
 
 /// 一个标签页跑查询的后端。每个标签一个会话：结果集留在会话里，一个会话只放一份结果
 abstract class QueryRunner {
-  Future<QuerySummary> run(
-    String sql,
-    List<FilterCondition> conditions,
-    bool matchAll,
-    String? sortColumn,
-    bool sortAscending,
-  );
+  /// filter 为空分组表示不筛选；sortColumn 为 null 表示不排序
+  Future<QuerySummary> run(String sql, FilterGroup filter, String? sortColumn, bool sortAscending);
 
   /// 这次结果的网格数据源。每次查询完成只建一次 —— 每次重绘都新建的话，
   /// 网格会以为换了结果集，把窗口、选区全部重置
@@ -62,19 +57,12 @@ class RustQueryRunner implements QueryRunner {
   });
 
   @override
-  Future<QuerySummary> run(
-    String sql,
-    List<FilterCondition> conditions,
-    bool matchAll,
-    String? sortColumn,
-    bool sortAscending,
-  ) async {
+  Future<QuerySummary> run(String sql, FilterGroup filter, String? sortColumn, bool sortAscending) async {
     final id = _sessionId ??= await _open();
-    return executeView(
+    return executeFilteredView(
       sessionId: id,
       sql: sql,
-      conditions: conditions,
-      matchAll: matchAll,
+      filter: filter,
       sortColumn: sortColumn,
       sortAscending: sortAscending,
       maxRows: maxRows(),
@@ -193,8 +181,7 @@ class QueryTabState extends State<QueryTab> {
   String _baseSql = '';
   String? _sortColumn;
   bool _sortAscending = true;
-  List<FilterCondition> _filters = const [];
-  bool _matchAll = true;
+  FilterGroup _filter = _noFilter;
 
   /// 基准 SQL 最近一次成功返回的列名。筛选出错时 _source 是 null，
   /// 靠它继续显示筛选条，才能把写错的条件改掉或清掉
@@ -237,8 +224,7 @@ class QueryTabState extends State<QueryTab> {
     setState(() {
       _sortColumn = null;
       _sortAscending = true;
-      _filters = const [];
-      _matchAll = true;
+      _filter = _noFilter;
       _columns = const [];
       _extras = const [];
       _activeResult = 0;
@@ -396,22 +382,14 @@ class QueryTabState extends State<QueryTab> {
   }
 
   Future<void> _editFilter() async {
-    final result = await showFilterDialog(
-      context,
-      columns: _columns,
-      initial: _filters,
-      matchAll: _matchAll,
-    );
+    final result = await showFilterGroupDialog(context, columns: _columns, initial: _filter);
     if (result == null || !mounted) return;
-    setState(() {
-      _filters = result.conditions;
-      _matchAll = result.matchAll;
-    });
+    setState(() => _filter = result);
     await _runView();
   }
 
   Future<void> _clearFilter() async {
-    setState(() => _filters = const []);
+    setState(() => _filter = _noFilter);
     await _runView();
   }
 
@@ -429,13 +407,7 @@ class QueryTabState extends State<QueryTab> {
 
     final started = DateTime.now();
     try {
-      final summary = await widget.runner.run(
-        _baseSql,
-        _filters,
-        _matchAll,
-        _sortColumn,
-        _sortAscending,
-      );
+      final summary = await widget.runner.run(_baseSql, _filter, _sortColumn, _sortAscending);
       if (!mounted) return;
       setState(() {
         _source = widget.runner.gridSource(summary);
@@ -475,8 +447,7 @@ class QueryTabState extends State<QueryTab> {
         // 筛选只作用在单条语句的结果上，看脚本结果和执行计划时不显示
         if (_columns.isNotEmpty && (views.isEmpty || showingMain))
           FilterBar(
-            conditions: _filters,
-            matchAll: _matchAll,
+            filter: _filter,
             onEdit: _busy ? null : _editFilter,
             onClear: _busy ? null : _clearFilter,
           ),
@@ -689,3 +660,6 @@ class _ResultStrip extends StatelessWidget {
     );
   }
 }
+
+/// 空分组：不筛选
+const _noFilter = FilterGroup(matchAll: true, items: []);
