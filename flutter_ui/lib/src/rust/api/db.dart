@@ -4,6 +4,7 @@
 // ignore_for_file: invalid_use_of_internal_member, unused_import, unnecessary_import
 
 import '../frb_generated.dart';
+import 'options.dart';
 
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
@@ -13,7 +14,8 @@ part 'db.freezed.dart';
 
 // These functions are ignored because they are not marked as `pub`: `on_runtime`, `runtime`, `to_message`
 
-/// 开会话，返回会话 id。此时还没有真正连上，第一次查询才建立 TCP 连接
+/// 开会话，返回会话 id。直连时还没有真正连上，第一次查询才建立 TCP 连接；
+/// 走 SSH 时当场建隧道，未知主机、密钥不符、认证失败在这里就报出来
 Future<BigInt> openSession({required ConnectionConfig config}) =>
     RustLib.instance.api.crateApiDbOpenSession(config: config);
 
@@ -49,7 +51,7 @@ Future<QuerySummary> executeView({
 );
 
 /// 取可视区的显示文本，网格渲染走这条。整个结果集不跨 FFI，界面滚到哪取到哪
-Future<List<List<String>>> fetchWindowText({
+Future<List<List<DisplayCell>>> fetchWindowText({
   required BigInt sessionId,
   required BigInt offset,
   required BigInt limit,
@@ -218,6 +220,9 @@ class ConnectionConfig {
   final String user;
   final String password;
   final String? database;
+  final ConnectionOptions options;
+  final List<String?> sshSecrets;
+  final String? savedId;
 
   const ConnectionConfig({
     required this.host,
@@ -225,6 +230,9 @@ class ConnectionConfig {
     required this.user,
     required this.password,
     this.database,
+    required this.options,
+    required this.sshSecrets,
+    this.savedId,
   });
 
   @override
@@ -233,7 +241,10 @@ class ConnectionConfig {
       port.hashCode ^
       user.hashCode ^
       password.hashCode ^
-      database.hashCode;
+      database.hashCode ^
+      options.hashCode ^
+      sshSecrets.hashCode ^
+      savedId.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -244,7 +255,10 @@ class ConnectionConfig {
           port == other.port &&
           user == other.user &&
           password == other.password &&
-          database == other.database;
+          database == other.database &&
+          options == other.options &&
+          sshSecrets == other.sshSecrets &&
+          savedId == other.savedId;
 }
 
 class EditTarget {
@@ -380,6 +394,29 @@ enum FilterOp {
   endsWith,
   isNull,
   isNotNull,
+}
+
+/// 开会话失败。主机密钥没通过校验时带着 host_key，界面据此问用户要不要信任；
+/// 其余情况只有 message
+class OpenSessionError implements FrbException {
+  final String message;
+  final HostKeyIssue? hostKey;
+
+  const OpenSessionError({required this.message, this.hostKey});
+
+  @override
+  String toString() => message;
+
+  @override
+  int get hashCode => message.hashCode ^ hostKey.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is OpenSessionError &&
+          runtimeType == other.runtimeType &&
+          message == other.message &&
+          hostKey == other.hostKey;
 }
 
 class QuerySummary {

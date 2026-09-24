@@ -224,10 +224,19 @@ void main() {
     expect(find.text('用户1'), findsNothing);
   });
 
-  test('高亮按 token 拆 span，token 之间的原文不丢', () {
+  testWidgets('高亮按 token 拆 span，token 之间的原文不丢', (tester) async {
+    // 高亮按主题亮度选配色，要一个挂在 Theme 下面的真 context
+    late BuildContext context;
+    await tester.pumpWidget(MaterialApp(
+      home: Builder(builder: (built) {
+        context = built;
+        return const SizedBox();
+      }),
+    ));
     final controller = SqlEditingController(tokenize: fakeTokenize, text: 'SELECT 1 FROM t');
+    addTearDown(controller.dispose);
     final span = controller.buildTextSpan(
-      context: _FakeContext(),
+      context: context,
       style: const TextStyle(fontSize: 13),
       withComposing: true,
     );
@@ -249,7 +258,7 @@ void main() {
   });
 }
 
-/// buildTextSpan 只在组词时才用 context，这里给一个空壳
+/// 组词时走默认实现，用不到主题，这里给一个空壳 context
 class _FakeContext implements BuildContext {
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);

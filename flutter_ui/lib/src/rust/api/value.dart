@@ -33,3 +33,21 @@ sealed class CellValue with _$CellValue {
   const factory CellValue.bytes(Uint8List field0) = CellValue_Bytes;
   const factory CellValue.invalidText(Uint8List field0) = CellValue_InvalidText;
 }
+
+class DisplayCell {
+  final String text;
+  final bool placeholder;
+
+  const DisplayCell({required this.text, required this.placeholder});
+
+  @override
+  int get hashCode => text.hashCode ^ placeholder.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is DisplayCell &&
+          runtimeType == other.runtimeType &&
+          text == other.text &&
+          placeholder == other.placeholder;
+}

@@ -100,6 +100,24 @@ Future<void> shiftTap(WidgetTester tester, Finder finder) async {
 Finder cell(int row, int column) => find.byKey(ValueKey('cell-$row-$column'));
 
 void main() {
+  testWidgets('内容恰好是 "NULL" 或 <…> 的文本按普通文本画，只有真正的 NULL 是占位样式', (tester) async {
+    final source = FakeGridSource(
+      summary: summaryOf(columns: [column('a'), column('b'), column('c')], totalRows: 1),
+      rows: [
+        [const CellValue.text('NULL'), const CellValue.null_(), const CellValue.text('<abc>')],
+      ],
+    );
+    await tester.pumpWidget(MaterialApp(home: Scaffold(body: ResultGrid(source: source))));
+    await tester.pumpAndSettle();
+
+    final nullTexts = tester.widgetList<Text>(find.text('NULL')).toList();
+    expect(nullTexts, hasLength(2));
+    final italic = [for (final text in nullTexts) text.style?.fontStyle == FontStyle.italic];
+    // 一个是真实文本、一个是 NULL，样式必须不同
+    expect(italic, unorderedEquals([true, false]));
+    expect(tester.widget<Text>(find.text('<abc>')).style?.fontStyle, isNot(FontStyle.italic));
+  });
+
   testWidgets('渲染列头、行号和数据', (tester) async {
     await pumpGrid(tester, FakeGridSource.rows(3));
 

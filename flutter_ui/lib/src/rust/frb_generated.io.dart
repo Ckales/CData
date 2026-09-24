@@ -7,6 +7,8 @@ import 'api/connections.dart';
 import 'api/db.dart';
 import 'api/editor.dart';
 import 'api/layouts.dart';
+import 'api/options.dart';
+import 'api/preferences.dart';
 import 'api/schema.dart';
 import 'api/value.dart';
 
@@ -45,7 +47,19 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ExportOptions dco_decode_box_autoadd_export_options(dynamic raw);
 
   @protected
+  HostKeyIssue dco_decode_box_autoadd_host_key_issue(dynamic raw);
+
+  @protected
+  Preferences dco_decode_box_autoadd_preferences(dynamic raw);
+
+  @protected
   SavedConnection dco_decode_box_autoadd_saved_connection(dynamic raw);
+
+  @protected
+  SshHop dco_decode_box_autoadd_ssh_hop(dynamic raw);
+
+  @protected
+  int dco_decode_box_autoadd_u_32(dynamic raw);
 
   @protected
   BigInt dco_decode_box_autoadd_u_64(dynamic raw);
@@ -78,7 +92,13 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ConnectionConfig dco_decode_connection_config(dynamic raw);
 
   @protected
+  ConnectionOptions dco_decode_connection_options(dynamic raw);
+
+  @protected
   DefaultValue dco_decode_default_value(dynamic raw);
+
+  @protected
+  DisplayCell dco_decode_display_cell(dynamic raw);
 
   @protected
   EditTarget dco_decode_edit_target(dynamic raw);
@@ -117,6 +137,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   HistoryEntry dco_decode_history_entry(dynamic raw);
 
   @protected
+  HostKeyIssue dco_decode_host_key_issue(dynamic raw);
+
+  @protected
+  HostKeyIssueKind dco_decode_host_key_issue_kind(dynamic raw);
+
+  @protected
   int dco_decode_i_32(dynamic raw);
 
   @protected
@@ -144,6 +170,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<CompletionItem> dco_decode_list_completion_item(dynamic raw);
 
   @protected
+  List<DisplayCell> dco_decode_list_display_cell(dynamic raw);
+
+  @protected
   List<Favorite> dco_decode_list_favorite(dynamic raw);
 
   @protected
@@ -159,10 +188,13 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<IndexDef> dco_decode_list_index_def(dynamic raw);
 
   @protected
-  List<List<String>> dco_decode_list_list_String(dynamic raw);
+  List<List<CellValue>> dco_decode_list_list_cell_value(dynamic raw);
 
   @protected
-  List<List<CellValue>> dco_decode_list_list_cell_value(dynamic raw);
+  List<List<DisplayCell>> dco_decode_list_list_display_cell(dynamic raw);
+
+  @protected
+  List<String?> dco_decode_list_opt_String(dynamic raw);
 
   @protected
   List<CellValue?> dco_decode_list_opt_box_autoadd_cell_value(dynamic raw);
@@ -186,7 +218,13 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<SqlToken> dco_decode_list_sql_token(dynamic raw);
 
   @protected
+  List<SshHop> dco_decode_list_ssh_hop(dynamic raw);
+
+  @protected
   List<TableInfo> dco_decode_list_table_info(dynamic raw);
+
+  @protected
+  OpenSessionError dco_decode_open_session_error(dynamic raw);
 
   @protected
   String? dco_decode_opt_String(dynamic raw);
@@ -195,7 +233,16 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   CellValue? dco_decode_opt_box_autoadd_cell_value(dynamic raw);
 
   @protected
+  HostKeyIssue? dco_decode_opt_box_autoadd_host_key_issue(dynamic raw);
+
+  @protected
+  int? dco_decode_opt_box_autoadd_u_32(dynamic raw);
+
+  @protected
   BigInt? dco_decode_opt_box_autoadd_u_64(dynamic raw);
+
+  @protected
+  Preferences dco_decode_preferences(dynamic raw);
 
   @protected
   QuerySummary dco_decode_query_summary(dynamic raw);
@@ -210,10 +257,31 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   SqlTokenKind dco_decode_sql_token_kind(dynamic raw);
 
   @protected
+  SshAuth dco_decode_ssh_auth(dynamic raw);
+
+  @protected
+  SshHop dco_decode_ssh_hop(dynamic raw);
+
+  @protected
+  SshOptions dco_decode_ssh_options(dynamic raw);
+
+  @protected
+  SslMode dco_decode_ssl_mode(dynamic raw);
+
+  @protected
+  SslOptions dco_decode_ssl_options(dynamic raw);
+
+  @protected
   TableInfo dco_decode_table_info(dynamic raw);
 
   @protected
   TableStructure dco_decode_table_structure(dynamic raw);
+
+  @protected
+  ThemeMode dco_decode_theme_mode(dynamic raw);
+
+  @protected
+  TimeoutOptions dco_decode_timeout_options(dynamic raw);
 
   @protected
   int dco_decode_u_16(dynamic raw);
@@ -256,9 +324,23 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  HostKeyIssue sse_decode_box_autoadd_host_key_issue(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  Preferences sse_decode_box_autoadd_preferences(SseDeserializer deserializer);
+
+  @protected
   SavedConnection sse_decode_box_autoadd_saved_connection(
     SseDeserializer deserializer,
   );
+
+  @protected
+  SshHop sse_decode_box_autoadd_ssh_hop(SseDeserializer deserializer);
+
+  @protected
+  int sse_decode_box_autoadd_u_32(SseDeserializer deserializer);
 
   @protected
   BigInt sse_decode_box_autoadd_u_64(SseDeserializer deserializer);
@@ -291,7 +373,13 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ConnectionConfig sse_decode_connection_config(SseDeserializer deserializer);
 
   @protected
+  ConnectionOptions sse_decode_connection_options(SseDeserializer deserializer);
+
+  @protected
   DefaultValue sse_decode_default_value(SseDeserializer deserializer);
+
+  @protected
+  DisplayCell sse_decode_display_cell(SseDeserializer deserializer);
 
   @protected
   EditTarget sse_decode_edit_target(SseDeserializer deserializer);
@@ -330,6 +418,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   HistoryEntry sse_decode_history_entry(SseDeserializer deserializer);
 
   @protected
+  HostKeyIssue sse_decode_host_key_issue(SseDeserializer deserializer);
+
+  @protected
+  HostKeyIssueKind sse_decode_host_key_issue_kind(SseDeserializer deserializer);
+
+  @protected
   int sse_decode_i_32(SseDeserializer deserializer);
 
   @protected
@@ -361,6 +455,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  List<DisplayCell> sse_decode_list_display_cell(SseDeserializer deserializer);
+
+  @protected
   List<Favorite> sse_decode_list_favorite(SseDeserializer deserializer);
 
   @protected
@@ -382,12 +479,17 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<IndexDef> sse_decode_list_index_def(SseDeserializer deserializer);
 
   @protected
-  List<List<String>> sse_decode_list_list_String(SseDeserializer deserializer);
-
-  @protected
   List<List<CellValue>> sse_decode_list_list_cell_value(
     SseDeserializer deserializer,
   );
+
+  @protected
+  List<List<DisplayCell>> sse_decode_list_list_display_cell(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<String?> sse_decode_list_opt_String(SseDeserializer deserializer);
 
   @protected
   List<CellValue?> sse_decode_list_opt_box_autoadd_cell_value(
@@ -415,7 +517,13 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<SqlToken> sse_decode_list_sql_token(SseDeserializer deserializer);
 
   @protected
+  List<SshHop> sse_decode_list_ssh_hop(SseDeserializer deserializer);
+
+  @protected
   List<TableInfo> sse_decode_list_table_info(SseDeserializer deserializer);
+
+  @protected
+  OpenSessionError sse_decode_open_session_error(SseDeserializer deserializer);
 
   @protected
   String? sse_decode_opt_String(SseDeserializer deserializer);
@@ -426,7 +534,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  HostKeyIssue? sse_decode_opt_box_autoadd_host_key_issue(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  int? sse_decode_opt_box_autoadd_u_32(SseDeserializer deserializer);
+
+  @protected
   BigInt? sse_decode_opt_box_autoadd_u_64(SseDeserializer deserializer);
+
+  @protected
+  Preferences sse_decode_preferences(SseDeserializer deserializer);
 
   @protected
   QuerySummary sse_decode_query_summary(SseDeserializer deserializer);
@@ -441,10 +560,31 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   SqlTokenKind sse_decode_sql_token_kind(SseDeserializer deserializer);
 
   @protected
+  SshAuth sse_decode_ssh_auth(SseDeserializer deserializer);
+
+  @protected
+  SshHop sse_decode_ssh_hop(SseDeserializer deserializer);
+
+  @protected
+  SshOptions sse_decode_ssh_options(SseDeserializer deserializer);
+
+  @protected
+  SslMode sse_decode_ssl_mode(SseDeserializer deserializer);
+
+  @protected
+  SslOptions sse_decode_ssl_options(SseDeserializer deserializer);
+
+  @protected
   TableInfo sse_decode_table_info(SseDeserializer deserializer);
 
   @protected
   TableStructure sse_decode_table_structure(SseDeserializer deserializer);
+
+  @protected
+  ThemeMode sse_decode_theme_mode(SseDeserializer deserializer);
+
+  @protected
+  TimeoutOptions sse_decode_timeout_options(SseDeserializer deserializer);
 
   @protected
   int sse_decode_u_16(SseDeserializer deserializer);
@@ -495,10 +635,28 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_box_autoadd_host_key_issue(
+    HostKeyIssue self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_preferences(
+    Preferences self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_box_autoadd_saved_connection(
     SavedConnection self,
     SseSerializer serializer,
   );
+
+  @protected
+  void sse_encode_box_autoadd_ssh_hop(SshHop self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_box_autoadd_u_32(int self, SseSerializer serializer);
 
   @protected
   void sse_encode_box_autoadd_u_64(BigInt self, SseSerializer serializer);
@@ -540,7 +698,16 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_connection_options(
+    ConnectionOptions self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_default_value(DefaultValue self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_display_cell(DisplayCell self, SseSerializer serializer);
 
   @protected
   void sse_encode_edit_target(EditTarget self, SseSerializer serializer);
@@ -585,6 +752,15 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_history_entry(HistoryEntry self, SseSerializer serializer);
 
   @protected
+  void sse_encode_host_key_issue(HostKeyIssue self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_host_key_issue_kind(
+    HostKeyIssueKind self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_i_32(int self, SseSerializer serializer);
 
   @protected
@@ -627,6 +803,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_list_display_cell(
+    List<DisplayCell> self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_list_favorite(List<Favorite> self, SseSerializer serializer);
 
   @protected
@@ -651,16 +833,19 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_list_index_def(List<IndexDef> self, SseSerializer serializer);
 
   @protected
-  void sse_encode_list_list_String(
-    List<List<String>> self,
-    SseSerializer serializer,
-  );
-
-  @protected
   void sse_encode_list_list_cell_value(
     List<List<CellValue>> self,
     SseSerializer serializer,
   );
+
+  @protected
+  void sse_encode_list_list_display_cell(
+    List<List<DisplayCell>> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_opt_String(List<String?> self, SseSerializer serializer);
 
   @protected
   void sse_encode_list_opt_box_autoadd_cell_value(
@@ -699,8 +884,17 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_list_sql_token(List<SqlToken> self, SseSerializer serializer);
 
   @protected
+  void sse_encode_list_ssh_hop(List<SshHop> self, SseSerializer serializer);
+
+  @protected
   void sse_encode_list_table_info(
     List<TableInfo> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_open_session_error(
+    OpenSessionError self,
     SseSerializer serializer,
   );
 
@@ -714,7 +908,19 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_opt_box_autoadd_host_key_issue(
+    HostKeyIssue? self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_opt_box_autoadd_u_32(int? self, SseSerializer serializer);
+
+  @protected
   void sse_encode_opt_box_autoadd_u_64(BigInt? self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_preferences(Preferences self, SseSerializer serializer);
 
   @protected
   void sse_encode_query_summary(QuerySummary self, SseSerializer serializer);
@@ -732,11 +938,35 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_sql_token_kind(SqlTokenKind self, SseSerializer serializer);
 
   @protected
+  void sse_encode_ssh_auth(SshAuth self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_ssh_hop(SshHop self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_ssh_options(SshOptions self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_ssl_mode(SslMode self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_ssl_options(SslOptions self, SseSerializer serializer);
+
+  @protected
   void sse_encode_table_info(TableInfo self, SseSerializer serializer);
 
   @protected
   void sse_encode_table_structure(
     TableStructure self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_theme_mode(ThemeMode self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_timeout_options(
+    TimeoutOptions self,
     SseSerializer serializer,
   );
 

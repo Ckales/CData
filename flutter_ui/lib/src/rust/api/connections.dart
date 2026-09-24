@@ -4,6 +4,7 @@
 // ignore_for_file: invalid_use_of_internal_member, unused_import, unnecessary_import
 
 import '../frb_generated.dart';
+import 'options.dart';
 
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
@@ -30,6 +31,18 @@ Future<void> deleteConnection({required String id}) =>
 Future<String?> loadPassword({required String id}) =>
     RustLib.instance.api.crateApiConnectionsLoadPassword(id: id);
 
+/// 保存某一跳的 SSH 密码或私钥口令，只进钥匙串。
+/// 没有对应的读取接口：连接时 core 按 ConnectionConfig.saved_id 自己去取，界面拿不到
+Future<void> saveSshSecret({
+  required String id,
+  required SshHop hop,
+  required String secret,
+}) => RustLib.instance.api.crateApiConnectionsSaveSshSecret(
+  id: id,
+  hop: hop,
+  secret: secret,
+);
+
 class SavedConnection {
   final String id;
   final String name;
@@ -37,6 +50,7 @@ class SavedConnection {
   final int port;
   final String user;
   final String? database;
+  final ConnectionOptions options;
 
   const SavedConnection({
     required this.id,
@@ -45,6 +59,7 @@ class SavedConnection {
     required this.port,
     required this.user,
     this.database,
+    required this.options,
   });
 
   @override
@@ -54,7 +69,8 @@ class SavedConnection {
       host.hashCode ^
       port.hashCode ^
       user.hashCode ^
-      database.hashCode;
+      database.hashCode ^
+      options.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -66,5 +82,6 @@ class SavedConnection {
           host == other.host &&
           port == other.port &&
           user == other.user &&
-          database == other.database;
+          database == other.database &&
+          options == other.options;
 }

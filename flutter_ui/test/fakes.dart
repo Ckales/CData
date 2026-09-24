@@ -106,13 +106,13 @@ class FakeGridSource implements GridSource {
   }
 
   @override
-  Future<List<List<String>>> windowText(int offset, int limit) async {
+  Future<List<List<DisplayCell>>> windowText(int offset, int limit) async {
     final start = offset.clamp(0, rows.length);
     final end = (start + limit).clamp(0, rows.length);
 
-    final out = <List<String>>[];
+    final out = <List<DisplayCell>>[];
     for (final row in rows.sublist(start, end)) {
-      final texts = <String>[];
+      final texts = <DisplayCell>[];
       for (final cell in row) {
         texts.add(_display(cell));
       }
@@ -181,7 +181,7 @@ class FakeGridSource implements GridSource {
     for (final row in rows.sublist(rowStart, rowStart + rowCount)) {
       final fields = <String>[];
       for (final column in columns) {
-        fields.add(_display(row[column]));
+        fields.add(_display(row[column]).text);
       }
       lines.add(fields.join('\t'));
     }
@@ -264,16 +264,16 @@ class FakeGridSource implements GridSource {
     return ExportSummary(rowsWritten: BigInt.from(written), sourceTruncated: exportTruncated);
   }
 
-  /// 和 Rust 侧 display_text 保持一致的显示规则
-  String _display(CellValue cell) {
+  /// 和 Rust 侧 display_cell 保持一致的显示规则
+  DisplayCell _display(CellValue cell) {
     return switch (cell) {
-      CellValue_Null() => 'NULL',
-      CellValue_Int(:final field0) => field0.toString(),
-      CellValue_UInt(:final field0) => field0.toString(),
-      CellValue_Double(:final field0) => field0.toString(),
-      CellValue_Text(:final field0) => field0,
-      CellValue_Bytes(:final field0) => '<二进制 ${field0.length} 字节>',
-      CellValue_InvalidText(:final field0) => '<无法解码 ${field0.length} 字节>',
+      CellValue_Null() => const DisplayCell(text: 'NULL', placeholder: true),
+      CellValue_Int(:final field0) => DisplayCell(text: field0.toString(), placeholder: false),
+      CellValue_UInt(:final field0) => DisplayCell(text: field0.toString(), placeholder: false),
+      CellValue_Double(:final field0) => DisplayCell(text: field0.toString(), placeholder: false),
+      CellValue_Text(:final field0) => DisplayCell(text: field0, placeholder: false),
+      CellValue_Bytes(:final field0) => DisplayCell(text: '<二进制 ${field0.length} 字节>', placeholder: true),
+      CellValue_InvalidText(:final field0) => DisplayCell(text: '<无法解码 ${field0.length} 字节>', placeholder: true),
     };
   }
 }
