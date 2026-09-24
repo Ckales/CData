@@ -123,14 +123,17 @@ void main() {
     final sessionId = await openSession(
       config: _config(),
     );
-    final summary = await executeView(
+    // 嵌套一层：id <= 3 且 (name 以「用户」开头 或 id 属于 (99))。跨 FFI 的递归类型要原样到 core
+    final summary = await executeFilteredView(
       sessionId: sessionId,
       sql: 'SELECT * FROM big_rows',
-      conditions: const [
-        FilterCondition(column: 'id', op: FilterOp.ltEq, value: '3'),
-        FilterCondition(column: 'name', op: FilterOp.startsWith, value: '用户'),
-      ],
-      matchAll: true,
+      filter: const FilterGroup(matchAll: true, items: [
+        FilterItem.condition(FilterCondition(column: 'id', op: FilterOp.ltEq, value: '3')),
+        FilterItem.group(FilterGroup(matchAll: false, items: [
+          FilterItem.condition(FilterCondition(column: 'name', op: FilterOp.startsWith, value: '用户')),
+          FilterItem.condition(FilterCondition(column: 'id', op: FilterOp.in_, value: '99')),
+        ])),
+      ]),
       sortColumn: 'id',
       sortAscending: false,
       maxRows: BigInt.from(100),
@@ -151,11 +154,12 @@ void main() {
     final sessionId = await openSession(
       config: _config(),
     );
-    final summary = await executeView(
+    final summary = await executeFilteredView(
       sessionId: sessionId,
       sql: 'SELECT id, name FROM big_rows',
-      conditions: const [FilterCondition(column: 'id', op: FilterOp.ltEq, value: '2')],
-      matchAll: true,
+      filter: const FilterGroup(matchAll: true, items: [
+        FilterItem.condition(FilterCondition(column: 'id', op: FilterOp.ltEq, value: '2')),
+      ]),
       sortColumn: 'id',
       sortAscending: true,
       maxRows: BigInt.from(100),

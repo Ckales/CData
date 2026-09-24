@@ -49,6 +49,12 @@ TableStructure sampleStructure() {
     foreignKeys: const [],
     createSql: 'CREATE TABLE `posts` (\n  `id` int unsigned NOT NULL AUTO_INCREMENT\n)',
     tableCollation: 'utf8mb4_0900_ai_ci',
+    tableCharset: 'utf8mb4',
+    engine: 'InnoDB',
+    tableComment: '',
+    checks: const [
+      CheckDef(name: 'chk_title', expression: "(`title` <> _utf8mb4\\'x\\')", enforced: false),
+    ],
   );
 }
 
@@ -111,6 +117,30 @@ void main() {
     await tester.pumpAndSettle();
     expect(copied, startsWith('CREATE TABLE `posts`'));
     expect(find.text('已复制'), findsOneWidget);
+  });
+
+  testWidgets('CHECK 一页显示约束；读不到时说明原因而不是显示「没有」', (tester) async {
+    final source = FakeSchemaSource.simple()..structures['posts'] = sampleStructure();
+    await pumpStructure(tester, source, 'posts');
+    await tester.tap(find.text('CHECK 1'));
+    await tester.pumpAndSettle();
+    expect(find.text('chk_title'), findsOneWidget);
+    expect(find.text('否（NOT ENFORCED）'), findsOneWidget);
+
+    await tester.tapAt(const Offset(5, 5));
+    await tester.pumpAndSettle();
+    final old = sampleStructure();
+    source.structures['old'] = TableStructure(
+      columns: old.columns,
+      indexes: old.indexes,
+      foreignKeys: old.foreignKeys,
+      createSql: old.createSql,
+      tableComment: '',
+    );
+    await pumpStructure(tester, source, 'old');
+    await tester.tap(find.text('CHECK'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('读不到 CHECK 约束'), findsOneWidget);
   });
 
   testWidgets('读结构失败要显示原因', (tester) async {

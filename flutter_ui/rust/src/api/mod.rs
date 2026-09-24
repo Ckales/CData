@@ -7,6 +7,8 @@ pub mod layouts;
 pub mod options;
 pub mod preferences;
 pub mod schema;
+pub mod server;
+pub mod users;
 pub mod value;
 
 #[flutter_rust_bridge::frb(init)]

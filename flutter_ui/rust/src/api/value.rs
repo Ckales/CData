@@ -36,6 +36,13 @@ pub fn hex_dump(bytes: Vec<u8>, limit: u64) -> String {
     cdata_core::value::hex_dump(&bytes, limit as usize)
 }
 
+/// 校验要写进 TIME 列的文本，fsp 是列的小数秒位数（ColumnMeta.decimals）。
+/// 编辑框每次改动都调，所以是同步调用
+#[frb(sync)]
+pub fn check_time_text(text: String, fsp: u8) -> Result<(), String> {
+    cdata_core::value::check_time_text(&text, fsp)
+}
+
 /// 单元格在网格里的显示文本
 pub fn display_text(value: CellValue) -> String {
     cdata_core::display_text(&value)

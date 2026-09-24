@@ -145,12 +145,12 @@ void main() {
     await tapKey(tester, 'ssh-key-path-pick');
     await type(tester, 'ssh-secret', 'key passphrase');
 
-    await tapKey(tester, 'jump-enabled');
-    await type(tester, 'jump-host', 'bastion.example.com');
-    await type(tester, 'jump-port', '2222');
-    await type(tester, 'jump-user', 'ops');
-    await choose(tester, 'jump-auth', 'ssh-agent');
-    expect(find.byKey(const ValueKey('jump-secret')), findsNothing, reason: 'agent 不需要密码');
+    await tapKey(tester, 'jump-add');
+    await type(tester, 'jump-0-host', 'bastion.example.com');
+    await type(tester, 'jump-0-port', '2222');
+    await type(tester, 'jump-0-user', 'ops');
+    await choose(tester, 'jump-0-auth', 'ssh-agent');
+    expect(find.byKey(const ValueKey('jump-0-secret')), findsNothing, reason: 'agent 不需要密码');
     await submit(tester);
 
     final result = opened.result!;
@@ -198,20 +198,48 @@ void main() {
     expect(opened.result!.sshSecrets, [null, null], reason: '没输入的密码交给钥匙串，不能变成空字符串');
   });
 
-  testWidgets('超过两跳的配置原样保留，不让在这里改', (tester) async {
-    const hop = SshHop(host: 'h', port: 22, user: 'u', auth: SshAuth.agent());
+  testWidgets('多跳配置按顺序读进来，可以加、可以删，密码按跳对齐', (tester) async {
     const saved = ConnectionOptions(
       ssl: SslOptions(mode: SslMode.disabled),
       timeouts: TimeoutOptions(),
-      ssh: SshOptions(hops: [hop, hop, hop]),
+      ssh: SshOptions(hops: [
+        SshHop(host: 'edge', port: 22, user: 'a', auth: SshAuth.agent()),
+        SshHop(host: 'middle', port: 22, user: 'b', auth: SshAuth.agent()),
+        SshHop(host: 'gateway', port: 22, user: 'c', auth: SshAuth.agent()),
+      ]),
     );
     final opened = await openDialog(tester, saved);
-    expect(find.textContaining('配置了 3 跳 SSH'), findsOneWidget);
-    expect(find.byKey(const ValueKey('ssh-enabled')), findsNothing);
+    final firstJump = tester.widget<TextField>(find.byKey(const ValueKey('jump-0-host')));
+    expect(firstJump.controller!.text, 'edge', reason: '第一跳是本机最先连的那台');
+    final target = tester.widget<TextField>(find.byKey(const ValueKey('ssh-host')));
+    expect(target.controller!.text, 'gateway', reason: '最后一跳是 SSH 主机');
 
+    // 去掉中间那台，再在后面加一台用密码的
+    await tapKey(tester, 'jump-1-remove');
+    await tapKey(tester, 'jump-add');
+    await type(tester, 'jump-1-host', 'late-bastion');
+    await type(tester, 'jump-1-user', 'd');
+    await type(tester, 'jump-1-secret', 'pw');
     await submit(tester);
-    expect(opened.result!.options.ssh, saved.ssh);
-    expect(opened.result!.sshSecrets, [null, null, null]);
+
+    expect(opened.result!.options.ssh.hops, const [
+      SshHop(host: 'edge', port: 22, user: 'a', auth: SshAuth.agent()),
+      SshHop(host: 'late-bastion', port: 22, user: 'd', auth: SshAuth.password()),
+      SshHop(host: 'gateway', port: 22, user: 'c', auth: SshAuth.agent()),
+    ]);
+    expect(opened.result!.sshSecrets, [null, 'pw', null]);
+  });
+
+  testWidgets('跳板机没填全，错误里说是第几台', (tester) async {
+    final opened = await openDialog(tester, _defaults);
+    await tapKey(tester, 'ssh-enabled');
+    await type(tester, 'ssh-host', 'gateway');
+    await type(tester, 'ssh-user', 'deploy');
+    await tapKey(tester, 'jump-add');
+    await type(tester, 'jump-0-host', 'bastion');
+    await submit(tester);
+    expect(opened.closed, isFalse);
+    expect(find.text('跳板机 1 没有填用户名'), findsOneWidget);
   });
 
   testWidgets('深色主题下错误提示用主题的 error 色，不写死颜色', (tester) async {

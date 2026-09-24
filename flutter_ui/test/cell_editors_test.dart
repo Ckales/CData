@@ -187,4 +187,49 @@ void main() {
     expect(find.byType(TextField), findsNothing, reason: '往 BLOB 里敲文本会写进 UTF-8 字节');
     expect(find.textContaining('二进制内容暂不支持'), findsOneWidget);
   });
+
+  testWidgets('TIME：原文带着小数秒打开，错误由校验函数给出，不合法不让存', (tester) async {
+    final source = FakeGridSource(
+      summary: summaryOf(
+        columns: [column('id', kind: ColumnKind.number), column('dur', kind: ColumnKind.time, decimals: 3)],
+        totalRows: 1,
+      ),
+      rows: [
+        [CellValue.int(1), const CellValue.text('-120:30:00.125000')],
+      ],
+    );
+    // 校验规则在 core；这里换一个假的，只看界面把它的结论显示出来、按它拦住保存
+    final checks = <(String, int)>[];
+    String? fakeCheck(String text, int fsp) {
+      checks.add((text, fsp));
+      return text.startsWith('9') ? 'TIME 的范围是 -838:59:59 到 838:59:59' : null;
+    }
+
+    tester.view.physicalSize = const Size(1600, 1000);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(MaterialApp(home: Scaffold(body: ResultGrid(source: source, checkTime: fakeCheck))));
+    await tester.pumpAndSettle();
+    await openEditor(tester, 1);
+
+    expect(find.text('dur（TIME）'), findsOneWidget, reason: 'TIME 走专门的编辑器，不是网格里的普通文本框');
+    final field = tester.widget<TextField>(find.byKey(const ValueKey('time-text')));
+    expect(field.controller!.text, '-120:30:00.125000', reason: '小数秒原样带进来，不截断');
+    expect(checks.first, ('-120:30:00.125000', 3), reason: '列的小数秒位数要交给校验');
+    expect(find.textContaining('保留 3 位小数秒'), findsOneWidget);
+
+    await tester.enterText(find.byKey(const ValueKey('time-text')), '900:00:00');
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(find.textContaining('TIME 的范围'), findsOneWidget);
+    await tester.tap(find.text('保存'));
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(source.edits, isEmpty);
+
+    await tester.enterText(find.byKey(const ValueKey('time-text')), '100:00:00.5');
+    await tester.pump(const Duration(milliseconds: 100));
+    await tester.tap(find.text('保存'));
+    await tester.pumpAndSettle();
+    expect(source.edits.single.$3, const CellValue.text('100:00:00.5'), reason: '写的是原文，不补零不改写');
+  });
 }

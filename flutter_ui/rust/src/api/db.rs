@@ -12,7 +12,7 @@ pub use cdata_core::db::{ColumnKind, ColumnMeta, ConnectionConfig};
 pub use cdata_core::edit::{Editability, EditTarget};
 pub use cdata_core::export::{ExportEncoding, ExportFormat, ExportOptions, ExportSummary};
 pub use cdata_core::session::QuerySummary;
-pub use cdata_core::sql::{FilterCondition, FilterOp};
+pub use cdata_core::sql::{FilterCondition, FilterGroup, FilterItem, FilterOp};
 pub use cdata_core::CellValue;
 use cdata_core::value::DisplayCell;
 
@@ -49,6 +49,7 @@ pub struct _ColumnMeta {
     pub schema: String,
     pub is_binary: bool,
     pub kind: ColumnKind,
+    pub decimals: u8,
 }
 
 #[frb(mirror(ColumnKind))]
@@ -100,6 +101,8 @@ pub enum _FilterOp {
     EndsWith,
     IsNull,
     IsNotNull,
+    In,
+    NotIn,
 }
 
 #[frb(mirror(FilterCondition))]
@@ -107,6 +110,18 @@ pub struct _FilterCondition {
     pub column: String,
     pub op: FilterOp,
     pub value: String,
+}
+
+#[frb(mirror(FilterGroup))]
+pub struct _FilterGroup {
+    pub match_all: bool,
+    pub items: Vec<FilterItem>,
+}
+
+#[frb(mirror(FilterItem))]
+pub enum _FilterItem {
+    Condition(FilterCondition),
+    Group(FilterGroup),
 }
 
 #[frb(mirror(ExportFormat))]
@@ -193,28 +208,19 @@ pub async fn execute(session_id: u64, sql: String, max_rows: u64) -> Result<Quer
     .await
 }
 
-/// 在原查询上套筛选和排序再跑。SQL 在 core 里生成，条件的值走参数化。
-/// 没有条件、sort_column 为 null 时就是原样跑 sql
-pub async fn execute_view(
+/// 在原查询上套分组筛选（可嵌套、带 IN / NOT IN）和排序再跑。SQL 在 core 里生成，值走参数化。
+/// 空分组、sort_column 为 null 时就是原样跑 sql
+pub async fn execute_filtered_view(
     session_id: u64,
     sql: String,
-    conditions: Vec<FilterCondition>,
-    match_all: bool,
+    filter: FilterGroup,
     sort_column: Option<String>,
     sort_ascending: bool,
     max_rows: u64,
 ) -> Result<QuerySummary> {
     on_runtime(async move {
         let sort = sort_column.as_deref().map(|column| (column, sort_ascending));
-        cdata_core::session::execute_view(
-            session_id,
-            &sql,
-            &conditions,
-            match_all,
-            sort,
-            max_rows as usize,
-        )
-        .await
+        cdata_core::session::execute_filtered_view(session_id, &sql, &filter, sort, max_rows as usize).await
     })
     .await
 }

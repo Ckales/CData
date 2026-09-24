@@ -3,8 +3,12 @@
 use flutter_rust_bridge::frb;
 
 pub use cdata_core::schema::TableInfo;
-pub use cdata_core::alter::{AlterPlan, ColumnDraft, ForeignKeyDraft, IndexDraft, IndexKind, TableDraft};
-pub use cdata_core::structure::{ColumnDef, DefaultValue, ForeignKeyDef, IndexDef, IndexPart, TableStructure};
+pub use cdata_core::alter::{
+    AlterPlan, CheckDraft, ColumnDraft, ForeignKeyDraft, IndexDraft, IndexKind, TableDraft, TableOptionsDraft,
+};
+pub use cdata_core::structure::{
+    CheckDef, ColumnDef, DefaultValue, ForeignKeyDef, IndexDef, IndexPart, TableStructure,
+};
 
 use crate::api::db::{on_runtime, Result};
 
@@ -62,6 +66,13 @@ pub struct _ForeignKeyDef {
     pub on_delete: String,
 }
 
+#[frb(mirror(CheckDef))]
+pub struct _CheckDef {
+    pub name: String,
+    pub expression: String,
+    pub enforced: bool,
+}
+
 #[frb(mirror(TableStructure))]
 pub struct _TableStructure {
     pub columns: Vec<ColumnDef>,
@@ -69,6 +80,12 @@ pub struct _TableStructure {
     pub foreign_keys: Vec<ForeignKeyDef>,
     pub create_sql: String,
     pub table_collation: Option<String>,
+    pub table_charset: Option<String>,
+    pub engine: Option<String>,
+    pub table_comment: String,
+    pub auto_increment: Option<u64>,
+    pub row_format: Option<String>,
+    pub checks: Option<Vec<CheckDef>>,
 }
 
 #[frb(mirror(ColumnDraft))]
@@ -116,11 +133,32 @@ pub struct _ForeignKeyDraft {
     pub on_delete: String,
 }
 
+#[frb(mirror(CheckDraft))]
+pub struct _CheckDraft {
+    pub original_name: Option<String>,
+    pub name: String,
+    pub expression: String,
+    pub enforced: bool,
+}
+
+#[frb(mirror(TableOptionsDraft))]
+pub struct _TableOptionsDraft {
+    pub engine: String,
+    pub charset: Option<String>,
+    pub collation: Option<String>,
+    pub comment: String,
+    pub auto_increment: Option<u64>,
+    pub row_format: Option<String>,
+    pub convert_charset: bool,
+}
+
 #[frb(mirror(TableDraft))]
 pub struct _TableDraft {
     pub columns: Vec<ColumnDraft>,
     pub indexes: Vec<IndexDraft>,
     pub foreign_keys: Vec<ForeignKeyDraft>,
+    pub checks: Vec<CheckDraft>,
+    pub options: TableOptionsDraft,
 }
 
 #[frb(mirror(AlterPlan))]
@@ -161,6 +199,37 @@ pub async fn apply_alter(
 ) -> Result<()> {
     on_runtime(async move {
         cdata_core::session::apply_alter(session_id, &database, &table, &original, &draft, &statements).await
+    })
+    .await
+}
+
+/// 新建表的起始草稿：自增主键 id、InnoDB，默认值由 core 定
+#[frb(sync)]
+pub fn new_table_draft() -> TableDraft {
+    cdata_core::alter::new_table_draft()
+}
+
+/// 预览新建表。同名的表或视图已经存在就报错
+pub async fn preview_create_table(
+    session_id: u64,
+    database: String,
+    table: String,
+    draft: TableDraft,
+) -> Result<AlterPlan> {
+    on_runtime(async move { cdata_core::session::preview_create_table(session_id, &database, &table, &draft).await })
+        .await
+}
+
+/// 执行预览过的建表。statements 是预览时拿到的语句，重新生成的不一致就不执行
+pub async fn create_table(
+    session_id: u64,
+    database: String,
+    table: String,
+    draft: TableDraft,
+    statements: Vec<String>,
+) -> Result<()> {
+    on_runtime(async move {
+        cdata_core::session::create_table(session_id, &database, &table, &draft, &statements).await
     })
     .await
 }

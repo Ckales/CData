@@ -635,4 +635,225 @@ void main() {
 
     expect(find.textContaining('已整体回滚'), findsOneWidget);
   });
+
+  group('键盘和拖选', () {
+    /// 这一格画成选区的颜色没有。选区只在界面里，靠颜色判断
+    bool isSelected(WidgetTester tester, int row, int column) {
+      final box = tester.widget<ColoredBox>(find.descendant(of: cell(row, column), matching: find.byType(ColoredBox)).first);
+      return box.color != Colors.transparent;
+    }
+
+    /// 选区是哪几格，按 (行, 列) 列出来，只看前 rows 行
+    List<(int, int)> selectedCells(WidgetTester tester, {int rows = 3, int columns = 2}) {
+      final out = <(int, int)>[];
+      for (var row = 0; row < rows; row++) {
+        for (var column = 0; column < columns; column++) {
+          if (isSelected(tester, row, column)) out.add((row, column));
+        }
+      }
+      return out;
+    }
+
+    Future<void> press(WidgetTester tester, LogicalKeyboardKey key, {bool shift = false}) async {
+      if (shift) await tester.sendKeyDownEvent(LogicalKeyboardKey.shift);
+      await tester.sendKeyEvent(key);
+      if (shift) await tester.sendKeyUpEvent(LogicalKeyboardKey.shift);
+      await tester.pump();
+    }
+
+    testWidgets('方向键移动当前格，Shift+方向键扩展选区，Esc 取消', (tester) async {
+      await pumpGrid(tester, FakeGridSource.rows(3));
+      await tester.tap(cell(0, 0));
+      await tester.pump();
+
+      await press(tester, LogicalKeyboardKey.arrowDown);
+      expect(selectedCells(tester), [(1, 0)]);
+      await press(tester, LogicalKeyboardKey.arrowRight, shift: true);
+      await press(tester, LogicalKeyboardKey.arrowDown, shift: true);
+      expect(selectedCells(tester), [(1, 0), (1, 1), (2, 0), (2, 1)]);
+
+      // 普通方向键从当前格（锚点）出发，选区收回成一格
+      await press(tester, LogicalKeyboardKey.arrowUp);
+      expect(selectedCells(tester), [(0, 0)]);
+      // 到边了就停在边上
+      await press(tester, LogicalKeyboardKey.arrowUp);
+      await press(tester, LogicalKeyboardKey.arrowLeft);
+      expect(selectedCells(tester), [(0, 0)]);
+
+      await press(tester, LogicalKeyboardKey.end);
+      expect(selectedCells(tester), [(0, 1)]);
+      await press(tester, LogicalKeyboardKey.home, shift: true);
+      expect(selectedCells(tester), [(0, 0), (0, 1)]);
+
+      await press(tester, LogicalKeyboardKey.escape);
+      expect(selectedCells(tester), isEmpty);
+      // 等掉双击判定的计时器
+      await tester.pumpAndSettle();
+    });
+
+    testWidgets('Shift+方向键选出的区域 ⌘C 照样复制', (tester) async {
+      mockClipboard(tester);
+      final source = FakeGridSource.rows(3);
+      await pumpGrid(tester, source);
+      await tester.tap(cell(1, 0));
+      await tester.pump();
+      await press(tester, LogicalKeyboardKey.arrowRight, shift: true);
+      await press(tester, LogicalKeyboardKey.arrowDown, shift: true);
+      await pressCommand(tester, LogicalKeyboardKey.keyC);
+      await tester.pumpAndSettle();
+      expect(clipboardText, '2\t用户2\n3\t用户3');
+    });
+
+    testWidgets('Enter / F2 编辑当前格，Esc 退出后方向键接着能用', (tester) async {
+      final source = FakeGridSource.rows(3);
+      await pumpGrid(tester, source);
+      await tester.tap(cell(0, 1));
+      await tester.pump();
+
+      await press(tester, LogicalKeyboardKey.enter);
+      await tester.pump(const Duration(milliseconds: 100));
+      final editable = tester.widget<EditableText>(find.byType(EditableText));
+      expect(editable.controller.text, '用户1');
+      expect(editable.focusNode.hasPrimaryFocus, isTrue);
+      // 编辑框里的方向键归编辑框，网格不动
+      await press(tester, LogicalKeyboardKey.arrowDown);
+      expect(find.byType(EditableText), findsOneWidget);
+
+      await press(tester, LogicalKeyboardKey.escape);
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(find.byType(EditableText), findsNothing);
+      await press(tester, LogicalKeyboardKey.arrowDown);
+      expect(selectedCells(tester), [(1, 1)], reason: '编辑框收起后焦点要回到网格');
+
+      await press(tester, LogicalKeyboardKey.f2);
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(tester.widget<EditableText>(find.byType(EditableText)).controller.text, '用户2');
+    });
+
+    testWidgets('焦点在别的输入框里时方向键不归网格', (tester) async {
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: Column(
+            children: [
+              const TextField(key: ValueKey('other')),
+              Expanded(child: ResultGrid(source: FakeGridSource.rows(3))),
+            ],
+          ),
+        ),
+      ));
+      await tester.pumpAndSettle();
+      await tester.tap(cell(0, 0));
+      await tester.pump();
+      await tester.tap(find.byKey(const ValueKey('other')));
+      await tester.pump(const Duration(milliseconds: 100));
+
+      await press(tester, LogicalKeyboardKey.arrowDown);
+      await press(tester, LogicalKeyboardKey.escape);
+      expect(selectedCells(tester), [(0, 0)]);
+    });
+
+    testWidgets('跳到屏幕外的行会滚过去并取回那一段', (tester) async {
+      final source = FakeGridSource.rows(5000);
+      await pumpGrid(tester, source);
+      await tester.tap(cell(0, 1));
+      await tester.pump();
+
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.meta);
+      await press(tester, LogicalKeyboardKey.end);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.meta);
+      await tester.pumpAndSettle();
+      expect(find.text('用户5000'), findsOneWidget);
+      expect(isSelected(tester, 4999, 1), isTrue);
+
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.meta);
+      await press(tester, LogicalKeyboardKey.home);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.meta);
+      await tester.pumpAndSettle();
+      expect(find.text('用户1'), findsOneWidget);
+
+      // 翻页一次挪一屏，当前格一直在可视区里
+      await press(tester, LogicalKeyboardKey.pageDown);
+      await press(tester, LogicalKeyboardKey.pageDown);
+      await tester.pumpAndSettle();
+      expect(find.text('用户1'), findsNothing);
+      final selectedCell = find.descendant(
+        of: find.byWidgetPredicate((w) => w.key is ValueKey<String> && (w.key as ValueKey<String>).value.startsWith('cell-')),
+        matching: find.byWidgetPredicate((w) => w is ColoredBox && w.color != Colors.transparent),
+      );
+      expect(selectedCell, findsOneWidget);
+    });
+
+    testWidgets('移到屏幕外的列会横向滚过去', (tester) async {
+      final columns = [for (var i = 0; i < 8; i++) column('c$i')];
+      final source = FakeGridSource(
+        summary: summaryOf(columns: columns, totalRows: 1),
+        rows: [
+          [for (var i = 0; i < 8; i++) CellValue.text('v$i')],
+        ],
+      );
+      await pumpGrid(tester, source);
+      final width = tester.view.physicalSize.width / tester.view.devicePixelRatio;
+      await tester.tap(cell(0, 0));
+      await tester.pump();
+
+      await press(tester, LogicalKeyboardKey.end);
+      await tester.pumpAndSettle();
+      expect(tester.getRect(cell(0, 7)).right, lessThanOrEqualTo(width));
+
+      await press(tester, LogicalKeyboardKey.home);
+      await tester.pumpAndSettle();
+      expect(tester.getRect(cell(0, 0)).left, greaterThanOrEqualTo(0));
+      expect(tester.getRect(find.byKey(const ValueKey('row-number-0'))).left, 0, reason: '回到第一列时行号也露出来');
+    });
+
+    testWidgets('按住拖动选出区域', (tester) async {
+      await pumpGrid(tester, FakeGridSource.rows(3));
+      final gesture = await tester.startGesture(tester.getCenter(cell(0, 0)), kind: PointerDeviceKind.mouse);
+      await tester.pump();
+      await gesture.moveTo(tester.getCenter(cell(1, 0)));
+      await tester.pump();
+      await gesture.moveTo(tester.getCenter(cell(2, 1)));
+      await tester.pump();
+      await gesture.up();
+      await tester.pump();
+
+      expect(selectedCells(tester), [(0, 0), (0, 1), (1, 0), (1, 1), (2, 0), (2, 1)]);
+      // 松手之后再动鼠标不改选区
+      await gesture.moveTo(tester.getCenter(cell(0, 0)));
+      await tester.pump();
+      expect(selectedCells(tester), hasLength(6));
+      await tester.pumpAndSettle();
+    });
+
+    testWidgets('拖到下边缘外会自动往下滚，选区跟着延长', (tester) async {
+      mockClipboard(tester);
+      final source = FakeGridSource.rows(5000);
+      await pumpGrid(tester, source);
+      final bottom = tester.getBottomLeft(find.byType(ListView));
+
+      final gesture = await tester.startGesture(tester.getCenter(cell(0, 0)), kind: PointerDeviceKind.mouse);
+      await tester.pump();
+      await gesture.moveTo(Offset(bottom.dx + 100, bottom.dy + 40));
+      // 自动滚动一拍 50ms，一拍最多三行
+      for (var i = 0; i < 20; i++) {
+        await tester.pump(const Duration(milliseconds: 50));
+      }
+      await gesture.up();
+      await tester.pumpAndSettle();
+      expect(find.text('用户1'), findsNothing, reason: '应该已经往下滚了');
+
+      await pressCommand(tester, LogicalKeyboardKey.keyC);
+      await tester.pumpAndSettle();
+      final copied = source.copies.single;
+      expect(copied.$1, 0);
+      expect(copied.$2, greaterThan(40), reason: '选区跟着滚动延长到了可视区外');
+
+      // 松手后计时器停了，再等也不滚
+      final rows = copied.$2;
+      await tester.pump(const Duration(seconds: 1));
+      await pressCommand(tester, LogicalKeyboardKey.keyC);
+      await tester.pumpAndSettle();
+      expect(source.copies.last.$2, rows);
+    });
+  });
 }

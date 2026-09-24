@@ -2,6 +2,7 @@
 // 查询本身的行为由 cdata-core 的真库测试保证，这里用内存的 runner 和 library。
 
 import 'package:cdata_flutter/data_source.dart';
+import 'package:cdata_flutter/filter_panel.dart';
 import 'package:cdata_flutter/query_tab.dart';
 import 'package:cdata_flutter/sql_editor.dart';
 import 'package:cdata_flutter/sql_library.dart';
@@ -16,19 +17,13 @@ import 'fakes.dart';
 
 /// 记下每次 run 的参数，返回一个 2 行的内存结果
 class FakeRunner implements QueryRunner {
-  final runs = <({String sql, List<FilterCondition> conditions, String? sortColumn, bool ascending})>[];
+  final runs = <({String sql, FilterGroup filter, String? sortColumn, bool ascending})>[];
   String? error;
   bool closed = false;
 
   @override
-  Future<QuerySummary> run(
-    String sql,
-    List<FilterCondition> conditions,
-    bool matchAll,
-    String? sortColumn,
-    bool sortAscending,
-  ) async {
-    runs.add((sql: sql, conditions: conditions, sortColumn: sortColumn, ascending: sortAscending));
+  Future<QuerySummary> run(String sql, FilterGroup filter, String? sortColumn, bool sortAscending) async {
+    runs.add((sql: sql, filter: filter, sortColumn: sortColumn, ascending: sortAscending));
     final message = error;
     if (message != null) throw Exception(message);
     return FakeGridSource.rows(2).summary;
@@ -220,6 +215,36 @@ void main() {
     await tester.tap(find.text('运行'));
     await tester.pumpAndSettle();
     expect(runner.runs.last.sortColumn, isNull);
+  });
+
+  testWidgets('分组筛选原样交给后端，基准 SQL 不变；重新运行清掉', (tester) async {
+    tester.view.physicalSize = const Size(1400, 1400);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final runner = FakeRunner();
+    await pumpTab(tester, runner, FakeLibrary());
+    await tester.tap(find.text('运行'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('筛选'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const ValueKey('filter-value-0')), '1');
+    await tester.tap(find.byKey(const ValueKey('filter-add-group')));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const ValueKey('filter-value-1.0')), '2');
+    await tester.pump(const Duration(milliseconds: 100));
+    await tester.tap(find.text('应用'));
+    await tester.pumpAndSettle();
+
+    final run = runner.runs.last;
+    expect(run.sql, 'SELECT * FROM t', reason: '筛选不改基准 SQL');
+    expect(describeFilterGroup(run.filter), 'id = 1 且 (id = 2)');
+    expect(find.text('id = 1 且 (id = 2)'), findsOneWidget, reason: '筛选条显示分组摘要');
+
+    await tester.tap(find.text('运行'));
+    await tester.pumpAndSettle();
+    expect(runner.runs.last.filter.items, isEmpty);
   });
 
   testWidgets('查询失败显示错误，历史没记上也要说', (tester) async {

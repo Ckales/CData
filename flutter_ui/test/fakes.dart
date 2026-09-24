@@ -29,6 +29,7 @@ ColumnMeta column(
   String table = 'orders',
   bool isBinary = false,
   ColumnKind kind = ColumnKind.text,
+  int decimals = 0,
 }) {
   return ColumnMeta(
     name: name,
@@ -37,6 +38,7 @@ ColumnMeta column(
     schema: 'shop',
     isBinary: isBinary,
     kind: isBinary ? ColumnKind.binary : kind,
+    decimals: decimals,
   );
 }
 
@@ -366,7 +368,66 @@ class FakeSchemaSource implements SchemaSource {
             onDelete: fk.onDelete,
           ),
       ],
+      checks: [
+        for (final check in structure.checks ?? const <CheckDef>[])
+          CheckDraft(originalName: check.name, name: check.name, expression: check.expression, enforced: check.enforced),
+      ],
+      options: TableOptionsDraft(
+        engine: structure.engine ?? '',
+        charset: structure.tableCharset,
+        collation: structure.tableCollation,
+        comment: structure.tableComment,
+        rowFormat: structure.rowFormat,
+        convertCharset: false,
+      ),
     );
+  }
+
+  /// 和 core 的 new_table_draft 一样的起点：自增主键 id、InnoDB
+  @override
+  TableDraft newTableDraft() {
+    return const TableDraft(
+      columns: [
+        ColumnDraft(
+          name: 'id',
+          columnType: 'int unsigned',
+          nullable: false,
+          default_: DefaultValue.noDefault(),
+          autoIncrement: true,
+          comment: '',
+        ),
+      ],
+      indexes: [
+        IndexDraft(
+          name: 'PRIMARY',
+          kind: IndexKind.primary,
+          parts: [IndexPart(column: 'id', descending: false)],
+          comment: '',
+        ),
+      ],
+      foreignKeys: [],
+      checks: [],
+      options: TableOptionsDraft(engine: 'InnoDB', comment: '', convertCharset: false),
+    );
+  }
+
+  /// 收到的新建表预览（表名、草稿）和执行的建表语句
+  final List<(String, TableDraft)> createPreviews = [];
+  final List<(String, List<String>)> created = [];
+
+  @override
+  Future<AlterPlan> previewCreateTable(String database, String table, TableDraft draft) async {
+    createPreviews.add((table, draft));
+    final error = previewError;
+    if (error != null) throw error;
+    return plan;
+  }
+
+  @override
+  Future<void> createTable(String database, String table, TableDraft draft, List<String> statements) async {
+    final error = applyError;
+    if (error != null) throw error;
+    created.add((table, statements));
   }
 
   /// 预览返回的计划；previewError 不为空时预览抛它

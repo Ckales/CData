@@ -1,5 +1,6 @@
 // 侧栏的 widget 测试。内存数据，不起 app、不连库。
 
+import 'package:cdata_flutter/src/rust/api/schema.dart';
 import 'package:cdata_flutter/table_sidebar.dart';
 import 'package:flutter/gestures.dart' show kSecondaryButton;
 import 'package:flutter/material.dart';
@@ -15,6 +16,7 @@ Future<void> pumpSidebar(
   void Function(String database)? onDatabaseChanged,
   void Function(String table)? onShowStructure,
   void Function(String table)? onImport,
+  Future<String?> Function(String database)? onCreateTable,
 }) async {
   await tester.pumpWidget(
     MaterialApp(
@@ -26,6 +28,7 @@ Future<void> pumpSidebar(
           onTableSelected: onTableSelected ?? (_) {},
           onShowStructure: onShowStructure,
           onImport: onImport,
+          onCreateTable: onCreateTable,
         ),
       ),
     ),
@@ -92,6 +95,51 @@ void main() {
     await tester.tap(find.text('users'), buttons: kSecondaryButton);
     await tester.pumpAndSettle();
     expect(find.text('导入 CSV…'), findsNothing);
+  });
+
+  testWidgets('右键「新建表…」把当前库交给调用方，建好后重读清单并选中，不顺带跑查询', (tester) async {
+    final source = FakeSchemaSource.simple();
+    String? createdIn;
+    String? browsed;
+    await pumpSidebar(
+      tester,
+      source,
+      onTableSelected: (table) => browsed = table,
+      onCreateTable: (database) async {
+        createdIn = database;
+        source.tablesByDb['shop']!.add(TableInfo(name: 'tags', estimatedRows: BigInt.zero, isView: false));
+        return 'tags';
+      },
+    );
+
+    await tester.tap(find.text('users'), buttons: kSecondaryButton);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('新建表…'));
+    await tester.pumpAndSettle();
+    expect(createdIn, 'shop');
+    expect(find.text('tags'), findsOneWidget, reason: '建好之后清单要重读');
+    expect(find.text('5 张表'), findsOneWidget);
+    expect(browsed, isNull);
+  });
+
+  testWidgets('取消新建不重读；空库在空白处右键也能新建；不给回调就没有这一项', (tester) async {
+    var loads = 0;
+    final source = FakeSchemaSource.simple();
+    await pumpSidebar(tester, source, database: 'analytics', onCreateTable: (database) async {
+      loads++;
+      return null;
+    });
+    await tester.tap(find.byKey(const ValueKey('sidebar-blank')), buttons: kSecondaryButton);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('新建表…'));
+    await tester.pumpAndSettle();
+    expect(loads, 1);
+    expect(find.text('0 张表'), findsOneWidget);
+
+    await pumpSidebar(tester, FakeSchemaSource.simple());
+    await tester.tap(find.text('users'), buttons: kSecondaryButton);
+    await tester.pumpAndSettle();
+    expect(find.text('新建表…'), findsNothing);
   });
 
   testWidgets('空库显示 0 张表而不是报错', (tester) async {

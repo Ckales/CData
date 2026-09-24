@@ -95,4 +95,27 @@ void main() {
       expect(contrast(color, dark.surface), greaterThanOrEqualTo(4.5), reason: '$kind');
     }
   });
+
+  testWidgets('输入框提示在两种主题下都是斜体浅色，和真值分得开', (tester) async {
+    for (final brightness in Brightness.values) {
+      final theme = appTheme(brightness);
+      await tester.pumpWidget(MaterialApp(
+        theme: theme,
+        home: const Scaffold(
+          body: Column(children: [
+            TextField(style: TextStyle(fontSize: 11), decoration: InputDecoration(hintText: '提示')),
+            TextField(),
+          ]),
+        ),
+      ));
+      await tester.enterText(find.byType(TextField).last, '真值');
+      // 换主题时 MaterialApp 会渐变过去，等动画走完再读颜色
+      await tester.pumpAndSettle();
+      // 读实际画出来的样式
+      final hint = tester.renderObject<RenderParagraph>(find.text('提示')).text.style!;
+      expect(hint.fontStyle, FontStyle.italic, reason: '$brightness');
+      expect(hint.color, theme.colorScheme.outline);
+      expect(hint.fontSize, 11, reason: '提示字号跟着输入框自己的 style');
+    }
+  });
 }

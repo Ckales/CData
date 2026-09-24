@@ -8,7 +8,22 @@ import 'package:flutter_test/flutter_test.dart';
 
 typedef FilterResult = ({List<FilterCondition> conditions, bool matchAll});
 
-/// 放一个按钮打开对话框，把返回值记下来
+/// 只有一层条件时，把返回的分组摊平，断言写起来直接
+FilterResult? flatten(FilterGroup? group) {
+  if (group == null) return null;
+  final conditions = <FilterCondition>[];
+  for (final item in group.items) {
+    switch (item) {
+      case FilterItem_Condition(:final field0):
+        conditions.add(field0);
+      case FilterItem_Group():
+        fail('这条测试没有建分组');
+    }
+  }
+  return (conditions: conditions, matchAll: group.matchAll);
+}
+
+/// 放一个按钮打开对话框，把返回值（摊平成一层）记下来
 Future<List<FilterResult?>> pumpDialog(
   WidgetTester tester, {
   List<FilterCondition> initial = const [],
@@ -21,12 +36,15 @@ Future<List<FilterResult?>> pumpDialog(
         body: Builder(
           builder: (context) => TextButton(
             onPressed: () async {
-              results.add(await showFilterDialog(
+              final group = await showFilterGroupDialog(
                 context,
                 columns: const ['id', 'name', 'note'],
-                initial: initial,
-                matchAll: matchAll,
-              ));
+                initial: FilterGroup(
+                  matchAll: matchAll,
+                  items: [for (final condition in initial) FilterItem.condition(condition)],
+                ),
+              );
+              results.add(flatten(group));
             },
             child: const Text('打开'),
           ),
@@ -125,11 +143,10 @@ void main() {
     await tester.pumpWidget(MaterialApp(
       home: Scaffold(
         body: FilterBar(
-          conditions: const [
-            FilterCondition(column: 'amount', op: FilterOp.gtEq, value: '10'),
-            FilterCondition(column: 'note', op: FilterOp.isNotNull, value: ''),
-          ],
-          matchAll: true,
+          filter: const FilterGroup(matchAll: true, items: [
+            FilterItem.condition(FilterCondition(column: 'amount', op: FilterOp.gtEq, value: '10')),
+            FilterItem.condition(FilterCondition(column: 'note', op: FilterOp.isNotNull, value: '')),
+          ]),
           onEdit: () {},
           onClear: () => cleared = true,
         ),
@@ -142,10 +159,133 @@ void main() {
 
     await tester.pumpWidget(MaterialApp(
       home: Scaffold(
-        body: FilterBar(conditions: const [], matchAll: true, onEdit: () {}, onClear: () {}),
+        body: FilterBar(filter: const FilterGroup(matchAll: true, items: []), onEdit: () {}, onClear: () {}),
       ),
     ));
     expect(find.text('未筛选'), findsOneWidget);
     expect(find.text('清除'), findsNothing);
+  });
+
+  testWidgets('IN 的值一行一个，原样交给 core；NOT IN 提示 NULL 行不会命中', (tester) async {
+    // 运算符菜单是懒建的，窗口太矮时最后几项根本不在树里，ensureVisible 也找不到
+    tester.view.physicalSize = const Size(1400, 1400);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final results = await pumpDialog(tester);
+
+    await choose(tester, 'filter-op-0', '不属于列表');
+    expect(find.textContaining('该列为 NULL 的行不会命中'), findsOneWidget);
+    await tester.enterText(find.byKey(const ValueKey('filter-value-0')), '1\n2,3\n');
+    await tester.pump(const Duration(milliseconds: 100));
+    await tester.tap(find.text('应用'));
+    await tester.pumpAndSettle();
+
+    // 怎么切行、空行和 NULL 怎么处理都是 core 的事，界面不动原文
+    expect(results.single!.conditions, [
+      const FilterCondition(column: 'id', op: FilterOp.notIn, value: '1\n2,3\n'),
+    ]);
+  });
+
+  /// 打开分组筛选对话框，返回值记下来
+  Future<List<FilterGroup?>> pumpGroupDialog(WidgetTester tester, FilterGroup initial) async {
+    final results = <FilterGroup?>[];
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Builder(
+            builder: (context) => TextButton(
+              onPressed: () async {
+                results.add(await showFilterGroupDialog(
+                  context,
+                  columns: const ['id', 'name', 'note'],
+                  initial: initial,
+                ));
+              },
+              child: const Text('打开'),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('打开'));
+    await tester.pumpAndSettle();
+    return results;
+  }
+
+  testWidgets('分组：拼出 (A 且 B) 或 (C 且 D)', (tester) async {
+    tester.view.physicalSize = const Size(1400, 1400);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final results = await pumpGroupDialog(tester, const FilterGroup(matchAll: true, items: []));
+
+    await choose(tester, 'filter-match', '满足任一条件');
+    // 默认给的那条删掉，换成两个分组
+    await tester.tap(find.byKey(const ValueKey('filter-remove-0')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('filter-add-group')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('filter-add-0')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('filter-add-group')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('filter-add-1')));
+    await tester.pumpAndSettle();
+
+    // 新分组默认和外层相反，外层「任一」时组里是「全部」
+    await tester.enterText(find.byKey(const ValueKey('filter-value-0.0')), '1');
+    await tester.enterText(find.byKey(const ValueKey('filter-value-0.1')), '2');
+    await choose(tester, 'filter-op-1.0', '属于列表');
+    await tester.enterText(find.byKey(const ValueKey('filter-value-1.0')), '5\n6');
+    await choose(tester, 'filter-column-1.1', 'name');
+    await tester.enterText(find.byKey(const ValueKey('filter-value-1.1')), 'x');
+    await tester.pump(const Duration(milliseconds: 100));
+    await tester.tap(find.text('应用'));
+    await tester.pumpAndSettle();
+
+    final result = results.single!;
+    // FRB 生成的类比较 List 用的是引用相等，按描述比
+    expect(describeFilterGroup(result), '(id = 1 且 id = 2) 或 (id 属于列表 (5, 6) 且 name = x)');
+    expect(result.items, everyElement(isA<FilterItem_Group>()));
+  });
+
+  testWidgets('分组里最后一条删掉，分组跟着删；初始的嵌套条件照样显示', (tester) async {
+    await pumpGroupDialog(
+      tester,
+      const FilterGroup(matchAll: true, items: [
+        FilterItem.condition(FilterCondition(column: 'id', op: FilterOp.eq, value: '1')),
+        FilterItem.group(FilterGroup(matchAll: false, items: [
+          FilterItem.condition(FilterCondition(column: 'note', op: FilterOp.isNull, value: '')),
+        ])),
+      ]),
+    );
+    expect(find.byKey(const ValueKey('filter-match-1')), findsOneWidget);
+    expect(find.text('note'), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('filter-remove-1.0')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('filter-match-1')), findsNothing, reason: '空分组 core 不收，界面里也不留');
+    expect(find.byKey(const ValueKey('filter-value-0')), findsOneWidget);
+  });
+
+  testWidgets('筛选条显示分组摘要', (tester) async {
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: FilterBar(
+          filter: const FilterGroup(matchAll: false, items: [
+            FilterItem.group(FilterGroup(matchAll: true, items: [
+              FilterItem.condition(FilterCondition(column: 'a', op: FilterOp.eq, value: '1')),
+              FilterItem.condition(FilterCondition(column: 'b', op: FilterOp.in_, value: '2\r\n3\r\n')),
+            ])),
+            FilterItem.condition(FilterCondition(column: 'c', op: FilterOp.isNull, value: '')),
+          ]),
+          onEdit: () {},
+          onClear: () {},
+        ),
+      ),
+    ));
+    expect(find.text('(a = 1 且 b 属于列表 (2, 3)) 或 c 为 NULL'), findsOneWidget);
+    expect(find.text('清除'), findsOneWidget);
   });
 }

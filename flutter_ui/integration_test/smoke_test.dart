@@ -10,7 +10,9 @@ import 'dart:ui' as ui;
 
 import 'package:cdata_flutter/query_page.dart';
 import 'package:cdata_flutter/result_grid.dart' show ResultGrid;
+import 'package:cdata_flutter/theme.dart';
 import 'package:cdata_flutter/src/rust/api/preferences.dart' show defaultPreferences;
+import 'package:flutter/gestures.dart' show kSecondaryButton;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
@@ -22,6 +24,7 @@ import 'rust_init.dart';
 const _host = String.fromEnvironment('HOST');
 const _password = String.fromEnvironment('PASSWORD');
 const _db = String.fromEnvironment('DB');
+const _user = String.fromEnvironment('USER');
 
 final _boundaryKey = GlobalKey();
 
@@ -83,7 +86,8 @@ void main() {
         key: _boundaryKey,
         child: MaterialApp(
           debugShowCheckedModeBanner: false,
-          theme: ThemeData(colorSchemeSeed: Colors.indigo),
+          // 和真 app 用同一套主题，截图才反映真实效果
+          theme: appTheme(Brightness.light),
           home: QueryPage(preferences: defaultPreferences(), onPreferencesChanged: (_) {}),
         ),
       ),
@@ -171,5 +175,38 @@ void main() {
     await command(LogicalKeyboardKey.digit1);
     await settleUntil(tester, find.text('用户1'));
     expect(find.text('用户1'), findsOneWidget, reason: '⌘1 没切回第一个标签');
+
+    // 这一轮新加的对话框在真库上能打开、能渲染：各截一张图看效果
+    await tester.tap(find.byTooltip('服务器状态：进程、变量、状态计数、慢日志'));
+    await settleUntil(tester, find.text('CData'));
+    expect(find.text('CData'), findsWidgets, reason: '进程列表里要认出本工具自己的连接');
+    await savePng('server_status');
+    await tester.tap(find.byTooltip('关闭'));
+    await settle(tester, rounds: 1);
+
+    await tester.tap(find.byTooltip('用户与权限'));
+    await settleUntil(tester, find.textContaining(_user));
+    expect(find.textContaining(_user), findsWidgets, reason: '账号清单里要有当前登录的账号');
+    await savePng('user_admin');
+    await tester.tap(find.text('关闭'));
+    await settle(tester, rounds: 1);
+
+    await tester.tap(find.text('edit_target').first, buttons: kSecondaryButton);
+    await settle(tester, rounds: 1);
+    await tester.tap(find.text('查看结构'));
+    await settleUntil(tester, find.text('编辑'));
+    await tester.tap(find.text('编辑'));
+    await settleUntil(tester, find.textContaining('编辑结构：'));
+    expect(find.textContaining('编辑结构：'), findsOneWidget);
+    await savePng('structure_editor');
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await settle(tester, rounds: 1);
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await settle(tester, rounds: 1);
+
+    // 窗口缩到最小尺寸，界面不能溢出。溢出会抛 FlutterError，测试框架据此判失败
+    tester.view.physicalSize = const Size(1800, 1200);
+    await settle(tester, rounds: 2);
+    await savePng('narrow');
   });
 }
