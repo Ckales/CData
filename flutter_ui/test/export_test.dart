@@ -4,6 +4,7 @@
 import 'package:cdata_flutter/result_grid.dart';
 import 'package:cdata_flutter/src/rust/api/db.dart';
 import 'package:cdata_flutter/src/rust/api/layouts.dart';
+import 'package:cdata_flutter/theme.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -13,6 +14,7 @@ import 'fakes.dart';
 Future<List<String>> pumpExportGrid(WidgetTester tester, FakeGridSource source, {String? savePath = '/tmp/out'}) async {
   final asked = <String>[];
   await tester.pumpWidget(MaterialApp(
+    theme: appTheme(Brightness.light),
     home: Scaffold(
       body: ResultGrid(
         source: source,

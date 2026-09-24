@@ -8,6 +8,7 @@ import 'package:cdata_flutter/src/rust/api/db.dart';
 import 'package:cdata_flutter/src/rust/api/layouts.dart';
 import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:cdata_flutter/src/rust/api/value.dart';
+import 'package:cdata_flutter/theme.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -23,6 +24,7 @@ Future<void> pumpGrid(
 }) async {
   await tester.pumpWidget(
     MaterialApp(
+      theme: appTheme(Brightness.light),
       home: Scaffold(
         body: ResultGrid(
           source: source,
@@ -107,7 +109,7 @@ void main() {
         [const CellValue.text('NULL'), const CellValue.null_(), const CellValue.text('<abc>')],
       ],
     );
-    await tester.pumpWidget(MaterialApp(home: Scaffold(body: ResultGrid(source: source))));
+    await tester.pumpWidget(MaterialApp(theme: appTheme(Brightness.light), home: Scaffold(body: ResultGrid(source: source))));
     await tester.pumpAndSettle();
 
     final nullTexts = tester.widgetList<Text>(find.text('NULL')).toList();
@@ -134,8 +136,8 @@ void main() {
 
     expect(find.text('用户1'), findsOneWidget);
 
-    // 一行 30px，拖 12000px 约 400 行
-    await tester.drag(find.byType(ListView), const Offset(0, -12000));
+    // 一行 20px，拖 8000px 约 400 行
+    await tester.drag(find.byType(ListView), const Offset(0, -8000));
     await tester.pumpAndSettle();
 
     expect(find.text('用户1'), findsNothing);
@@ -275,7 +277,7 @@ void main() {
       sortAscending: false,
     );
 
-    expect(find.byIcon(Icons.arrow_downward), findsOneWidget);
+    expect(find.byIcon(Icons.keyboard_arrow_down), findsOneWidget);
 
     await tester.tap(find.text('id'));
     await tester.pumpAndSettle();
@@ -352,6 +354,9 @@ void main() {
     await tester.enterText(find.byKey(const ValueKey('insert-field-1')), '新用户');
     await tester.pump(const Duration(milliseconds: 100));
     await tester.tap(find.byKey(const ValueKey('insert-mode-2')));
+    // 弹出菜单是展开动画：第一帧起动画，第二帧走完，菜单项才点得到。
+    // 输入框光标在闪，不能 pumpAndSettle
+    await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
     await tester.tap(find.text('NULL').last);
     await tester.pump(const Duration(milliseconds: 300));
@@ -732,6 +737,7 @@ void main() {
 
     testWidgets('焦点在别的输入框里时方向键不归网格', (tester) async {
       await tester.pumpWidget(MaterialApp(
+        theme: appTheme(Brightness.light),
         home: Scaffold(
           body: Column(
             children: [

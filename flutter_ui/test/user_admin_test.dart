@@ -2,6 +2,7 @@
 // 这里只验证界面把表单正确拼成变更、预览和执行的流程、各种提示显示出来。
 
 import 'package:cdata_flutter/src/rust/api/users.dart';
+import 'package:cdata_flutter/theme.dart';
 import 'package:cdata_flutter/user_admin.dart';
 import 'package:cdata_flutter/user_source.dart';
 import 'package:flutter/material.dart';
@@ -118,6 +119,7 @@ Future<FakeUserSource> openAdmin(WidgetTester tester, {UserAdmin? admin}) async 
   );
 
   await tester.pumpWidget(MaterialApp(
+    theme: appTheme(Brightness.light),
     home: Scaffold(
       body: Builder(
         builder: (context) => TextButton(
@@ -324,5 +326,25 @@ void main() {
     await tester.tap(find.text('预览'));
     await settle(tester);
     expect(source.previews.single.$1, const UserChange.revokeRole(account: bob, role: reporter));
+  });
+
+  testWidgets('面板可以直接嵌进页面：能选账号，没有关闭按钮', (tester) async {
+    tester.view.physicalSize = const Size(1400, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+    final source = FakeUserSource(sampleAdmin())
+      ..grantsByUser['bob'] = const AccountGrants(entries: [], statements: ['GRANT USAGE ON *.* TO `bob`@`localhost`']);
+    await tester.pumpWidget(MaterialApp(
+      theme: appTheme(Brightness.light),
+      home: Scaffold(body: UserAdminPanel(source: source)),
+    ));
+    await settle(tester);
+
+    expect(find.text("当前登录：'admin'@'%'"), findsOneWidget);
+    expect(find.byTooltip('关闭'), findsNothing);
+    expect(find.text('关闭'), findsNothing);
+    expect(find.byType(Dialog), findsNothing);
+    await selectBob(tester);
+    expect(find.text('解锁'), findsOneWidget);
   });
 }

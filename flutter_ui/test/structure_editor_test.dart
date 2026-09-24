@@ -4,6 +4,7 @@
 import 'package:cdata_flutter/src/rust/api/schema.dart';
 import 'package:cdata_flutter/structure_editor.dart';
 import 'package:cdata_flutter/structure_view.dart';
+import 'package:cdata_flutter/theme.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -72,6 +73,7 @@ Future<FakeSchemaSource> openEditor(WidgetTester tester, {VoidCallback? onAltere
 
   final source = FakeSchemaSource.simple()..structures['posts'] = postsStructure();
   await tester.pumpWidget(MaterialApp(
+    theme: appTheme(Brightness.light),
     home: Scaffold(
       body: Builder(
         builder: (context) => TextButton(
@@ -235,6 +237,7 @@ void main() {
     );
 
     await tester.pumpWidget(MaterialApp(
+    theme: appTheme(Brightness.light),
       home: Scaffold(
         body: Builder(
           builder: (context) => TextButton(
@@ -319,6 +322,7 @@ void main() {
     final source = FakeSchemaSource.simple();
     late Future<String?> result;
     await tester.pumpWidget(MaterialApp(
+    theme: appTheme(Brightness.light),
       home: Scaffold(
         body: Builder(
           builder: (context) => TextButton(

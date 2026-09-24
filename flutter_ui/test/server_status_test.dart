@@ -5,6 +5,7 @@ import 'package:cdata_flutter/server_source.dart';
 import 'package:cdata_flutter/server_status.dart';
 import 'package:cdata_flutter/src/rust/api/server.dart';
 import 'package:cdata_flutter/src/rust/api/value.dart' show DisplayCell;
+import 'package:cdata_flutter/theme.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -156,6 +157,7 @@ Future<void> open(WidgetTester tester, FakeServerSource source) async {
   addTearDown(tester.view.reset);
 
   await tester.pumpWidget(MaterialApp(
+    theme: appTheme(Brightness.light),
     home: Builder(
       builder: (context) => TextButton(
         onPressed: () => showServerStatus(context, source: source, serverLabel: '127.0.0.1:3306'),
@@ -190,7 +192,8 @@ void main() {
     );
     await open(tester, source);
 
-    expect(find.text('服务器状态 · 127.0.0.1:3306'), findsOneWidget);
+    expect(find.text('服务器状态'), findsOneWidget);
+    expect(find.text('127.0.0.1:3306'), findsOneWidget);
     expect(find.textContaining('没有 PROCESS 权限'), findsOneWidget);
     expect(find.byKey(const ValueKey('process-own-7')), findsOneWidget);
     expect(find.byKey(const ValueKey('process-own-9')), findsNothing);
@@ -403,5 +406,26 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('set-global-apply')));
     await settle(tester);
     expect(source.applies.single.$1, 'slow_query_log');
+  });
+
+  testWidgets('面板可以直接嵌进页面：能用，没有关闭按钮', (tester) async {
+    tester.view.physicalSize = const Size(1400, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final source = sourceOf();
+    await tester.pumpWidget(MaterialApp(
+      theme: appTheme(Brightness.light),
+      home: Scaffold(body: ServerStatusPanel(source: source, serverLabel: '127.0.0.1:3306')),
+    ));
+    await tester.pumpAndSettle();
+
+    expect(find.text('127.0.0.1:3306'), findsOneWidget);
+    expect(find.byKey(const ValueKey('process-9')), findsOneWidget);
+    expect(find.byKey(const ValueKey('server-close')), findsNothing);
+    expect(find.byTooltip('关闭'), findsNothing);
+    expect(find.byType(Dialog), findsNothing);
+
+    await openTab(tester, '变量');
+    expect(find.text('max_connections'), findsOneWidget);
   });
 }

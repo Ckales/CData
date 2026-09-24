@@ -249,41 +249,15 @@ class _DatabasePicker extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final mac = MacColors.of(context);
-    // 当前库可能还没出现在列表里（刚连上、或者没权限列库），先补进去免得下拉崩掉
+    // 当前库可能还没出现在列表里（刚连上、或者没权限列库），先补进去，否则按钮只显示占位符
     final items = databases.contains(current) ? databases : [current, ...databases];
 
-    return SizedBox(
-      height: 26,
-      child: DropdownButtonFormField<String>(
-        // 换了库、换了标签时 initialValue 不会自己更新，靠换 key 重建
-        key: ValueKey('database-$current'),
-        initialValue: current,
-        isDense: true,
-        // 库名长了会把侧栏撑破，必须让它自适应宽度再省略
-        isExpanded: true,
-        iconSize: 16,
-        style: TextStyle(fontSize: 13, color: mac.text),
-        decoration: InputDecoration(
-          contentPadding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-          prefixIcon: Icon(Icons.storage, size: 15, color: mac.databaseIcon),
-          prefixIconConstraints: const BoxConstraints(minWidth: 28, minHeight: 24),
-          fillColor: mac.text.withValues(alpha: 0.06),
-          enabledBorder: OutlineInputBorder(
-            borderRadius: const BorderRadius.all(Radius.circular(6)),
-            borderSide: BorderSide(color: mac.separator),
-          ),
-        ),
-        items: [
-          for (final database in items)
-            DropdownMenuItem(
-              value: database,
-              child: Text(database, maxLines: 1, overflow: TextOverflow.ellipsis),
-            ),
-        ],
-        onChanged: (value) {
-          if (value != null) onChanged(value);
-        },
-      ),
+    return MacPopupButton<String>(
+      value: current,
+      items: {for (final database in items) database: database},
+      expand: true,
+      leading: Icon(Icons.storage, size: 14, color: mac.databaseIcon),
+      onChanged: onChanged,
     );
   }
 }

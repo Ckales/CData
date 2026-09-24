@@ -57,8 +57,11 @@ ThemeData appTheme(Brightness brightness) {
 
   const radius = BorderRadius.all(Radius.circular(6));
   const buttonShape = RoundedRectangleBorder(borderRadius: radius);
-  const buttonPadding = EdgeInsets.symmetric(horizontal: 12);
-  const buttonSize = Size(0, 26);
+  const buttonPadding = EdgeInsets.symmetric(horizontal: 12, vertical: 4);
+  // 按钮固定 24px 高（macOS 普通按钮的高度）。按钮自己用标准密度：全局的 compact 会从最小高度里
+  // 再减 8px，按钮就只剩 18px，边框贴着字，很难看
+  const buttonSize = Size(0, 24);
+  const buttonDensity = VisualDensity.standard;
   final buttonText = text.labelLarge;
 
   return ThemeData(
@@ -76,6 +79,8 @@ ThemeData appTheme(Brightness brightness) {
     filledButtonTheme: FilledButtonThemeData(
       style: FilledButton.styleFrom(
         minimumSize: buttonSize,
+        visualDensity: buttonDensity,
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
         padding: buttonPadding,
         shape: buttonShape,
         textStyle: buttonText,
@@ -86,6 +91,8 @@ ThemeData appTheme(Brightness brightness) {
     outlinedButtonTheme: OutlinedButtonThemeData(
       style: OutlinedButton.styleFrom(
         minimumSize: buttonSize,
+        visualDensity: buttonDensity,
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
         padding: buttonPadding,
         shape: buttonShape,
         textStyle: buttonText,
@@ -97,7 +104,9 @@ ThemeData appTheme(Brightness brightness) {
     textButtonTheme: TextButtonThemeData(
       style: TextButton.styleFrom(
         minimumSize: buttonSize,
-        padding: const EdgeInsets.symmetric(horizontal: 8),
+        visualDensity: buttonDensity,
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
         shape: buttonShape,
         textStyle: buttonText,
         foregroundColor: mac.accent,

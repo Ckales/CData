@@ -5,6 +5,7 @@ import 'package:cdata_flutter/import_dialog.dart';
 import 'package:cdata_flutter/src/rust/api/csv_import.dart';
 import 'package:cdata_flutter/src/rust/api/db.dart' show ExportEncoding;
 import 'package:cdata_flutter/src/rust/api/value.dart' show DisplayCell;
+import 'package:cdata_flutter/theme.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -76,6 +77,7 @@ Future<bool? Function()> openDialog(
 
   bool? result;
   await tester.pumpWidget(MaterialApp(
+    theme: appTheme(Brightness.light),
     home: Builder(
       builder: (context) => TextButton(
         onPressed: () async {

@@ -2,6 +2,7 @@
 
 import 'package:cdata_flutter/src/rust/api/schema.dart';
 import 'package:cdata_flutter/structure_view.dart';
+import 'package:cdata_flutter/theme.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -65,6 +66,7 @@ Future<void> pumpStructure(WidgetTester tester, FakeSchemaSource source, String 
   addTearDown(tester.view.resetDevicePixelRatio);
 
   await tester.pumpWidget(MaterialApp(
+    theme: appTheme(Brightness.light),
     home: Scaffold(
       body: Builder(
         builder: (context) => TextButton(
@@ -146,5 +148,46 @@ void main() {
   testWidgets('读结构失败要显示原因', (tester) async {
     await pumpStructure(tester, FakeSchemaSource.simple(), 'missing');
     expect(find.textContaining('表 missing 不存在'), findsOneWidget);
+  });
+
+  testWidgets('面板嵌在页面里：没有关闭按钮，换表时重读并停在同一页', (tester) async {
+    tester.view.physicalSize = const Size(1400, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+
+    final old = sampleStructure();
+    final source = FakeSchemaSource.simple()
+      ..structures['posts'] = sampleStructure()
+      ..structures['tags'] = TableStructure(
+        columns: [columnDef('tag', 'varchar(20)', const DefaultValue.noDefault())],
+        indexes: const [],
+        foreignKeys: const [],
+        createSql: 'CREATE TABLE `tags` (…)',
+        tableComment: '',
+        checks: old.checks,
+      );
+
+    Widget page(String table) => MaterialApp(
+          theme: appTheme(Brightness.light),
+          home: Scaffold(body: StructurePanel(source: source, database: 'shop', table: table)),
+        );
+
+    await tester.pumpWidget(page('posts'));
+    await tester.pumpAndSettle();
+    expect(find.text('列 4'), findsOneWidget);
+    expect(find.text('编辑'), findsOneWidget);
+    expect(find.byTooltip('关闭'), findsNothing);
+    expect(find.byType(Dialog), findsNothing);
+
+    await tester.tap(find.text('索引 2'));
+    await tester.pumpAndSettle();
+    expect(find.text('title(10)'), findsOneWidget);
+
+    await tester.pumpWidget(page('tags'));
+    await tester.pumpAndSettle();
+    expect(source.structureLoads, 2, reason: '换表要重读');
+    expect(find.text('列 1'), findsOneWidget);
+    expect(find.text('没有索引'), findsOneWidget, reason: '停在索引页，内容是新表的');
+    expect(find.text('title(10)'), findsNothing);
   });
 }

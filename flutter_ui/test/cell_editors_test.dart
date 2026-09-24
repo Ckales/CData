@@ -3,6 +3,7 @@
 import 'package:cdata_flutter/result_grid.dart';
 import 'package:cdata_flutter/src/rust/api/db.dart';
 import 'package:cdata_flutter/src/rust/api/value.dart';
+import 'package:cdata_flutter/theme.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -48,7 +49,7 @@ Future<void> pumpTyped(WidgetTester tester, FakeGridSource source) async {
   addTearDown(tester.view.resetPhysicalSize);
   addTearDown(tester.view.resetDevicePixelRatio);
 
-  await tester.pumpWidget(MaterialApp(home: Scaffold(body: ResultGrid(source: source))));
+  await tester.pumpWidget(MaterialApp(theme: appTheme(Brightness.light), home: Scaffold(body: ResultGrid(source: source))));
   await tester.pumpAndSettle();
 }
 
@@ -209,7 +210,7 @@ void main() {
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
-    await tester.pumpWidget(MaterialApp(home: Scaffold(body: ResultGrid(source: source, checkTime: fakeCheck))));
+    await tester.pumpWidget(MaterialApp(theme: appTheme(Brightness.light), home: Scaffold(body: ResultGrid(source: source, checkTime: fakeCheck))));
     await tester.pumpAndSettle();
     await openEditor(tester, 1);
 

@@ -9,6 +9,7 @@ import 'package:cdata_flutter/sql_library.dart';
 import 'package:cdata_flutter/src/rust/api/db.dart';
 import 'package:cdata_flutter/src/rust/api/editor.dart';
 import 'package:cdata_flutter/src/rust/api/value.dart';
+import 'package:cdata_flutter/theme.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -148,6 +149,7 @@ Future<GlobalKey<QueryTabState>> pumpTab(
 }) async {
   final key = GlobalKey<QueryTabState>();
   await tester.pumpWidget(MaterialApp(
+    theme: appTheme(Brightness.light),
     home: Scaffold(
       body: QueryTab(
         key: key,
@@ -317,6 +319,7 @@ void main() {
     // 高亮按主题亮度选配色，要一个挂在 Theme 下面的真 context
     late BuildContext context;
     await tester.pumpWidget(MaterialApp(
+      theme: appTheme(Brightness.light),
       home: Builder(builder: (built) {
         context = built;
         return const SizedBox();

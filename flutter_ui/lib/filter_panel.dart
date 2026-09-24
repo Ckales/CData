@@ -84,9 +84,9 @@ class FilterBar extends StatelessWidget {
         children: [
           OutlinedButton(
             onPressed: onEdit,
+            // 高度跟主题按钮一样 24px：带边框的按钮再矮，边框就贴着字了
             style: OutlinedButton.styleFrom(
-              minimumSize: const Size(0, 20),
-              padding: const EdgeInsets.only(left: 6, right: 2),
+              padding: const EdgeInsets.only(left: 6, right: 2, top: 4, bottom: 4),
               // 有筛选时按钮变成系统蓝，一眼看出结果是筛过的
               foregroundColor: description == null ? mac.text : mac.accent,
             ),
@@ -114,8 +114,8 @@ class FilterBar extends StatelessWidget {
             TextButton(
               onPressed: onClear,
               style: TextButton.styleFrom(
-                minimumSize: const Size(0, 20),
-                padding: const EdgeInsets.symmetric(horizontal: 6),
+                minimumSize: const Size(0, 22),
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
               ),
               child: const Text('清除', style: TextStyle(fontSize: 12)),
             ),
@@ -285,7 +285,7 @@ class _FilterDialogState extends State<_FilterDialog> {
       onPressed: onPressed,
       style: TextButton.styleFrom(
         minimumSize: const Size(0, 22),
-        padding: const EdgeInsets.symmetric(horizontal: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
         iconSize: 14,
       ),
       icon: Icon(icon),

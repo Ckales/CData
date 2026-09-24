@@ -3,6 +3,7 @@
 
 import 'package:cdata_flutter/filter_panel.dart';
 import 'package:cdata_flutter/src/rust/api/db.dart';
+import 'package:cdata_flutter/theme.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -32,6 +33,7 @@ Future<List<FilterResult?>> pumpDialog(
   final results = <FilterResult?>[];
   await tester.pumpWidget(
     MaterialApp(
+      theme: appTheme(Brightness.light),
       home: Scaffold(
         body: Builder(
           builder: (context) => TextButton(
@@ -141,6 +143,7 @@ void main() {
   testWidgets('筛选条显示条件摘要，有条件才给清除', (tester) async {
     var cleared = false;
     await tester.pumpWidget(MaterialApp(
+      theme: appTheme(Brightness.light),
       home: Scaffold(
         body: FilterBar(
           filter: const FilterGroup(matchAll: true, items: [
@@ -158,6 +161,7 @@ void main() {
     expect(cleared, isTrue);
 
     await tester.pumpWidget(MaterialApp(
+      theme: appTheme(Brightness.light),
       home: Scaffold(
         body: FilterBar(filter: const FilterGroup(matchAll: true, items: []), onEdit: () {}, onClear: () {}),
       ),
@@ -192,6 +196,7 @@ void main() {
     final results = <FilterGroup?>[];
     await tester.pumpWidget(
       MaterialApp(
+        theme: appTheme(Brightness.light),
         home: Scaffold(
           body: Builder(
             builder: (context) => TextButton(
@@ -271,6 +276,7 @@ void main() {
 
   testWidgets('筛选条显示分组摘要', (tester) async {
     await tester.pumpWidget(MaterialApp(
+      theme: appTheme(Brightness.light),
       home: Scaffold(
         body: FilterBar(
           filter: const FilterGroup(matchAll: false, items: [

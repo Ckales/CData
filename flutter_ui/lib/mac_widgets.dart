@@ -453,6 +453,9 @@ class MacPopupButton<T> extends StatelessWidget {
 
   final String placeholder;
 
+  /// 文字前面的小图标
+  final Widget? leading;
+
   const MacPopupButton({
     super.key,
     required this.value,
@@ -461,6 +464,7 @@ class MacPopupButton<T> extends StatelessWidget {
     this.disabled = const {},
     this.expand = false,
     this.placeholder = '—',
+    this.leading,
   });
 
   @override
@@ -474,9 +478,19 @@ class MacPopupButton<T> extends StatelessWidget {
       overflow: TextOverflow.ellipsis,
       style: TextStyle(fontSize: 12, color: enabled && label != null ? mac.text : mac.tertiaryText),
     );
+    if (!expand) return _menu(context, mac, enabled, text, null);
+    // 撑满时菜单至少和按钮一样宽，不然窄菜单挂在宽按钮上很怪
+    return LayoutBuilder(
+      builder: (context, constraints) =>
+          _menu(context, mac, enabled, text, BoxConstraints(minWidth: constraints.maxWidth)),
+    );
+  }
+
+  Widget _menu(BuildContext context, MacColors mac, bool enabled, Text text, BoxConstraints? constraints) {
     return PopupMenuButton<T>(
       initialValue: value,
       enabled: enabled,
+      constraints: constraints,
       // 空串就不挂 Tooltip，否则悬停会冒出 Material 的「Show menu」
       tooltip: '',
       onSelected: onChanged,
@@ -500,7 +514,8 @@ class MacPopupButton<T> extends StatelessWidget {
           ),
       ],
       child: Container(
-        height: 22,
+        // 和主题按钮一样 24px，一排控件对得齐
+        height: 24,
         padding: const EdgeInsets.only(left: 8, right: 4),
         decoration: BoxDecoration(
           color: enabled ? mac.control : mac.window,
@@ -510,6 +525,7 @@ class MacPopupButton<T> extends StatelessWidget {
         child: Row(
           mainAxisSize: expand ? MainAxisSize.max : MainAxisSize.min,
           children: [
+            if (leading != null) ...[leading!, const SizedBox(width: 5)],
             if (expand) Expanded(child: text) else Flexible(child: text),
             const SizedBox(width: 4),
             Icon(Icons.unfold_more, size: 14, color: enabled ? mac.secondaryText : mac.tertiaryText),

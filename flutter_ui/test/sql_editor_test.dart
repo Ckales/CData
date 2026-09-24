@@ -49,6 +49,29 @@ Future<void> press(WidgetTester tester, LogicalKeyboardKey key) async {
 }
 
 void main() {
+  testWidgets('点了编辑框外面（比如「运行」按钮），弹窗跟着关掉，不留一个过期的候选盖住别的控件', (tester) async {
+    final controller = SqlEditingController(tokenize: (_) => const []);
+    addTearDown(controller.dispose);
+    var ran = 0;
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        // 按钮放在编辑框右边，不在弹窗底下：测的是「点了外面」，不是「点到弹窗上」
+        body: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Expanded(child: SqlEditorField(controller: controller, complete: fakeComplete, onRun: () {})),
+          TextButton(onPressed: () => ran++, child: const Text('运行')),
+        ]),
+      ),
+    ));
+    await type(tester, 'SELECT * FROM or');
+    expect(find.byKey(const ValueKey('completion-popup')), findsOneWidget);
+
+    await tester.tap(find.text('运行'));
+    await tester.pump();
+    await tester.pump();
+    expect(ran, 1);
+    expect(find.byKey(const ValueKey('completion-popup')), findsNothing);
+  });
+
   testWidgets('打字弹出候选，Enter 接受并替换正在输入的词', (tester) async {
     final controller = await pumpEditor(tester);
     await type(tester, 'SELECT * FROM ord');

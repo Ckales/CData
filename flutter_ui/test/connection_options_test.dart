@@ -3,6 +3,7 @@
 
 import 'package:cdata_flutter/connection_options.dart';
 import 'package:cdata_flutter/src/rust/api/options.dart';
+import 'package:cdata_flutter/theme.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -32,7 +33,7 @@ Future<OpenedDialog> openDialog(
 }) async {
   final opened = OpenedDialog();
   await tester.pumpWidget(MaterialApp(
-    theme: theme,
+    theme: theme ?? appTheme(Brightness.light),
     home: Scaffold(
       body: Builder(
         builder: (context) => TextButton(
@@ -243,7 +244,7 @@ void main() {
   });
 
   testWidgets('深色主题下错误提示用主题的 error 色，不写死颜色', (tester) async {
-    final dark = ThemeData(brightness: Brightness.dark, colorSchemeSeed: Colors.indigo);
+    final dark = appTheme(Brightness.dark);
     await openDialog(tester, _defaults, theme: dark);
     await type(tester, 'connect-timeout', '-1');
     await submit(tester);
