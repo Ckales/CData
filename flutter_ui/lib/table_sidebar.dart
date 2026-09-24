@@ -127,7 +127,7 @@ class _TableSidebarState extends State<TableSidebar> {
       width: 240,
       decoration: BoxDecoration(
         color: Theme.of(context).colorScheme.surfaceContainerLow,
-        border: const Border(right: BorderSide(color: Colors.black26)),
+        border: Border(right: BorderSide(color: Theme.of(context).colorScheme.outline)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -160,7 +160,7 @@ class _TableSidebarState extends State<TableSidebar> {
           if (_error != null)
             Padding(
               padding: const EdgeInsets.all(8),
-              child: Text(_error!, style: TextStyle(fontSize: 11, color: Colors.red.shade700)),
+              child: Text(_error!, style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.error)),
             ),
           Expanded(
             child: ListView.builder(
@@ -201,7 +201,7 @@ class _DatabasePicker extends StatelessWidget {
       isDense: true,
       // 库名长了会把侧栏撑破，必须让它自适应宽度再省略
       isExpanded: true,
-      style: const TextStyle(fontSize: 12, color: Colors.black87),
+      style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurface),
       decoration: const InputDecoration(
         isDense: true,
         border: OutlineInputBorder(),
@@ -238,18 +238,19 @@ class _TableRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return InkWell(
       onTap: onTap,
       onSecondaryTapDown: (details) => onSecondaryTapDown(details.globalPosition),
       child: Container(
-        color: selected ? Theme.of(context).colorScheme.primaryContainer : null,
+        color: selected ? scheme.primaryContainer : null,
         padding: const EdgeInsets.symmetric(horizontal: 10),
         child: Row(
           children: [
             Icon(
               table.isView ? Icons.visibility_outlined : Icons.table_rows_outlined,
               size: 13,
-              color: Colors.black45,
+              color: scheme.onSurfaceVariant,
             ),
             const SizedBox(width: 6),
             Expanded(
@@ -264,7 +265,7 @@ class _TableRow extends StatelessWidget {
             if (!table.isView && table.estimatedRows > BigInt.zero)
               Text(
                 '~${table.estimatedRows}',
-                style: const TextStyle(fontSize: 10, color: Colors.black38),
+                style: TextStyle(fontSize: 10, color: scheme.outline),
               ),
           ],
         ),
@@ -282,21 +283,22 @@ class _SidebarFooter extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return Container(
       height: 24,
       padding: const EdgeInsets.symmetric(horizontal: 10),
-      decoration: const BoxDecoration(
-        border: Border(top: BorderSide(color: Colors.black12)),
+      decoration: BoxDecoration(
+        border: Border(top: BorderSide(color: scheme.outlineVariant)),
       ),
       child: Row(
         children: [
           Text(
             count == total ? '$total 张表' : '$count / $total 张表',
-            style: const TextStyle(fontSize: 10, color: Colors.black45),
+            style: TextStyle(fontSize: 10, color: scheme.onSurfaceVariant),
           ),
           const Spacer(),
           // 同 result_grid：无限动画会把 pumpAndSettle 卡死
-          if (loading) const Text('加载中…', style: TextStyle(fontSize: 10, color: Colors.black45)),
+          if (loading) Text('加载中…', style: TextStyle(fontSize: 10, color: scheme.onSurfaceVariant)),
         ],
       ),
     );

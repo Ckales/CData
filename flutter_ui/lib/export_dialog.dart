@@ -178,7 +178,7 @@ class _ExportDialogState extends State<_ExportDialog> {
       key: ValueKey(key),
       value: value,
       isDense: true,
-      style: const TextStyle(fontSize: 12, color: Colors.black87),
+      style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurface),
       items: [
         for (final entry in items.entries) DropdownMenuItem(value: entry.key, child: Text(entry.value)),
       ],

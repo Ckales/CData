@@ -151,7 +151,7 @@ class _LibraryDialogState extends State<_LibraryDialog> {
                     padding: const EdgeInsets.symmetric(vertical: 6),
                     child: Text(
                       _error!,
-                      style: TextStyle(fontSize: 12, color: Colors.red.shade700),
+                      style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.error),
                     ),
                   ),
                 Expanded(child: TabBarView(children: [_historyTab(), _favoritesTab()])),
@@ -281,15 +281,16 @@ class _SqlTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return ListTile(
       dense: true,
       onTap: onTap,
-      title: Text(title, style: const TextStyle(fontSize: 11, color: Colors.black54)),
+      title: Text(title, style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant)),
       subtitle: Text(
         sql,
         maxLines: 3,
         overflow: TextOverflow.ellipsis,
-        style: const TextStyle(fontSize: 12, fontFamily: 'Menlo', color: Colors.black87),
+        style: TextStyle(fontSize: 12, fontFamily: 'Menlo', color: scheme.onSurface),
       ),
       trailing: trailing,
     );

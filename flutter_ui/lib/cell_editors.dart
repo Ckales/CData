@@ -111,7 +111,7 @@ class _JsonEditorState extends State<_JsonEditor> {
             if (_error != null)
               Padding(
                 padding: const EdgeInsets.only(top: 6),
-                child: Text(_error!, style: TextStyle(fontSize: 12, color: Colors.red.shade700)),
+                child: Text(_error!, style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.error)),
               ),
           ],
         ),
@@ -343,7 +343,7 @@ Future<void> showHexViewer(
                 padding: const EdgeInsets.only(bottom: 8),
                 child: Text(
                   '这一列声明为文本，但内容不是合法的 UTF-8，下面是原始字节。不猜编码。',
-                  style: TextStyle(fontSize: 12, color: Colors.orange.shade900),
+                  style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.error),
                 ),
               ),
             Expanded(
@@ -354,9 +354,12 @@ Future<void> showHexViewer(
                 ),
               ),
             ),
-            const Padding(
-              padding: EdgeInsets.only(top: 8),
-              child: Text('二进制内容暂不支持在网格里编辑', style: TextStyle(fontSize: 11, color: Colors.black45)),
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(
+                '二进制内容暂不支持在网格里编辑',
+                style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.onSurfaceVariant),
+              ),
             ),
           ],
         ),

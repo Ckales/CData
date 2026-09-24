@@ -24,13 +24,14 @@ class SqlEditingController extends TextEditingController {
       return super.buildTextSpan(context: context, style: style, withComposing: withComposing);
     }
 
+    final brightness = Theme.of(context).brightness;
     final text = value.text;
     final spans = <TextSpan>[];
     var position = 0;
     for (final token in tokenize(text)) {
       if (token.start > position) spans.add(TextSpan(text: text.substring(position, token.start)));
       spans.add(
-        TextSpan(text: text.substring(token.start, token.end), style: tokenStyle(token.kind)),
+        TextSpan(text: text.substring(token.start, token.end), style: tokenStyle(token.kind, brightness)),
       );
       position = token.end;
     }
@@ -40,15 +41,25 @@ class SqlEditingController extends TextEditingController {
   }
 }
 
-/// 各类 token 的颜色。普通标识符、运算符、标点不上色
-TextStyle? tokenStyle(SqlTokenKind kind) {
+/// 各类 token 的颜色。普通标识符、运算符、标点不上色。
+///
+/// 六类 token 在 ColorScheme 里没有对应的角色，只能写死；按亮度给两套，
+/// 深色一套取同色相的浅色阶，保证在深色 surface 上对比度够
+TextStyle? tokenStyle(SqlTokenKind kind, Brightness brightness) {
+  final dark = brightness == Brightness.dark;
   return switch (kind) {
-    SqlTokenKind.keyword => const TextStyle(color: Color(0xFF3949AB), fontWeight: FontWeight.w600),
-    SqlTokenKind.string => const TextStyle(color: Color(0xFF2E7D32)),
-    SqlTokenKind.number => const TextStyle(color: Color(0xFFE65100)),
-    SqlTokenKind.comment => const TextStyle(color: Color(0xFF9E9E9E), fontStyle: FontStyle.italic),
-    SqlTokenKind.quotedIdentifier => const TextStyle(color: Color(0xFF00796B)),
-    SqlTokenKind.variable => const TextStyle(color: Color(0xFF7B1FA2)),
+    SqlTokenKind.keyword => TextStyle(
+      color: dark ? const Color(0xFF9FA8DA) : const Color(0xFF3949AB),
+      fontWeight: FontWeight.w600,
+    ),
+    SqlTokenKind.string => TextStyle(color: dark ? const Color(0xFF81C784) : const Color(0xFF2E7D32)),
+    SqlTokenKind.number => TextStyle(color: dark ? const Color(0xFFFFB74D) : const Color(0xFFE65100)),
+    SqlTokenKind.comment => TextStyle(
+      color: dark ? const Color(0xFF8C8C8C) : const Color(0xFF9E9E9E),
+      fontStyle: FontStyle.italic,
+    ),
+    SqlTokenKind.quotedIdentifier => TextStyle(color: dark ? const Color(0xFF4DB6AC) : const Color(0xFF00796B)),
+    SqlTokenKind.variable => TextStyle(color: dark ? const Color(0xFFCE93D8) : const Color(0xFF7B1FA2)),
     SqlTokenKind.identifier || SqlTokenKind.operator_ || SqlTokenKind.punctuation => null,
   };
 }
@@ -64,12 +75,14 @@ class SqlEditorField extends StatefulWidget {
   final SqlEditingController controller;
   final SqlCompleter? complete;
   final VoidCallback? onRun;
+  final double fontSize;
 
   const SqlEditorField({
     super.key,
     required this.controller,
     required this.complete,
     required this.onRun,
+    this.fontSize = 13,
   });
 
   @override
@@ -308,7 +321,7 @@ class _SqlEditorFieldState extends State<SqlEditorField> {
             controller: widget.controller,
             maxLines: 6,
             minLines: 2,
-            style: const TextStyle(fontSize: 13, fontFamily: 'Menlo'),
+            style: TextStyle(fontSize: widget.fontSize, fontFamily: 'Menlo'),
             decoration: const InputDecoration(
               border: OutlineInputBorder(),
               isDense: true,
@@ -372,7 +385,7 @@ class _CompletionList extends StatelessWidget {
                 padding: const EdgeInsets.symmetric(horizontal: 8),
                 child: Row(
                   children: [
-                    Icon(_icon(item.kind), size: 13, color: Colors.black45),
+                    Icon(_icon(item.kind), size: 13, color: scheme.onSurfaceVariant),
                     const SizedBox(width: 6),
                     Expanded(
                       child: Text(
@@ -382,7 +395,7 @@ class _CompletionList extends StatelessWidget {
                         style: const TextStyle(fontSize: 12, fontFamily: 'Menlo'),
                       ),
                     ),
-                    Text(item.detail, style: const TextStyle(fontSize: 11, color: Colors.black38)),
+                    Text(item.detail, style: TextStyle(fontSize: 11, color: scheme.outline)),
                   ],
                 ),
               ),

@@ -9,6 +9,8 @@ import 'dart:io';
 import 'dart:ui' as ui;
 
 import 'package:cdata_flutter/query_page.dart';
+import 'package:cdata_flutter/result_grid.dart' show ResultGrid;
+import 'package:cdata_flutter/src/rust/api/preferences.dart' show defaultPreferences;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
@@ -73,7 +75,7 @@ void main() {
         child: MaterialApp(
           debugShowCheckedModeBanner: false,
           theme: ThemeData(colorSchemeSeed: Colors.indigo),
-          home: const QueryPage(),
+          home: QueryPage(preferences: defaultPreferences(), onPreferencesChanged: (_) {}),
         ),
       ),
     );
@@ -93,7 +95,7 @@ void main() {
     await savePng('main');
 
     // 第二个标签有自己的会话，跑别的查询不影响第一个标签的结果
-    await tester.tap(find.byTooltip('新标签'));
+    await tester.tap(find.byIcon(Icons.add));
     await settle(tester, rounds: 1);
     await tester.enterText(find.byKey(const ValueKey('sql-editor')), 'SELECT id, name FROM edit_target ORDER BY id');
     await settle(tester, rounds: 1);
@@ -107,6 +109,25 @@ void main() {
     expect(find.text('用户1'), findsOneWidget, reason: '切回第一个标签，结果要还在');
 
     await savePng('tabs');
+
+    // 多连接：第二个标签改连 information_schema，第一个标签的库不受影响
+    await tester.tap(find.byKey(const ValueKey('tab-2')));
+    await settle(tester, rounds: 1);
+    await tester.enterText(find.byType(TextField).at(4), 'information_schema');
+    await tester.enterText(
+      find.byKey(const ValueKey('sql-editor')),
+      "SELECT TABLE_NAME FROM TABLES WHERE TABLE_SCHEMA = '$_db' AND TABLE_NAME = 'big_rows'",
+    );
+    await tester.tap(find.text('连接'));
+    final schemaRow = find.descendant(of: find.byType(ResultGrid), matching: find.text('big_rows'));
+    await settleUntil(tester, schemaRow);
+    expect(schemaRow, findsOneWidget, reason: '第二个标签没连上 information_schema');
+
+    await tester.tap(find.byKey(const ValueKey('tab-1')));
+    await settleUntil(tester, find.text('用户1'));
+    expect(find.text('用户1'), findsOneWidget);
+    final databaseField = tester.widget<TextField>(find.byType(TextField).at(4));
+    expect(databaseField.controller!.text, _db, reason: '切回第一个标签，连接栏要显示它自己的库');
 
     // 补全：目录是查询成功后从真库读的，候选要带上真实的表名
     await tester.enterText(find.byKey(const ValueKey('sql-editor')), 'SELECT * FROM big');
@@ -124,5 +145,22 @@ void main() {
       find.descendant(of: find.byKey(const ValueKey('sql-editor')), matching: find.byType(TextField)),
     );
     expect(editor.controller!.text, 'SELECT * FROM big_rows');
+
+    // 快捷键：焦点在编辑器里也要生效
+    Future<void> command(LogicalKeyboardKey key) async {
+      final modifier = Platform.isMacOS ? LogicalKeyboardKey.metaLeft : LogicalKeyboardKey.controlLeft;
+      await tester.sendKeyDownEvent(modifier);
+      await tester.sendKeyEvent(key);
+      await tester.sendKeyUpEvent(modifier);
+      await settle(tester, rounds: 1);
+    }
+
+    await command(LogicalKeyboardKey.keyT);
+    expect(find.byKey(const ValueKey('tab-3')), findsOneWidget, reason: '⌘T 没开新标签');
+    await command(LogicalKeyboardKey.keyW);
+    expect(find.byKey(const ValueKey('tab-3')), findsNothing, reason: '⌘W 没关掉当前标签');
+    await command(LogicalKeyboardKey.digit1);
+    await settleUntil(tester, find.text('用户1'));
+    expect(find.text('用户1'), findsOneWidget, reason: '⌘1 没切回第一个标签');
   });
 }

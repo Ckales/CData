@@ -6,6 +6,7 @@ import 'result_grid.dart';
 import 'sql_editor.dart';
 import 'sql_library.dart';
 import 'src/rust/api/db.dart';
+import 'src/rust/api/options.dart';
 
 /// 一个标签页跑查询的后端。每个标签一个会话：结果集留在会话里，一个会话只放一份结果
 abstract class QueryRunner {
@@ -26,14 +27,21 @@ abstract class QueryRunner {
 }
 
 class RustQueryRunner implements QueryRunner {
-  /// 上限。超过就截断并在界面上显著提示，不静默丢行
-  static const int maxRows = 100000;
-
   /// 连接参数由页面上的连接栏提供，开会话时才读，改了参数要先 close
   final ConnectionConfig Function() readConfig;
+
+  /// 行数上限，来自偏好设置。超过就截断并在界面上显著提示，不静默丢行
+  final BigInt Function() maxRows;
+
+  /// SSH 主机没见过时问用户要不要信任
+  final Future<bool> Function(HostKeyIssue issue) confirmHostKey;
   BigInt? _sessionId;
 
-  RustQueryRunner({required this.readConfig});
+  RustQueryRunner({
+    required this.readConfig,
+    required this.maxRows,
+    required this.confirmHostKey,
+  });
 
   @override
   Future<QuerySummary> run(
@@ -43,7 +51,7 @@ class RustQueryRunner implements QueryRunner {
     String? sortColumn,
     bool sortAscending,
   ) async {
-    final id = _sessionId ??= await openSession(config: readConfig());
+    final id = _sessionId ??= await _open();
     return executeView(
       sessionId: id,
       sql: sql,
@@ -51,8 +59,27 @@ class RustQueryRunner implements QueryRunner {
       matchAll: matchAll,
       sortColumn: sortColumn,
       sortAscending: sortAscending,
-      maxRows: BigInt.from(maxRows),
+      maxRows: maxRows(),
     );
+  }
+
+  /// 开会话只建连接和隧道、不跑语句，所以信任主机后重来一次是安全的
+  Future<BigInt> _open() async {
+    final config = readConfig();
+    try {
+      return await openSession(config: config);
+    } on OpenSessionError catch (e) {
+      final issue = e.hostKey;
+      // 只有「没见过」能由用户确认；指纹和记录的不一样可能是中间人，一律拒绝
+      if (issue == null || issue.kind != HostKeyIssueKind.unknown) rethrow;
+      if (!await confirmHostKey(issue)) rethrow;
+      await trustHostKey(
+        host: issue.host,
+        port: issue.port,
+        fingerprint: issue.fingerprint,
+      );
+      return openSession(config: config);
+    }
   }
 
   @override
@@ -87,6 +114,8 @@ class QueryTab extends StatefulWidget {
   /// 导出时选保存位置，null 用网格的默认实现（系统对话框）
   final Future<String?> Function(String suggestedName)? pickSavePath;
 
+  final double editorFontSize;
+
   const QueryTab({
     super.key,
     required this.runner,
@@ -97,6 +126,7 @@ class QueryTab extends StatefulWidget {
     required this.onConnected,
     this.initialSql = '',
     this.pickSavePath,
+    this.editorFontSize = 13,
   });
 
   @override
@@ -255,6 +285,7 @@ class QueryTabState extends State<QueryTab> {
           busy: _busy,
           onRun: _busy ? null : run,
           onOpenLibrary: _openLibrary,
+          fontSize: widget.editorFontSize,
         ),
         if (_columns.isNotEmpty)
           FilterBar(
@@ -269,7 +300,10 @@ class QueryTabState extends State<QueryTab> {
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
             child: Text(
               '耗时 ${_elapsed!.inMilliseconds} ms',
-              style: const TextStyle(fontSize: 11, color: Colors.black54),
+              style: TextStyle(
+                fontSize: 11,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
             ),
           ),
         Expanded(
@@ -294,6 +328,7 @@ class _SqlBar extends StatelessWidget {
   final bool busy;
   final VoidCallback? onRun;
   final VoidCallback onOpenLibrary;
+  final double fontSize;
 
   const _SqlBar({
     required this.controller,
@@ -301,6 +336,7 @@ class _SqlBar extends StatelessWidget {
     required this.busy,
     required this.onRun,
     required this.onOpenLibrary,
+    required this.fontSize,
   });
 
   @override
@@ -316,6 +352,7 @@ class _SqlBar extends StatelessWidget {
               controller: controller,
               complete: complete,
               onRun: onRun,
+              fontSize: fontSize,
             ),
           ),
           const SizedBox(width: 8),
@@ -334,7 +371,10 @@ class _SqlBar extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 4),
-                OutlinedButton(onPressed: onOpenLibrary, child: const Text('历史 / 收藏')),
+                OutlinedButton(
+                  onPressed: onOpenLibrary,
+                  child: const Text('历史 / 收藏'),
+                ),
               ],
             ),
           ),
@@ -351,9 +391,10 @@ class _ErrorBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return Container(
       width: double.infinity,
-      color: Colors.red.shade50,
+      color: scheme.errorContainer,
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       // 限高可滚动：错误信息可能很长，不能把界面撑爆
       child: ConstrainedBox(
@@ -361,7 +402,11 @@ class _ErrorBanner extends StatelessWidget {
         child: SingleChildScrollView(
           child: SelectableText(
             message,
-            style: TextStyle(color: Colors.red.shade900, fontSize: 12, fontFamily: 'Menlo'),
+            style: TextStyle(
+              color: scheme.onErrorContainer,
+              fontSize: 12,
+              fontFamily: 'Menlo',
+            ),
           ),
         ),
       ),

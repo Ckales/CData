@@ -69,7 +69,7 @@ class FilterBar extends StatelessWidget {
               style: TextStyle(
                 fontSize: 12,
                 fontFamily: conditions.isEmpty ? null : 'Menlo',
-                color: conditions.isEmpty ? Colors.black38 : Colors.black87,
+                color: conditions.isEmpty ? Theme.of(context).colorScheme.outline : Theme.of(context).colorScheme.onSurface,
               ),
             ),
           ),
@@ -169,7 +169,7 @@ class _FilterDialogState extends State<_FilterDialog> {
             key: const ValueKey('filter-match'),
             value: _matchAll,
             isDense: true,
-            style: const TextStyle(fontSize: 12, color: Colors.black87),
+            style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurface),
             items: const [
               DropdownMenuItem(value: true, child: Text('满足全部条件')),
               DropdownMenuItem(value: false, child: Text('满足任一条件')),
@@ -221,7 +221,7 @@ class _FilterDialogState extends State<_FilterDialog> {
               value: draft.column,
               isDense: true,
               isExpanded: true,
-              style: const TextStyle(fontSize: 12, color: Colors.black87),
+              style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurface),
               items: [
                 for (final column in columns)
                   DropdownMenuItem(value: column, child: Text(column, overflow: TextOverflow.ellipsis)),
@@ -239,7 +239,7 @@ class _FilterDialogState extends State<_FilterDialog> {
               value: draft.op,
               isDense: true,
               isExpanded: true,
-              style: const TextStyle(fontSize: 12, color: Colors.black87),
+              style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurface),
               items: [
                 for (final op in FilterOp.values)
                   DropdownMenuItem(value: op, child: Text(filterOpLabel(op))),

@@ -10,6 +10,7 @@ import 'dart:typed_data';
 
 import 'package:cdata_flutter/data_source.dart';
 import 'package:cdata_flutter/src/rust/api/db.dart';
+import 'package:cdata_flutter/src/rust/api/options.dart';
 import 'package:cdata_flutter/src/rust/api/value.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
@@ -21,6 +22,16 @@ const _port = String.fromEnvironment('PORT');
 const _user = String.fromEnvironment('USER');
 const _password = String.fromEnvironment('PASSWORD');
 const _db = String.fromEnvironment('DB');
+
+ConnectionConfig _config({ConnectionOptions? options}) => ConnectionConfig(
+      host: _host,
+      port: int.parse(_port),
+      user: _user,
+      password: _password,
+      database: _db,
+      options: options ?? defaultConnectionOptions(),
+      sshSecrets: const [],
+    );
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
@@ -79,13 +90,7 @@ void main() {
     }
 
     final sessionId = await openSession(
-      config: ConnectionConfig(
-        host: _host,
-        port: int.parse(_port),
-        user: _user,
-        password: _password,
-        database: _db,
-      ),
+      config: _config(),
     );
     final summary = await execute(
       sessionId: sessionId,
@@ -115,13 +120,7 @@ void main() {
     }
 
     final sessionId = await openSession(
-      config: ConnectionConfig(
-        host: _host,
-        port: int.parse(_port),
-        user: _user,
-        password: _password,
-        database: _db,
-      ),
+      config: _config(),
     );
     final summary = await executeView(
       sessionId: sessionId,
@@ -138,7 +137,7 @@ void main() {
     expect(summary.totalRows, BigInt.from(3));
 
     final rows = await fetchWindowText(sessionId: sessionId, offset: BigInt.zero, limit: BigInt.one);
-    expect(rows.first.first, '3', reason: '降序后第一行是 3');
+    expect(rows.first.first.text, '3', reason: '降序后第一行是 3');
     await closeSession(sessionId: sessionId);
   });
 
@@ -149,7 +148,7 @@ void main() {
     }
 
     final sessionId = await openSession(
-      config: ConnectionConfig(host: _host, port: int.parse(_port), user: _user, password: _password, database: _db),
+      config: _config(),
     );
     final summary = await executeView(
       sessionId: sessionId,
@@ -182,6 +181,45 @@ void main() {
     expect(File(path).readAsStringSync(), 'name\tid\r\n用户1\t1\r\n用户2\t2\r\n');
 
     await dir.delete(recursive: true);
+    await closeSession(sessionId: sessionId);
+  });
+
+  test('连接选项穿过 FFI：默认值来自 core，矛盾的选项在 openSession 就被拒绝', () async {
+    final defaults = defaultConnectionOptions();
+    expect(defaults.ssl.mode, SslMode.disabled);
+    expect(defaults.timeouts.connectSecs, 10);
+    expect(defaults.timeouts.querySecs, isNull);
+    expect(defaults.ssh.hops, isEmpty);
+
+    if (_host.isEmpty) {
+      markTestSkipped('未通过 --dart-define 提供连接信息');
+      return;
+    }
+
+    // Required 不校验证书，填了 CA 说不通：拒绝，而且是带人话的 OpenSessionError
+    final contradictory = ConnectionOptions(
+      ssl: SslOptions(mode: SslMode.required_, caPath: Platform.resolvedExecutable),
+      timeouts: defaults.timeouts,
+      ssh: defaults.ssh,
+    );
+    await expectLater(
+      openSession(config: _config(options: contradictory)),
+      throwsA(isA<OpenSessionError>()
+          .having((e) => e.hostKey, 'hostKey', isNull)
+          .having((e) => e.toString(), 'message', contains('VerifyIdentity'))),
+    );
+
+    // 查询超时穿过 FFI 后在 core 里生效
+    final limited = ConnectionOptions(
+      ssl: defaults.ssl,
+      timeouts: const TimeoutOptions(connectSecs: 10, querySecs: 1),
+      ssh: defaults.ssh,
+    );
+    final sessionId = await openSession(config: _config(options: limited));
+    await expectLater(
+      execute(sessionId: sessionId, sql: 'SELECT SLEEP(3)', maxRows: BigInt.one),
+      throwsA(contains('已让服务器停止')),
+    );
     await closeSession(sessionId: sessionId);
   });
 }

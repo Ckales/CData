@@ -78,7 +78,7 @@ class _ResultGridState extends State<ResultGrid> {
   late List<double> _widths;
 
   int _windowStart = 0;
-  List<List<String>> _windowRows = [];
+  List<List<DisplayCell>> _windowRows = [];
 
   /// 总行数。增删行后以 Rust 侧返回的为准，不在这里自己加减
   late int _totalRows = widget.summary.totalRows.toInt();
@@ -213,7 +213,7 @@ class _ResultGridState extends State<ResultGrid> {
     var widest = _textWidth(widget.summary.columns[column].name, headerStyle) + 18;
     // ponytail: 只量当前窗口（最多 200 行），不为了自适应去扫整个结果集
     for (final row in _windowRows) {
-      widest = math.max(widest, _textWidth(row[column], cellStyle));
+      widest = math.max(widest, _textWidth(row[column].text, cellStyle));
     }
 
     setState(() => _widths[column] = (widest + 16).clamp(_minColumnWidth, _maxAutoFitWidth));
@@ -261,7 +261,7 @@ class _ResultGridState extends State<ResultGrid> {
   }
 
   /// 返回该行的单元格文本；不在当前窗口内就触发预取并返回 null
-  List<String>? _rowAt(int index) {
+  List<DisplayCell>? _rowAt(int index) {
     final offset = index - _windowStart;
     if (offset >= 0 && offset < _windowRows.length) {
       // 窗口后面还有没取的行，且快滚到边缘了，就提前拉下一段。
@@ -465,7 +465,10 @@ class _ResultGridState extends State<ResultGrid> {
         actions: [
           TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('取消')),
           FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: Colors.red.shade700),
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(context).colorScheme.error,
+              foregroundColor: Theme.of(context).colorScheme.onError,
+            ),
             onPressed: () => Navigator.of(context).pop(true),
             child: const Text('删除'),
           ),
@@ -710,7 +713,7 @@ class _ResultGridState extends State<ResultGrid> {
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(24),
-          child: Text('取数据失败：$_error', style: const TextStyle(color: Colors.red)),
+          child: Text('取数据失败：$_error', style: TextStyle(color: Theme.of(context).colorScheme.error)),
         ),
       );
     }
@@ -809,13 +812,16 @@ class _TruncationBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return Container(
       width: double.infinity,
-      color: Colors.amber.shade100,
+      // 截断是警告不是错误，要和 errorContainer 的错误横幅分得开；这套 seed 的 tertiaryContainer
+      // 是粉色，浅色下和 errorContainer 几乎一样，所以沿用琥珀色，按比例叠在 surface 上适配深浅两种背景
+      color: Color.alphaBlend(Colors.amber.withValues(alpha: 0.3), scheme.surface),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      child: const Text(
+      child: Text(
         '结果已截断：实际行数超过上限，下面显示的不是全部数据。请加 LIMIT 或缩小条件。',
-        style: TextStyle(fontSize: 12),
+        style: TextStyle(fontSize: 12, color: scheme.onSurface),
       ),
     );
   }
@@ -852,7 +858,7 @@ class _HeaderRow extends StatelessWidget {
       height: 32,
       decoration: BoxDecoration(
         color: Theme.of(context).colorScheme.surfaceContainerHighest,
-        border: const Border(bottom: BorderSide(color: Colors.black26)),
+        border: Border(bottom: BorderSide(color: Theme.of(context).colorScheme.outline)),
       ),
       child: Row(
         children: [
@@ -921,7 +927,7 @@ class _HeaderRow extends StatelessWidget {
                             Icon(
                               sortAscending ? Icons.arrow_upward : Icons.arrow_downward,
                               size: 12,
-                              color: Colors.black54,
+                              color: Theme.of(context).colorScheme.onSurfaceVariant,
                             ),
                         ],
                       ),
@@ -941,11 +947,15 @@ class _HeaderRow extends StatelessWidget {
               onHorizontalDragUpdate: (details) => onResize(index, details.delta.dx),
               onHorizontalDragEnd: (_) => onResizeEnd(),
               onDoubleTap: () => onAutoFit(index),
-              child: const SizedBox(
+              child: SizedBox(
                 width: 6,
                 height: 32,
                 child: Center(
-                  child: SizedBox(width: 1, height: 16, child: ColoredBox(color: Colors.black26)),
+                  child: SizedBox(
+                    width: 1,
+                    height: 16,
+                    child: ColoredBox(color: Theme.of(context).colorScheme.outline),
+                  ),
                 ),
               ),
             ),
@@ -960,7 +970,7 @@ class _DataRow extends StatelessWidget {
   final int rowNumber;
   final bool selected;
   final VoidCallback onTapRowNumber;
-  final List<String>? cells;
+  final List<DisplayCell>? cells;
   final List<int> order;
   final List<double> widths;
 
@@ -995,14 +1005,15 @@ class _DataRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return DecoratedBox(
       decoration: BoxDecoration(
         color: selected
-            ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.12)
+            ? scheme.primary.withValues(alpha: 0.12)
             : rowNumber.isEven
-            ? Colors.black.withValues(alpha: 0.02)
+            ? scheme.onSurface.withValues(alpha: 0.02)
             : null,
-        border: const Border(bottom: BorderSide(color: Colors.black12)),
+        border: Border(bottom: BorderSide(color: scheme.outlineVariant)),
       ),
       child: Row(
         children: [
@@ -1018,7 +1029,7 @@ class _DataRow extends StatelessWidget {
                   alignment: Alignment.centerRight,
                   child: Text(
                     '$rowNumber',
-                    style: const TextStyle(fontSize: 11, color: Colors.black45),
+                    style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant),
                   ),
                 ),
               ),
@@ -1064,7 +1075,7 @@ class _DataRow extends StatelessWidget {
                     padding: const EdgeInsets.symmetric(horizontal: 8),
                     child: Align(
                       alignment: Alignment.centerLeft,
-                      child: _CellText(text: cells?[i]),
+                      child: _CellText(cell: cells?[i]),
                     ),
                   ),
                 ),
@@ -1122,9 +1133,12 @@ class _CellEditor extends StatelessWidget {
           message: '写入 NULL',
           child: InkWell(
             onTap: onSetNull,
-            child: const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 4),
-              child: Text('∅', style: TextStyle(fontSize: 13, color: Colors.black54)),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+              child: Text(
+                '∅',
+                style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.onSurfaceVariant),
+              ),
             ),
           ),
         ),
@@ -1135,25 +1149,29 @@ class _CellEditor extends StatelessWidget {
 
 /// NULL 和占位内容要看得出来和普通文本不同，否则分不清「空值」和「空字符串」
 class _CellText extends StatelessWidget {
-  final String? text;
+  /// null 表示这一行还没取回来
+  final DisplayCell? cell;
 
-  const _CellText({required this.text});
+  const _CellText({required this.cell});
 
   @override
   Widget build(BuildContext context) {
-    if (text == null) {
+    final cell = this.cell;
+    if (cell == null) {
       return const Text('', style: TextStyle(fontSize: 12));
     }
 
-    final isPlaceholder = text == 'NULL' || (text!.startsWith('<') && text!.endsWith('>'));
+    final isPlaceholder = cell.placeholder;
     return Text(
-      text!,
+      cell.text,
       maxLines: 1,
       overflow: TextOverflow.ellipsis,
       style: TextStyle(
         fontSize: 12,
         fontFamily: 'Menlo',
-        color: isPlaceholder ? Colors.black38 : null,
+        // 不用 onSurfaceVariant：它和 onSurface 太接近，占位和真实文本会分不开。
+        // 按 onSurface 的 38% 取色，浅色下和原来的 black38 一样淡，深色下同比例变暗
+        color: isPlaceholder ? Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.38) : null,
         fontStyle: isPlaceholder ? FontStyle.italic : null,
       ),
     );
@@ -1190,13 +1208,14 @@ class _StatusBar extends StatelessWidget {
       Editability_Editable() => null,
     };
     final message = refusal ?? notice ?? readOnlyReason;
+    final scheme = Theme.of(context).colorScheme;
 
     return Container(
       height: 26,
       padding: const EdgeInsets.symmetric(horizontal: 12),
       decoration: BoxDecoration(
         color: Theme.of(context).colorScheme.surfaceContainerHighest,
-        border: const Border(top: BorderSide(color: Colors.black26)),
+        border: Border(top: BorderSide(color: scheme.outline)),
       ),
       child: Row(
         children: [
@@ -1210,27 +1229,27 @@ class _StatusBar extends StatelessWidget {
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
                   fontSize: 11,
-                  color: refusal != null ? Colors.red.shade700 : Colors.black54,
+                  color: refusal != null ? scheme.error : scheme.onSurfaceVariant,
                 ),
               ),
             )
           else
-            const Expanded(
+            Expanded(
               child: Text(
                 '双击编辑，Shift 点选区域后可复制粘贴，点行号选中行',
-                style: TextStyle(fontSize: 11, color: Colors.black38),
+                style: TextStyle(fontSize: 11, color: scheme.outline),
               ),
             ),
           // 刻意不用 CircularProgressIndicator：它是无限动画，会让 pumpAndSettle
           // 永远等不到"稳定"，测试直接挂死。静态文字一样能表达状态
-          if (loading) const Text('加载中…', style: TextStyle(fontSize: 11, color: Colors.black45)),
+          if (loading) Text('加载中…', style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant)),
           _BarButton(label: '导出', onPressed: onExport),
           // 只读结果集不给增删入口，原因已经显示在左边
           if (readOnlyReason == null) ...[
             if (selectedCount > 0)
               _BarButton(
                 label: '删除 $selectedCount 行',
-                color: Colors.red.shade700,
+                color: scheme.error,
                 onPressed: onDeleteSelected,
               ),
             _BarButton(label: '新增行', onPressed: onInsert),

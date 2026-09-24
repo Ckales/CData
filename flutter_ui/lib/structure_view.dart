@@ -86,7 +86,7 @@ class _StructureDialogState extends State<_StructureDialog> {
     final error = _error;
     if (error != null) {
       return Center(
-        child: SelectableText('读取结构失败：$error', style: TextStyle(color: Colors.red.shade700)),
+        child: SelectableText('读取结构失败：$error', style: TextStyle(color: Theme.of(context).colorScheme.error)),
       );
     }
     final structure = _structure;
@@ -137,6 +137,7 @@ class _StructureDialogState extends State<_StructureDialog> {
         for (final column in structure.columns)
           [
             primary.contains(column.name)
+                // 主键钥匙沿用约定俗成的金色：只是图标、不承载文字，深浅背景上都看得见
                 ? const Icon(Icons.key, size: 12, color: Colors.amber)
                 : const SizedBox.shrink(),
             _text(column.name, bold: true),
@@ -243,7 +244,7 @@ class _StructureDialogState extends State<_StructureDialog> {
         fontWeight: bold ? FontWeight.w600 : null,
         fontFamily: mono ? 'Menlo' : null,
         fontStyle: italic ? FontStyle.italic : null,
-        color: muted ? Colors.black45 : null,
+        color: muted ? Theme.of(context).colorScheme.onSurfaceVariant : null,
       ),
     );
   }
@@ -286,7 +287,7 @@ class _Grid extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 6),
       decoration: BoxDecoration(
         color: header ? Theme.of(context).colorScheme.surfaceContainerHighest : null,
-        border: const Border(bottom: BorderSide(color: Colors.black12)),
+        border: Border(bottom: BorderSide(color: Theme.of(context).colorScheme.outlineVariant)),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,

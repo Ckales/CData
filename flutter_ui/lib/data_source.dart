@@ -19,8 +19,8 @@ import 'dart:typed_data' show Uint8List;
 abstract class GridSource {
   QuerySummary get summary;
 
-  /// 一屏的显示文本
-  Future<List<List<String>>> windowText(int offset, int limit);
+  /// 一屏的显示文本，带着「是不是占位」
+  Future<List<List<DisplayCell>>> windowText(int offset, int limit);
 
   /// 某一行的原始值，编辑时要用它判断类型
   Future<List<CellValue>> row(int index);
@@ -91,7 +91,7 @@ class RustGridSource implements GridSource {
   const RustGridSource({required this.sessionId, required this.summary});
 
   @override
-  Future<List<List<String>>> windowText(int offset, int limit) {
+  Future<List<List<DisplayCell>>> windowText(int offset, int limit) {
     return fetchWindowText(
       sessionId: sessionId,
       offset: BigInt.from(offset),
