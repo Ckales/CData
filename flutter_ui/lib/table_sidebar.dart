@@ -1,12 +1,18 @@
 import 'package:flutter/material.dart';
 
 import 'data_source.dart';
+import 'mac_widgets.dart';
 import 'src/rust/api/schema.dart';
+import 'theme.dart';
 
-/// 左侧的库表清单。选库、过滤、点表浏览数据，右键看结构。
+/// 左侧的库表清单（Querious 的样子）：库选择器、过滤框、蓝色表图标的紧凑列表。
+/// 选库、过滤、点表浏览数据，右键看结构、导入、新建表。
 class TableSidebar extends StatefulWidget {
   final SchemaSource source;
   final String database;
+
+  /// 当前选中的表，由外面（当前标签）决定：每个标签记着自己选的是哪张表
+  final String? selectedTable;
   final void Function(String database) onDatabaseChanged;
   final void Function(String table) onTableSelected;
 
@@ -24,6 +30,7 @@ class TableSidebar extends StatefulWidget {
     super.key,
     required this.source,
     required this.database,
+    this.selectedTable,
     required this.onDatabaseChanged,
     required this.onTableSelected,
     this.onShowStructure,
@@ -40,7 +47,6 @@ class _TableSidebarState extends State<TableSidebar> {
 
   List<String> _databases = [];
   List<TableInfo> _tables = [];
-  String? _selectedTable;
   String? _error;
   bool _loading = false;
 
@@ -71,7 +77,8 @@ class _TableSidebarState extends State<TableSidebar> {
     });
     try {
       final databases = await widget.source.databases();
-      final tables = await widget.source.tables(widget.database);
+      // 连接时没指定库：先只列库，等用户在上面选一个
+      final tables = widget.database.isEmpty ? <TableInfo>[] : await widget.source.tables(widget.database);
       if (!mounted) return;
       setState(() {
         _databases = databases;
@@ -98,25 +105,21 @@ class _TableSidebarState extends State<TableSidebar> {
     return matched;
   }
 
-  void _browse(String table) {
-    setState(() => _selectedTable = table);
-    widget.onTableSelected(table);
-  }
+  void _browse(String table) => widget.onTableSelected(table);
 
-  /// 建好之后重读清单并选中新表，不顺带跑查询
+  /// 建好之后重读清单。选不选中新表由调用方决定（它知道当前标签在什么模式）
   Future<void> _createTable() async {
     final onCreateTable = widget.onCreateTable;
     if (onCreateTable == null) return;
     final created = await onCreateTable(widget.database);
     if (created == null || !mounted) return;
-    setState(() => _selectedTable = created);
     await _reload();
   }
 
   static const _createTableItem = PopupMenuItem(
     value: 'create',
-    height: 32,
-    child: Text('新建表…', style: TextStyle(fontSize: 12)),
+    height: 26,
+    child: Text('新建表…'),
   );
 
   /// 没有表可以右键时（空库、过滤后没有匹配），在空白处右键只给「新建表…」
@@ -139,23 +142,11 @@ class _TableSidebarState extends State<TableSidebar> {
       context: context,
       position: RelativeRect.fromLTRB(position.dx, position.dy, position.dx, position.dy),
       items: [
-        const PopupMenuItem(
-          value: 'browse',
-          height: 32,
-          child: Text('浏览数据', style: TextStyle(fontSize: 12)),
-        ),
+        const PopupMenuItem(value: 'browse', height: 26, child: Text('浏览数据')),
         if (onShowStructure != null)
-          const PopupMenuItem(
-            value: 'structure',
-            height: 32,
-            child: Text('查看结构', style: TextStyle(fontSize: 12)),
-          ),
+          const PopupMenuItem(value: 'structure', height: 26, child: Text('查看结构')),
         if (onImport != null)
-          const PopupMenuItem(
-            value: 'import',
-            height: 32,
-            child: Text('导入 CSV…', style: TextStyle(fontSize: 12)),
-          ),
+          const PopupMenuItem(value: 'import', height: 26, child: Text('导入 CSV…')),
         if (widget.onCreateTable != null) ...[const PopupMenuDivider(height: 8), _createTableItem],
       ],
     );
@@ -169,18 +160,19 @@ class _TableSidebarState extends State<TableSidebar> {
   @override
   Widget build(BuildContext context) {
     final visible = _visibleTables;
+    final mac = MacColors.of(context);
 
     return Container(
       width: 240,
       decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surfaceContainerLow,
-        border: Border(right: BorderSide(color: Theme.of(context).colorScheme.outline)),
+        color: mac.sidebar,
+        border: Border(right: BorderSide(color: mac.separator)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(8, 8, 8, 4),
+            padding: const EdgeInsets.fromLTRB(8, 8, 8, 6),
             child: _DatabasePicker(
               databases: _databases,
               current: widget.database,
@@ -189,20 +181,18 @@ class _TableSidebarState extends State<TableSidebar> {
           ),
           Padding(
             padding: const EdgeInsets.fromLTRB(8, 0, 8, 6),
-            child: TextField(
+            child: MacSearchField(
               controller: _filter,
+              hint: '过滤表名',
+              icon: Icons.filter_list,
               onChanged: (_) => setState(() {}),
-              style: const TextStyle(fontSize: 12),
-              decoration: const InputDecoration(
-                hintText: '过滤表名',
-                isDense: true,
-                prefixIcon: Icon(Icons.search, size: 14),
-                prefixIconConstraints: BoxConstraints(minWidth: 28, minHeight: 28),
-                border: OutlineInputBorder(),
-                contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-              ),
             ),
           ),
+          if (widget.database.isEmpty)
+            Padding(
+              padding: const EdgeInsets.all(12),
+              child: Text('在上面选一个库', style: TextStyle(fontSize: 12, color: mac.secondaryText)),
+            ),
           if (_error != null)
             Padding(
               padding: const EdgeInsets.all(8),
@@ -218,26 +208,37 @@ class _TableSidebarState extends State<TableSidebar> {
                     child: const SizedBox.expand(),
                   )
                 : ListView.builder(
+                    padding: const EdgeInsets.only(bottom: 6),
                     itemCount: visible.length,
                     itemExtent: 26,
                     itemBuilder: (context, index) {
                       final table = visible[index];
-                      return _TableRow(
-                        table: table,
-                        selected: table.name == _selectedTable,
+                      return SidebarItem(
+                        icon: table.isView ? Icons.visibility_outlined : Icons.grid_on,
+                        iconColor: mac.tableIcon,
+                        label: table.name,
+                        // InnoDB 的行数是估算值，标个 ~ 免得被当成精确数字
+                        trailing: !table.isView && table.estimatedRows > BigInt.zero ? '~${table.estimatedRows}' : null,
+                        selected: table.name == widget.selectedTable,
                         onTap: () => _browse(table.name),
-                        onSecondaryTapDown: (position) => _showMenu(table.name, position),
+                        onSecondaryTap: (position) => _showMenu(table.name, position),
                       );
                     },
                   ),
           ),
-          _SidebarFooter(count: visible.length, total: _tables.length, loading: _loading),
+          _SidebarFooter(
+            count: visible.length,
+            total: _tables.length,
+            loading: _loading,
+            onCreateTable: widget.onCreateTable == null ? null : _createTable,
+          ),
         ],
       ),
     );
   }
 }
 
+/// 库选择器：看起来像一个带库图标的圆角框，点开是库列表
 class _DatabasePicker extends StatelessWidget {
   final List<String> databases;
   final String current;
@@ -247,82 +248,41 @@ class _DatabasePicker extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final mac = MacColors.of(context);
     // 当前库可能还没出现在列表里（刚连上、或者没权限列库），先补进去免得下拉崩掉
     final items = databases.contains(current) ? databases : [current, ...databases];
 
-    return DropdownButtonFormField<String>(
-      initialValue: current,
-      isDense: true,
-      // 库名长了会把侧栏撑破，必须让它自适应宽度再省略
-      isExpanded: true,
-      style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurface),
-      decoration: const InputDecoration(
+    return SizedBox(
+      height: 26,
+      child: DropdownButtonFormField<String>(
+        // 换了库、换了标签时 initialValue 不会自己更新，靠换 key 重建
+        key: ValueKey('database-$current'),
+        initialValue: current,
         isDense: true,
-        border: OutlineInputBorder(),
-        contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-        prefixIcon: Icon(Icons.storage, size: 14),
-        prefixIconConstraints: BoxConstraints(minWidth: 28, minHeight: 28),
-      ),
-      items: [
-        for (final database in items)
-          DropdownMenuItem(
-            value: database,
-            child: Text(database, maxLines: 1, overflow: TextOverflow.ellipsis),
+        // 库名长了会把侧栏撑破，必须让它自适应宽度再省略
+        isExpanded: true,
+        iconSize: 16,
+        style: TextStyle(fontSize: 13, color: mac.text),
+        decoration: InputDecoration(
+          contentPadding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+          prefixIcon: Icon(Icons.storage, size: 15, color: mac.databaseIcon),
+          prefixIconConstraints: const BoxConstraints(minWidth: 28, minHeight: 24),
+          fillColor: mac.text.withValues(alpha: 0.06),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: const BorderRadius.all(Radius.circular(6)),
+            borderSide: BorderSide(color: mac.separator),
           ),
-      ],
-      onChanged: (value) {
-        if (value != null) onChanged(value);
-      },
-    );
-  }
-}
-
-class _TableRow extends StatelessWidget {
-  final TableInfo table;
-  final bool selected;
-  final VoidCallback onTap;
-  final void Function(Offset globalPosition) onSecondaryTapDown;
-
-  const _TableRow({
-    required this.table,
-    required this.selected,
-    required this.onTap,
-    required this.onSecondaryTapDown,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return InkWell(
-      onTap: onTap,
-      onSecondaryTapDown: (details) => onSecondaryTapDown(details.globalPosition),
-      child: Container(
-        color: selected ? scheme.primaryContainer : null,
-        padding: const EdgeInsets.symmetric(horizontal: 10),
-        child: Row(
-          children: [
-            Icon(
-              table.isView ? Icons.visibility_outlined : Icons.table_rows_outlined,
-              size: 13,
-              color: scheme.onSurfaceVariant,
-            ),
-            const SizedBox(width: 6),
-            Expanded(
-              child: Text(
-                table.name,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontSize: 12),
-              ),
-            ),
-            // InnoDB 的行数是估算值，标个 ~ 免得被当成精确数字
-            if (!table.isView && table.estimatedRows > BigInt.zero)
-              Text(
-                '~${table.estimatedRows}',
-                style: TextStyle(fontSize: 10, color: scheme.outline),
-              ),
-          ],
         ),
+        items: [
+          for (final database in items)
+            DropdownMenuItem(
+              value: database,
+              child: Text(database, maxLines: 1, overflow: TextOverflow.ellipsis),
+            ),
+        ],
+        onChanged: (value) {
+          if (value != null) onChanged(value);
+        },
       ),
     );
   }
@@ -332,27 +292,36 @@ class _SidebarFooter extends StatelessWidget {
   final int count;
   final int total;
   final bool loading;
+  final VoidCallback? onCreateTable;
 
-  const _SidebarFooter({required this.count, required this.total, required this.loading});
+  const _SidebarFooter({required this.count, required this.total, required this.loading, required this.onCreateTable});
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
+    final mac = MacColors.of(context);
     return Container(
       height: 24,
-      padding: const EdgeInsets.symmetric(horizontal: 10),
-      decoration: BoxDecoration(
-        border: Border(top: BorderSide(color: scheme.outlineVariant)),
-      ),
+      padding: const EdgeInsets.only(left: 4, right: 10),
+      decoration: BoxDecoration(border: Border(top: BorderSide(color: mac.separator))),
       child: Row(
         children: [
+          if (onCreateTable != null)
+            Tooltip(
+              message: '新建表…',
+              child: InkWell(
+                onTap: onCreateTable,
+                borderRadius: BorderRadius.circular(4),
+                child: SizedBox(width: 22, height: 20, child: Icon(Icons.add, size: 14, color: mac.secondaryText)),
+              ),
+            ),
+          const SizedBox(width: 4),
           Text(
             count == total ? '$total 张表' : '$count / $total 张表',
-            style: TextStyle(fontSize: 10, color: scheme.onSurfaceVariant),
+            style: TextStyle(fontSize: 11, color: mac.secondaryText),
           ),
           const Spacer(),
           // 同 result_grid：无限动画会把 pumpAndSettle 卡死
-          if (loading) Text('加载中…', style: TextStyle(fontSize: 10, color: scheme.onSurfaceVariant)),
+          if (loading) Text('加载中…', style: TextStyle(fontSize: 11, color: mac.secondaryText)),
         ],
       ),
     );

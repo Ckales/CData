@@ -39,6 +39,25 @@ abstract class QueryRunner {
   Future<void> close();
 }
 
+/// 开一个会话。SSH 主机没见过时问用户，信任后写进 known_hosts 再开一次。
+///
+/// 开会话只建连接和隧道、不跑语句，所以信任后重来一次是安全的。
+/// 只有「没见过」能由用户确认；指纹和记录的不一样可能是中间人，一律拒绝
+Future<BigInt> openSessionTrusting(
+  ConnectionConfig config,
+  Future<bool> Function(HostKeyIssue issue) confirmHostKey,
+) async {
+  try {
+    return await openSession(config: config);
+  } on OpenSessionError catch (e) {
+    final issue = e.hostKey;
+    if (issue == null || issue.kind != HostKeyIssueKind.unknown) rethrow;
+    if (!await confirmHostKey(issue)) rethrow;
+    await trustHostKey(host: issue.host, port: issue.port, fingerprint: issue.fingerprint);
+    return openSession(config: config);
+  }
+}
+
 class RustQueryRunner implements QueryRunner {
   /// 连接参数由页面上的连接栏提供，开会话时才读，改了参数要先 close
   final ConnectionConfig Function() readConfig;
@@ -69,24 +88,7 @@ class RustQueryRunner implements QueryRunner {
     );
   }
 
-  /// 开会话只建连接和隧道、不跑语句，所以信任主机后重来一次是安全的
-  Future<BigInt> _open() async {
-    final config = readConfig();
-    try {
-      return await openSession(config: config);
-    } on OpenSessionError catch (e) {
-      final issue = e.hostKey;
-      // 只有「没见过」能由用户确认；指纹和记录的不一样可能是中间人，一律拒绝
-      if (issue == null || issue.kind != HostKeyIssueKind.unknown) rethrow;
-      if (!await confirmHostKey(issue)) rethrow;
-      await trustHostKey(
-        host: issue.host,
-        port: issue.port,
-        fingerprint: issue.fingerprint,
-      );
-      return openSession(config: config);
-    }
-  }
+  Future<BigInt> _open() => openSessionTrusting(readConfig(), confirmHostKey);
 
   @override
   GridSource gridSource(QuerySummary summary) {
@@ -148,6 +150,10 @@ class QueryTab extends StatefulWidget {
 
   final double editorFontSize;
 
+  /// false 时只有筛选条和结果（内容模式：侧栏点表后浏览数据），SQL 编辑器藏起来；
+  /// 编辑器还在，runSql 照常能跑
+  final bool showEditor;
+
   const QueryTab({
     super.key,
     required this.runner,
@@ -159,6 +165,7 @@ class QueryTab extends StatefulWidget {
     this.initialSql = '',
     this.pickSavePath,
     this.editorFontSize = 13,
+    this.showEditor = true,
   });
 
   @override
@@ -426,6 +433,12 @@ class QueryTabState extends State<QueryTab> {
     }
   }
 
+  String get _emptyText {
+    if (_scriptNotice != null) return '这段 SQL 没有返回结果集';
+    if (_busy) return '加载中…';
+    return widget.showEditor ? '运行一条查询，结果显示在这里' : '';
+  }
+
   @override
   Widget build(BuildContext context) {
     final views = _views;
@@ -435,15 +448,16 @@ class QueryTabState extends State<QueryTab> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _SqlBar(
-          controller: _sql,
-          complete: widget.complete,
-          busy: _busy,
-          onRun: _busy ? null : run,
-          onOpenLibrary: _openLibrary,
-          onExplain: _busy ? null : _explain,
-          fontSize: widget.editorFontSize,
-        ),
+        if (widget.showEditor)
+          _SqlBar(
+            controller: _sql,
+            complete: widget.complete,
+            busy: _busy,
+            onRun: _busy ? null : run,
+            onOpenLibrary: _openLibrary,
+            onExplain: _busy ? null : _explain,
+            fontSize: widget.editorFontSize,
+          ),
         // 筛选只作用在单条语句的结果上，看脚本结果和执行计划时不显示
         if (_columns.isNotEmpty && (views.isEmpty || showingMain))
           FilterBar(
@@ -472,7 +486,7 @@ class QueryTabState extends State<QueryTab> {
           ),
         Expanded(
           child: views.isEmpty
-              ? Center(child: Text(notice == null ? '填好连接信息，运行一条查询' : '这段 SQL 没有返回结果集'))
+              ? Center(child: Text(_emptyText, style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant)))
               // 不在前台的结果也留着，切回来滚动位置和选区都还在
               : IndexedStack(
                   index: active,
@@ -516,47 +530,45 @@ class _SqlBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
+    final scheme = Theme.of(context).colorScheme;
+    // Querious 的查询视图：编辑器占满宽度，下面一排小按钮
+    return Container(
+      padding: const EdgeInsets.fromLTRB(8, 8, 8, 6),
+      decoration: BoxDecoration(border: Border(bottom: BorderSide(color: scheme.outlineVariant))),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Expanded(
-            child: SqlEditorField(
-              key: const ValueKey('sql-editor'),
-              controller: controller,
-              complete: complete,
-              onRun: onRun,
-              fontSize: fontSize,
-            ),
+          SqlEditorField(
+            key: const ValueKey('sql-editor'),
+            controller: controller,
+            complete: complete,
+            onRun: onRun,
+            fontSize: fontSize,
           ),
-          const SizedBox(width: 8),
-          // stretch 的按钮列放在 Row 里必须给定宽度，否则拿到的是无限宽
-          SizedBox(
-            width: 140,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Tooltip(
-                  message: '⌘ / Ctrl + Enter',
-                  child: FilledButton(
-                    onPressed: onRun,
-                    // 无限动画会卡死 pumpAndSettle，用文字表达忙碌状态
-                    child: Text(busy ? '运行中…' : '运行'),
-                  ),
+          const SizedBox(height: 6),
+          Row(
+            children: [
+              Tooltip(
+                message: '⌘ / Ctrl + Enter',
+                child: FilledButton.icon(
+                  onPressed: onRun,
+                  icon: const Icon(Icons.play_arrow, size: 14),
+                  // 无限动画会卡死 pumpAndSettle，用文字表达忙碌状态
+                  label: Text(busy ? '运行中…' : '运行'),
                 ),
-                const SizedBox(height: 4),
-                OutlinedButton(
-                  onPressed: onOpenLibrary,
-                  child: const Text('历史 / 收藏'),
-                ),
-                const SizedBox(height: 4),
-                Tooltip(
-                  message: 'EXPLAIN：只看计划，不执行语句',
-                  child: OutlinedButton(onPressed: onExplain, child: const Text('执行计划')),
-                ),
-              ],
-            ),
+              ),
+              const SizedBox(width: 6),
+              Tooltip(
+                message: 'EXPLAIN：只看计划，不执行语句',
+                child: OutlinedButton(onPressed: onExplain, child: const Text('执行计划')),
+              ),
+              const Spacer(),
+              TextButton.icon(
+                onPressed: onOpenLibrary,
+                icon: const Icon(Icons.history, size: 14),
+                label: const Text('历史 / 收藏'),
+              ),
+            ],
           ),
         ],
       ),

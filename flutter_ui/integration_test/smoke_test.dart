@@ -9,10 +9,8 @@ import 'dart:io';
 import 'dart:ui' as ui;
 
 import 'package:cdata_flutter/query_page.dart';
-import 'package:cdata_flutter/result_grid.dart' show ResultGrid;
 import 'package:cdata_flutter/theme.dart';
 import 'package:cdata_flutter/src/rust/api/preferences.dart' show defaultPreferences;
-import 'package:flutter/gestures.dart' show kSecondaryButton;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
@@ -25,6 +23,7 @@ const _host = String.fromEnvironment('HOST');
 const _password = String.fromEnvironment('PASSWORD');
 const _db = String.fromEnvironment('DB');
 const _user = String.fromEnvironment('USER');
+const _port = String.fromEnvironment('PORT');
 
 final _boundaryKey = GlobalKey();
 
@@ -93,56 +92,44 @@ void main() {
       ),
     );
     await settle(tester, rounds: 2);
+    await savePng('connect');
 
-    // 连接栏字段顺序：主机 / 端口 / 用户 / 密码 / 数据库
-    await tester.enterText(find.byType(TextField).at(3), _password);
-    await tester.enterText(find.byType(TextField).at(4), _db);
-    await settle(tester, rounds: 1);
+    // 连接页：填表单、连接
+    Future<void> connect(String database) async {
+      await tester.enterText(find.byKey(const ValueKey('conn-host')), _host);
+      await tester.enterText(find.byKey(const ValueKey('conn-port')), _port);
+      await tester.enterText(find.byKey(const ValueKey('conn-user')), _user);
+      await tester.enterText(find.byKey(const ValueKey('conn-password')), _password);
+      await tester.enterText(find.byKey(const ValueKey('conn-database')), database);
+      await settle(tester, rounds: 1);
+      await tester.tap(find.byKey(const ValueKey('conn-connect')));
+    }
 
-    await tester.tap(find.text('运行'));
+    await connect(_db);
+    await settleUntil(tester, find.text('big_rows'));
+    expect(find.text('big_rows'), findsWidgets, reason: '侧栏没列出表。${shownErrors(tester)}');
+
+    // 内容模式：点侧栏的表，网格里就是这张表的数据
+    await tester.tap(find.text('big_rows').first);
     await settleUntil(tester, find.text('用户1'));
-
-    expect(find.text('用户1'), findsOneWidget, reason: '没查到数据');
-    expect(find.text('big_rows'), findsWidgets, reason: '侧栏没列出表');
-
+    expect(find.text('用户1'), findsOneWidget, reason: '没查到数据。${shownErrors(tester)}');
+    expect(find.text('$_db.big_rows'), findsOneWidget, reason: '标签标题是 库.表');
     await savePng('main');
 
-    // 第二个标签有自己的会话，跑别的查询不影响第一个标签的结果
-    await tester.tap(find.byIcon(Icons.add));
+    // 新标签沿用当前表；切到查询模式跑别的 SQL，不影响第一个标签
+    await tester.tap(find.byTooltip('新标签（⌘T）'));
+    await settle(tester, rounds: 2);
+    await tester.tap(find.byKey(const ValueKey('mode-query')));
     await settle(tester, rounds: 1);
     await tester.enterText(find.byKey(const ValueKey('sql-editor')), 'SELECT id, name FROM edit_target ORDER BY id');
     await settle(tester, rounds: 1);
     await tester.tap(find.text('运行'));
     await settleUntil(tester, find.text('第二行'));
-    expect(find.text('第二行'), findsOneWidget, reason: '第二个标签没查到数据。${shownErrors(tester)}');
+    expect(find.text('第二行'), findsOneWidget, reason: '查询模式没查到数据。${shownErrors(tester)}');
     expect(find.text('用户1'), findsNothing, reason: '第一个标签的结果不该显示在第二个标签里');
+    await savePng('query');
 
-    await tester.tap(find.byKey(const ValueKey('tab-1')));
-    await settleUntil(tester, find.text('用户1'));
-    expect(find.text('用户1'), findsOneWidget, reason: '切回第一个标签，结果要还在');
-
-    await savePng('tabs');
-
-    // 多连接：第二个标签改连 information_schema，第一个标签的库不受影响
-    await tester.tap(find.byKey(const ValueKey('tab-2')));
-    await settle(tester, rounds: 1);
-    await tester.enterText(find.byType(TextField).at(4), 'information_schema');
-    await tester.enterText(
-      find.byKey(const ValueKey('sql-editor')),
-      "SELECT TABLE_NAME FROM TABLES WHERE TABLE_SCHEMA = '$_db' AND TABLE_NAME = 'big_rows'",
-    );
-    await tester.tap(find.text('连接'));
-    final schemaRow = find.descendant(of: find.byType(ResultGrid), matching: find.text('big_rows'));
-    await settleUntil(tester, schemaRow);
-    expect(schemaRow, findsOneWidget, reason: '第二个标签没连上 information_schema。${shownErrors(tester)}');
-
-    await tester.tap(find.byKey(const ValueKey('tab-1')));
-    await settleUntil(tester, find.text('用户1'));
-    expect(find.text('用户1'), findsOneWidget);
-    final databaseField = tester.widget<TextField>(find.byType(TextField).at(4));
-    expect(databaseField.controller!.text, _db, reason: '切回第一个标签，连接栏要显示它自己的库');
-
-    // 补全：目录是查询成功后从真库读的，候选要带上真实的表名
+    // 补全：目录是连上之后从真库读的，候选要带上真实的表名
     await tester.enterText(find.byKey(const ValueKey('sql-editor')), 'SELECT * FROM big');
     final popupItem = find.descendant(
       of: find.byKey(const ValueKey('completion-popup')),
@@ -151,13 +138,16 @@ void main() {
     await settleUntil(tester, popupItem);
     expect(popupItem, findsOneWidget, reason: '补全没列出真库里的表');
     await savePng('completion');
-
     await tester.sendKeyEvent(LogicalKeyboardKey.enter);
     await settle(tester, rounds: 1);
     final editor = tester.widget<TextField>(
       find.descendant(of: find.byKey(const ValueKey('sql-editor')), matching: find.byType(TextField)),
     );
     expect(editor.controller!.text, 'SELECT * FROM big_rows');
+
+    await tester.tap(find.byKey(const ValueKey('tab-1')));
+    await settleUntil(tester, find.text('用户1'));
+    expect(find.text('用户1'), findsOneWidget, reason: '切回第一个标签，结果要还在');
 
     // 快捷键：焦点在编辑器里也要生效
     Future<void> command(LogicalKeyboardKey key) async {
@@ -176,33 +166,33 @@ void main() {
     await settleUntil(tester, find.text('用户1'));
     expect(find.text('用户1'), findsOneWidget, reason: '⌘1 没切回第一个标签');
 
-    // 这一轮新加的对话框在真库上能打开、能渲染：各截一张图看效果
-    await tester.tap(find.byTooltip('服务器状态：进程、变量、状态计数、慢日志'));
+    // 结构模式和服务器模式在真库上能打开
+    await tester.tap(find.byKey(const ValueKey('mode-structure')));
+    await settleUntil(tester, find.text('id'));
+    await savePng('structure');
+    await tester.tap(find.byKey(const ValueKey('mode-server')));
     await settleUntil(tester, find.text('CData'));
-    expect(find.text('CData'), findsWidgets, reason: '进程列表里要认出本工具自己的连接');
-    await savePng('server_status');
-    await tester.tap(find.byTooltip('关闭'));
-    await settle(tester, rounds: 1);
-
-    await tester.tap(find.byTooltip('用户与权限'));
+    await savePng('server');
+    await tester.tap(find.text('用户与权限'));
     await settleUntil(tester, find.textContaining(_user));
-    expect(find.textContaining(_user), findsWidgets, reason: '账号清单里要有当前登录的账号');
-    await savePng('user_admin');
-    await tester.tap(find.text('关闭'));
+    await savePng('users');
+    await tester.tap(find.byKey(const ValueKey('mode-content')));
     await settle(tester, rounds: 1);
 
-    await tester.tap(find.text('edit_target').first, buttons: kSecondaryButton);
+    // 多连接：从标题菜单新开一条连到 information_schema，再切回来
+    await tester.tap(find.byKey(const ValueKey('connection-title')));
     await settle(tester, rounds: 1);
-    await tester.tap(find.text('查看结构'));
-    await settleUntil(tester, find.text('编辑'));
-    await tester.tap(find.text('编辑'));
-    await settleUntil(tester, find.textContaining('编辑结构：'));
-    expect(find.textContaining('编辑结构：'), findsOneWidget);
-    await savePng('structure_editor');
-    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.tap(find.text('新建连接…'));
     await settle(tester, rounds: 1);
-    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await connect('information_schema');
+    await settleUntil(tester, find.text('TABLES'));
+    expect(find.text('TABLES'), findsWidgets, reason: '第二条连接的侧栏没列出 information_schema 的表。${shownErrors(tester)}');
+
+    await tester.tap(find.byKey(const ValueKey('connection-title')));
     await settle(tester, rounds: 1);
+    await tester.tap(find.textContaining('切换到').first);
+    await settleUntil(tester, find.text('用户1'));
+    expect(find.text('用户1'), findsOneWidget, reason: '切回第一条连接，原来的标签和结果要还在');
 
     // 窗口缩到最小尺寸，界面不能溢出。溢出会抛 FlutterError，测试框架据此判失败
     tester.view.physicalSize = const Size(1800, 1200);
