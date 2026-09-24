@@ -3,12 +3,15 @@ import 'package:flutter/material.dart';
 import 'data_source.dart';
 import 'src/rust/api/schema.dart';
 
-/// 左侧的库表清单。选库、过滤、点表浏览数据。
+/// 左侧的库表清单。选库、过滤、点表浏览数据，右键看结构。
 class TableSidebar extends StatefulWidget {
   final SchemaSource source;
   final String database;
   final void Function(String database) onDatabaseChanged;
   final void Function(String table) onTableSelected;
+
+  /// 右键菜单里的「查看结构」。null 就不给这一项
+  final void Function(String table)? onShowStructure;
 
   const TableSidebar({
     super.key,
@@ -16,6 +19,7 @@ class TableSidebar extends StatefulWidget {
     required this.database,
     required this.onDatabaseChanged,
     required this.onTableSelected,
+    this.onShowStructure,
   });
 
   @override
@@ -85,6 +89,36 @@ class _TableSidebarState extends State<TableSidebar> {
     return matched;
   }
 
+  void _browse(String table) {
+    setState(() => _selectedTable = table);
+    widget.onTableSelected(table);
+  }
+
+  /// 右键菜单，出现在鼠标位置
+  Future<void> _showMenu(String table, Offset position) async {
+    final onShowStructure = widget.onShowStructure;
+    final choice = await showMenu<String>(
+      context: context,
+      position: RelativeRect.fromLTRB(position.dx, position.dy, position.dx, position.dy),
+      items: [
+        const PopupMenuItem(
+          value: 'browse',
+          height: 32,
+          child: Text('浏览数据', style: TextStyle(fontSize: 12)),
+        ),
+        if (onShowStructure != null)
+          const PopupMenuItem(
+            value: 'structure',
+            height: 32,
+            child: Text('查看结构', style: TextStyle(fontSize: 12)),
+          ),
+      ],
+    );
+    if (!mounted) return;
+    if (choice == 'browse') _browse(table);
+    if (choice == 'structure' && onShowStructure != null) onShowStructure(table);
+  }
+
   @override
   Widget build(BuildContext context) {
     final visible = _visibleTables;
@@ -126,10 +160,7 @@ class _TableSidebarState extends State<TableSidebar> {
           if (_error != null)
             Padding(
               padding: const EdgeInsets.all(8),
-              child: Text(
-                _error!,
-                style: TextStyle(fontSize: 11, color: Colors.red.shade700),
-              ),
+              child: Text(_error!, style: TextStyle(fontSize: 11, color: Colors.red.shade700)),
             ),
           Expanded(
             child: ListView.builder(
@@ -140,10 +171,8 @@ class _TableSidebarState extends State<TableSidebar> {
                 return _TableRow(
                   table: table,
                   selected: table.name == _selectedTable,
-                  onTap: () {
-                    setState(() => _selectedTable = table.name);
-                    widget.onTableSelected(table.name);
-                  },
+                  onTap: () => _browse(table.name),
+                  onSecondaryTapDown: (position) => _showMenu(table.name, position),
                 );
               },
             ),
@@ -160,11 +189,7 @@ class _DatabasePicker extends StatelessWidget {
   final String current;
   final void Function(String database) onChanged;
 
-  const _DatabasePicker({
-    required this.databases,
-    required this.current,
-    required this.onChanged,
-  });
+  const _DatabasePicker({required this.databases, required this.current, required this.onChanged});
 
   @override
   Widget build(BuildContext context) {
@@ -202,13 +227,20 @@ class _TableRow extends StatelessWidget {
   final TableInfo table;
   final bool selected;
   final VoidCallback onTap;
+  final void Function(Offset globalPosition) onSecondaryTapDown;
 
-  const _TableRow({required this.table, required this.selected, required this.onTap});
+  const _TableRow({
+    required this.table,
+    required this.selected,
+    required this.onTap,
+    required this.onSecondaryTapDown,
+  });
 
   @override
   Widget build(BuildContext context) {
     return InkWell(
       onTap: onTap,
+      onSecondaryTapDown: (details) => onSecondaryTapDown(details.globalPosition),
       child: Container(
         color: selected ? Theme.of(context).colorScheme.primaryContainer : null,
         padding: const EdgeInsets.symmetric(horizontal: 10),
@@ -264,8 +296,7 @@ class _SidebarFooter extends StatelessWidget {
           ),
           const Spacer(),
           // 同 result_grid：无限动画会把 pumpAndSettle 卡死
-          if (loading)
-            const Text('加载中…', style: TextStyle(fontSize: 10, color: Colors.black45)),
+          if (loading) const Text('加载中…', style: TextStyle(fontSize: 10, color: Colors.black45)),
         ],
       ),
     );

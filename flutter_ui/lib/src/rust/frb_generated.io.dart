@@ -5,6 +5,7 @@
 
 import 'api/connections.dart';
 import 'api/db.dart';
+import 'api/editor.dart';
 import 'api/layouts.dart';
 import 'api/schema.dart';
 import 'api/value.dart';
@@ -41,10 +42,22 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   EditTarget dco_decode_box_autoadd_edit_target(dynamic raw);
 
   @protected
+  ExportOptions dco_decode_box_autoadd_export_options(dynamic raw);
+
+  @protected
   SavedConnection dco_decode_box_autoadd_saved_connection(dynamic raw);
 
   @protected
+  BigInt dco_decode_box_autoadd_u_64(dynamic raw);
+
+  @protected
   CellValue dco_decode_cell_value(dynamic raw);
+
+  @protected
+  ColumnDef dco_decode_column_def(dynamic raw);
+
+  @protected
+  ColumnKind dco_decode_column_kind(dynamic raw);
 
   @protected
   ColumnLayout dco_decode_column_layout(dynamic raw);
@@ -53,7 +66,19 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ColumnMeta dco_decode_column_meta(dynamic raw);
 
   @protected
+  Completion dco_decode_completion(dynamic raw);
+
+  @protected
+  CompletionItem dco_decode_completion_item(dynamic raw);
+
+  @protected
+  CompletionKind dco_decode_completion_kind(dynamic raw);
+
+  @protected
   ConnectionConfig dco_decode_connection_config(dynamic raw);
+
+  @protected
+  DefaultValue dco_decode_default_value(dynamic raw);
 
   @protected
   EditTarget dco_decode_edit_target(dynamic raw);
@@ -62,7 +87,22 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   Editability dco_decode_editability(dynamic raw);
 
   @protected
+  ExportEncoding dco_decode_export_encoding(dynamic raw);
+
+  @protected
+  ExportFormat dco_decode_export_format(dynamic raw);
+
+  @protected
+  ExportOptions dco_decode_export_options(dynamic raw);
+
+  @protected
+  ExportSummary dco_decode_export_summary(dynamic raw);
+
+  @protected
   double dco_decode_f_64(dynamic raw);
+
+  @protected
+  Favorite dco_decode_favorite(dynamic raw);
 
   @protected
   FilterCondition dco_decode_filter_condition(dynamic raw);
@@ -71,10 +111,19 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   FilterOp dco_decode_filter_op(dynamic raw);
 
   @protected
+  ForeignKeyDef dco_decode_foreign_key_def(dynamic raw);
+
+  @protected
+  HistoryEntry dco_decode_history_entry(dynamic raw);
+
+  @protected
   int dco_decode_i_32(dynamic raw);
 
   @protected
   PlatformInt64 dco_decode_i_64(dynamic raw);
+
+  @protected
+  IndexDef dco_decode_index_def(dynamic raw);
 
   @protected
   List<String> dco_decode_list_String(dynamic raw);
@@ -83,13 +132,31 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<CellValue> dco_decode_list_cell_value(dynamic raw);
 
   @protected
+  List<ColumnDef> dco_decode_list_column_def(dynamic raw);
+
+  @protected
   List<ColumnLayout> dco_decode_list_column_layout(dynamic raw);
 
   @protected
   List<ColumnMeta> dco_decode_list_column_meta(dynamic raw);
 
   @protected
+  List<CompletionItem> dco_decode_list_completion_item(dynamic raw);
+
+  @protected
+  List<Favorite> dco_decode_list_favorite(dynamic raw);
+
+  @protected
   List<FilterCondition> dco_decode_list_filter_condition(dynamic raw);
+
+  @protected
+  List<ForeignKeyDef> dco_decode_list_foreign_key_def(dynamic raw);
+
+  @protected
+  List<HistoryEntry> dco_decode_list_history_entry(dynamic raw);
+
+  @protected
+  List<IndexDef> dco_decode_list_index_def(dynamic raw);
 
   @protected
   List<List<String>> dco_decode_list_list_String(dynamic raw);
@@ -104,6 +171,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   Uint64List dco_decode_list_prim_u_64_strict(dynamic raw);
 
   @protected
+  List<int> dco_decode_list_prim_u_8_loose(dynamic raw);
+
+  @protected
   Uint8List dco_decode_list_prim_u_8_strict(dynamic raw);
 
   @protected
@@ -111,6 +181,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<SavedConnection> dco_decode_list_saved_connection(dynamic raw);
+
+  @protected
+  List<SqlToken> dco_decode_list_sql_token(dynamic raw);
 
   @protected
   List<TableInfo> dco_decode_list_table_info(dynamic raw);
@@ -122,16 +195,31 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   CellValue? dco_decode_opt_box_autoadd_cell_value(dynamic raw);
 
   @protected
+  BigInt? dco_decode_opt_box_autoadd_u_64(dynamic raw);
+
+  @protected
   QuerySummary dco_decode_query_summary(dynamic raw);
 
   @protected
   SavedConnection dco_decode_saved_connection(dynamic raw);
 
   @protected
+  SqlToken dco_decode_sql_token(dynamic raw);
+
+  @protected
+  SqlTokenKind dco_decode_sql_token_kind(dynamic raw);
+
+  @protected
   TableInfo dco_decode_table_info(dynamic raw);
 
   @protected
+  TableStructure dco_decode_table_structure(dynamic raw);
+
+  @protected
   int dco_decode_u_16(dynamic raw);
+
+  @protected
+  int dco_decode_u_32(dynamic raw);
 
   @protected
   BigInt dco_decode_u_64(dynamic raw);
@@ -163,12 +251,26 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   EditTarget sse_decode_box_autoadd_edit_target(SseDeserializer deserializer);
 
   @protected
+  ExportOptions sse_decode_box_autoadd_export_options(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   SavedConnection sse_decode_box_autoadd_saved_connection(
     SseDeserializer deserializer,
   );
 
   @protected
+  BigInt sse_decode_box_autoadd_u_64(SseDeserializer deserializer);
+
+  @protected
   CellValue sse_decode_cell_value(SseDeserializer deserializer);
+
+  @protected
+  ColumnDef sse_decode_column_def(SseDeserializer deserializer);
+
+  @protected
+  ColumnKind sse_decode_column_kind(SseDeserializer deserializer);
 
   @protected
   ColumnLayout sse_decode_column_layout(SseDeserializer deserializer);
@@ -177,7 +279,19 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ColumnMeta sse_decode_column_meta(SseDeserializer deserializer);
 
   @protected
+  Completion sse_decode_completion(SseDeserializer deserializer);
+
+  @protected
+  CompletionItem sse_decode_completion_item(SseDeserializer deserializer);
+
+  @protected
+  CompletionKind sse_decode_completion_kind(SseDeserializer deserializer);
+
+  @protected
   ConnectionConfig sse_decode_connection_config(SseDeserializer deserializer);
+
+  @protected
+  DefaultValue sse_decode_default_value(SseDeserializer deserializer);
 
   @protected
   EditTarget sse_decode_edit_target(SseDeserializer deserializer);
@@ -186,7 +300,22 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   Editability sse_decode_editability(SseDeserializer deserializer);
 
   @protected
+  ExportEncoding sse_decode_export_encoding(SseDeserializer deserializer);
+
+  @protected
+  ExportFormat sse_decode_export_format(SseDeserializer deserializer);
+
+  @protected
+  ExportOptions sse_decode_export_options(SseDeserializer deserializer);
+
+  @protected
+  ExportSummary sse_decode_export_summary(SseDeserializer deserializer);
+
+  @protected
   double sse_decode_f_64(SseDeserializer deserializer);
+
+  @protected
+  Favorite sse_decode_favorite(SseDeserializer deserializer);
 
   @protected
   FilterCondition sse_decode_filter_condition(SseDeserializer deserializer);
@@ -195,16 +324,28 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   FilterOp sse_decode_filter_op(SseDeserializer deserializer);
 
   @protected
+  ForeignKeyDef sse_decode_foreign_key_def(SseDeserializer deserializer);
+
+  @protected
+  HistoryEntry sse_decode_history_entry(SseDeserializer deserializer);
+
+  @protected
   int sse_decode_i_32(SseDeserializer deserializer);
 
   @protected
   PlatformInt64 sse_decode_i_64(SseDeserializer deserializer);
 
   @protected
+  IndexDef sse_decode_index_def(SseDeserializer deserializer);
+
+  @protected
   List<String> sse_decode_list_String(SseDeserializer deserializer);
 
   @protected
   List<CellValue> sse_decode_list_cell_value(SseDeserializer deserializer);
+
+  @protected
+  List<ColumnDef> sse_decode_list_column_def(SseDeserializer deserializer);
 
   @protected
   List<ColumnLayout> sse_decode_list_column_layout(
@@ -215,9 +356,30 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<ColumnMeta> sse_decode_list_column_meta(SseDeserializer deserializer);
 
   @protected
+  List<CompletionItem> sse_decode_list_completion_item(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<Favorite> sse_decode_list_favorite(SseDeserializer deserializer);
+
+  @protected
   List<FilterCondition> sse_decode_list_filter_condition(
     SseDeserializer deserializer,
   );
+
+  @protected
+  List<ForeignKeyDef> sse_decode_list_foreign_key_def(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<HistoryEntry> sse_decode_list_history_entry(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<IndexDef> sse_decode_list_index_def(SseDeserializer deserializer);
 
   @protected
   List<List<String>> sse_decode_list_list_String(SseDeserializer deserializer);
@@ -236,6 +398,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   Uint64List sse_decode_list_prim_u_64_strict(SseDeserializer deserializer);
 
   @protected
+  List<int> sse_decode_list_prim_u_8_loose(SseDeserializer deserializer);
+
+  @protected
   Uint8List sse_decode_list_prim_u_8_strict(SseDeserializer deserializer);
 
   @protected
@@ -245,6 +410,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<SavedConnection> sse_decode_list_saved_connection(
     SseDeserializer deserializer,
   );
+
+  @protected
+  List<SqlToken> sse_decode_list_sql_token(SseDeserializer deserializer);
 
   @protected
   List<TableInfo> sse_decode_list_table_info(SseDeserializer deserializer);
@@ -258,16 +426,31 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  BigInt? sse_decode_opt_box_autoadd_u_64(SseDeserializer deserializer);
+
+  @protected
   QuerySummary sse_decode_query_summary(SseDeserializer deserializer);
 
   @protected
   SavedConnection sse_decode_saved_connection(SseDeserializer deserializer);
 
   @protected
+  SqlToken sse_decode_sql_token(SseDeserializer deserializer);
+
+  @protected
+  SqlTokenKind sse_decode_sql_token_kind(SseDeserializer deserializer);
+
+  @protected
   TableInfo sse_decode_table_info(SseDeserializer deserializer);
 
   @protected
+  TableStructure sse_decode_table_structure(SseDeserializer deserializer);
+
+  @protected
   int sse_decode_u_16(SseDeserializer deserializer);
+
+  @protected
+  int sse_decode_u_32(SseDeserializer deserializer);
 
   @protected
   BigInt sse_decode_u_64(SseDeserializer deserializer);
@@ -306,13 +489,28 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_box_autoadd_export_options(
+    ExportOptions self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_box_autoadd_saved_connection(
     SavedConnection self,
     SseSerializer serializer,
   );
 
   @protected
+  void sse_encode_box_autoadd_u_64(BigInt self, SseSerializer serializer);
+
+  @protected
   void sse_encode_cell_value(CellValue self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_column_def(ColumnDef self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_column_kind(ColumnKind self, SseSerializer serializer);
 
   @protected
   void sse_encode_column_layout(ColumnLayout self, SseSerializer serializer);
@@ -321,10 +519,28 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_column_meta(ColumnMeta self, SseSerializer serializer);
 
   @protected
+  void sse_encode_completion(Completion self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_completion_item(
+    CompletionItem self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_completion_kind(
+    CompletionKind self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_connection_config(
     ConnectionConfig self,
     SseSerializer serializer,
   );
+
+  @protected
+  void sse_encode_default_value(DefaultValue self, SseSerializer serializer);
 
   @protected
   void sse_encode_edit_target(EditTarget self, SseSerializer serializer);
@@ -333,7 +549,25 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_editability(Editability self, SseSerializer serializer);
 
   @protected
+  void sse_encode_export_encoding(
+    ExportEncoding self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_export_format(ExportFormat self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_export_options(ExportOptions self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_export_summary(ExportSummary self, SseSerializer serializer);
+
+  @protected
   void sse_encode_f_64(double self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_favorite(Favorite self, SseSerializer serializer);
 
   @protected
   void sse_encode_filter_condition(
@@ -345,10 +579,19 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_filter_op(FilterOp self, SseSerializer serializer);
 
   @protected
+  void sse_encode_foreign_key_def(ForeignKeyDef self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_history_entry(HistoryEntry self, SseSerializer serializer);
+
+  @protected
   void sse_encode_i_32(int self, SseSerializer serializer);
 
   @protected
   void sse_encode_i_64(PlatformInt64 self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_index_def(IndexDef self, SseSerializer serializer);
 
   @protected
   void sse_encode_list_String(List<String> self, SseSerializer serializer);
@@ -356,6 +599,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_list_cell_value(
     List<CellValue> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_column_def(
+    List<ColumnDef> self,
     SseSerializer serializer,
   );
 
@@ -372,10 +621,34 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_list_completion_item(
+    List<CompletionItem> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_favorite(List<Favorite> self, SseSerializer serializer);
+
+  @protected
   void sse_encode_list_filter_condition(
     List<FilterCondition> self,
     SseSerializer serializer,
   );
+
+  @protected
+  void sse_encode_list_foreign_key_def(
+    List<ForeignKeyDef> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_history_entry(
+    List<HistoryEntry> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_index_def(List<IndexDef> self, SseSerializer serializer);
 
   @protected
   void sse_encode_list_list_String(
@@ -402,6 +675,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_list_prim_u_8_loose(List<int> self, SseSerializer serializer);
+
+  @protected
   void sse_encode_list_prim_u_8_strict(
     Uint8List self,
     SseSerializer serializer,
@@ -420,6 +696,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_list_sql_token(List<SqlToken> self, SseSerializer serializer);
+
+  @protected
   void sse_encode_list_table_info(
     List<TableInfo> self,
     SseSerializer serializer,
@@ -435,6 +714,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_opt_box_autoadd_u_64(BigInt? self, SseSerializer serializer);
+
+  @protected
   void sse_encode_query_summary(QuerySummary self, SseSerializer serializer);
 
   @protected
@@ -444,10 +726,25 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_sql_token(SqlToken self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_sql_token_kind(SqlTokenKind self, SseSerializer serializer);
+
+  @protected
   void sse_encode_table_info(TableInfo self, SseSerializer serializer);
 
   @protected
+  void sse_encode_table_structure(
+    TableStructure self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_u_16(int self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_u_32(int self, SseSerializer serializer);
 
   @protected
   void sse_encode_u_64(BigInt self, SseSerializer serializer);

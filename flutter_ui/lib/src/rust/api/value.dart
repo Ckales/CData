@@ -9,6 +9,14 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
 part 'value.freezed.dart';
 
+/// 格式化 JSON，同时校验。不合法返回带行列号的错误
+Future<String> formatJson({required String text}) =>
+    RustLib.instance.api.crateApiValueFormatJson(text: text);
+
+/// 二进制内容的十六进制视图，超过 limit 字节只显示前面并注明总长
+Future<String> hexDump({required List<int> bytes, required BigInt limit}) =>
+    RustLib.instance.api.crateApiValueHexDump(bytes: bytes, limit: limit);
+
 /// 单元格在网格里的显示文本
 Future<String> displayText({required CellValue value}) =>
     RustLib.instance.api.crateApiValueDisplayText(value: value);

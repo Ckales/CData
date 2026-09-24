@@ -2,11 +2,14 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge.dart' show Uint64List;
 
 import 'src/rust/api/db.dart';
 // 顶层函数和下面 GridSource 的同名方法重名，方法体里直接调会解析成方法自己
-import 'src/rust/api/db.dart' as db show insertRow, deleteRows, copyRange, parseClipboard, pasteCells;
+import 'src/rust/api/db.dart' as db
+    show insertRow, deleteRows, copyRange, parseClipboard, pasteCells, columnChoices, exportRows;
 import 'src/rust/api/layouts.dart';
 import 'src/rust/api/layouts.dart' as layouts show loadLayout, saveLayout;
 import 'src/rust/api/schema.dart';
 import 'src/rust/api/value.dart';
+import 'src/rust/api/value.dart' as value show formatJson, hexDump;
+import 'dart:typed_data' show Uint8List;
 
 /// 界面取数据的来源。
 ///
@@ -43,6 +46,24 @@ abstract class GridSource {
 
   /// 从 rowStart 起把一块值粘进这几列，返回写了多少格
   Future<int> pasteCells(int rowStart, List<int> columns, List<List<CellValue>> values);
+
+  /// ENUM / SET 列的可选值，按定义顺序
+  Future<List<String>> columnChoices(int column);
+
+  /// 格式化 JSON，同时校验，不合法抛错
+  Future<String> formatJson(String text);
+
+  /// 二进制内容的十六进制视图
+  Future<String> hexDump(Uint8List bytes);
+
+  /// 把一段行写成文件。rowCount 为 null 表示到末尾，columns 按导出顺序
+  Future<ExportSummary> exportRows(
+    String path,
+    int rowStart,
+    int? rowCount,
+    List<int> columns,
+    ExportOptions options,
+  );
 }
 
 /// FRB 的 Uint64List 元素是 BigInt，没有 fromList，只能先开长度再逐个填
@@ -57,6 +78,9 @@ Uint64List _u64List(List<int> values) {
 abstract class SchemaSource {
   Future<List<String>> databases();
   Future<List<TableInfo>> tables(String database);
+
+  /// 列、索引、外键和建表语句，一次取齐
+  Future<TableStructure> structure(String database, String table);
 }
 
 class RustGridSource implements GridSource {
@@ -137,6 +161,36 @@ class RustGridSource implements GridSource {
   Future<List<List<CellValue>>> parseClipboard(String text) => db.parseClipboard(text: text);
 
   @override
+  Future<List<String>> columnChoices(int column) {
+    return db.columnChoices(sessionId: sessionId, columnIndex: BigInt.from(column));
+  }
+
+  @override
+  Future<String> formatJson(String text) => value.formatJson(text: text);
+
+  @override
+  Future<ExportSummary> exportRows(
+    String path,
+    int rowStart,
+    int? rowCount,
+    List<int> columns,
+    ExportOptions options,
+  ) {
+    return db.exportRows(
+      sessionId: sessionId,
+      path: path,
+      rowStart: BigInt.from(rowStart),
+      rowCount: rowCount == null ? null : BigInt.from(rowCount),
+      columnIndexes: _u64List(columns),
+      options: options,
+    );
+  }
+
+  /// 十六进制视图最多看前 64KB，再大交给导出
+  @override
+  Future<String> hexDump(Uint8List bytes) => value.hexDump(bytes: bytes, limit: BigInt.from(65536));
+
+  @override
   Future<int> pasteCells(int rowStart, List<int> columns, List<List<CellValue>> values) async {
     final written = await db.pasteCells(
       sessionId: sessionId,
@@ -159,5 +213,10 @@ class RustSchemaSource implements SchemaSource {
   @override
   Future<List<TableInfo>> tables(String database) {
     return listTables(sessionId: sessionId, database: database);
+  }
+
+  @override
+  Future<TableStructure> structure(String database, String table) {
+    return tableStructure(sessionId: sessionId, database: database, table: table);
   }
 }

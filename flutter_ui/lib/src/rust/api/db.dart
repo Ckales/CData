@@ -131,9 +131,47 @@ Future<BigInt> pasteCells({
   values: values,
 );
 
+/// 结果集某一列的 ENUM / SET 可选值，按定义顺序
+Future<List<String>> columnChoices({
+  required BigInt sessionId,
+  required BigInt columnIndex,
+}) => RustLib.instance.api.crateApiDbColumnChoices(
+  sessionId: sessionId,
+  columnIndex: columnIndex,
+);
+
+/// 把结果集的一段写成文件，row_count 为 null 表示到末尾。行不经过 FFI
+Future<ExportSummary> exportRows({
+  required BigInt sessionId,
+  required String path,
+  required BigInt rowStart,
+  BigInt? rowCount,
+  required Uint64List columnIndexes,
+  required ExportOptions options,
+}) => RustLib.instance.api.crateApiDbExportRows(
+  sessionId: sessionId,
+  path: path,
+  rowStart: rowStart,
+  rowCount: rowCount,
+  columnIndexes: columnIndexes,
+  options: options,
+);
+
 /// 关会话并断开连接池
 Future<void> closeSession({required BigInt sessionId}) =>
     RustLib.instance.api.crateApiDbCloseSession(sessionId: sessionId);
+
+enum ColumnKind {
+  text,
+  number,
+  json,
+  date,
+  dateTime,
+  time,
+  enum_,
+  set_,
+  binary,
+}
 
 class ColumnMeta {
   final String name;
@@ -141,6 +179,7 @@ class ColumnMeta {
   final String orgTable;
   final String schema;
   final bool isBinary;
+  final ColumnKind kind;
 
   const ColumnMeta({
     required this.name,
@@ -148,6 +187,7 @@ class ColumnMeta {
     required this.orgTable,
     required this.schema,
     required this.isBinary,
+    required this.kind,
   });
 
   @override
@@ -156,7 +196,8 @@ class ColumnMeta {
       orgName.hashCode ^
       orgTable.hashCode ^
       schema.hashCode ^
-      isBinary.hashCode;
+      isBinary.hashCode ^
+      kind.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -167,7 +208,8 @@ class ColumnMeta {
           orgName == other.orgName &&
           orgTable == other.orgTable &&
           schema == other.schema &&
-          isBinary == other.isBinary;
+          isBinary == other.isBinary &&
+          kind == other.kind;
 }
 
 class ConnectionConfig {
@@ -235,6 +277,70 @@ sealed class Editability with _$Editability {
 
   const factory Editability.editable(EditTarget field0) = Editability_Editable;
   const factory Editability.readOnly(String field0) = Editability_ReadOnly;
+}
+
+enum ExportEncoding { utf8, utf8Bom, gbk }
+
+enum ExportFormat { csv, sqlInsert }
+
+class ExportOptions {
+  final ExportFormat format;
+  final ExportEncoding encoding;
+  final String delimiter;
+  final bool header;
+  final String nullText;
+  final String tableName;
+
+  const ExportOptions({
+    required this.format,
+    required this.encoding,
+    required this.delimiter,
+    required this.header,
+    required this.nullText,
+    required this.tableName,
+  });
+
+  @override
+  int get hashCode =>
+      format.hashCode ^
+      encoding.hashCode ^
+      delimiter.hashCode ^
+      header.hashCode ^
+      nullText.hashCode ^
+      tableName.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ExportOptions &&
+          runtimeType == other.runtimeType &&
+          format == other.format &&
+          encoding == other.encoding &&
+          delimiter == other.delimiter &&
+          header == other.header &&
+          nullText == other.nullText &&
+          tableName == other.tableName;
+}
+
+class ExportSummary {
+  final BigInt rowsWritten;
+  final bool sourceTruncated;
+
+  const ExportSummary({
+    required this.rowsWritten,
+    required this.sourceTruncated,
+  });
+
+  @override
+  int get hashCode => rowsWritten.hashCode ^ sourceTruncated.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ExportSummary &&
+          runtimeType == other.runtimeType &&
+          rowsWritten == other.rowsWritten &&
+          sourceTruncated == other.sourceTruncated;
 }
 
 class FilterCondition {

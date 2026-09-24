@@ -6,10 +6,23 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'data_source.dart';
+import 'package:file_selector/file_selector.dart' show XTypeGroup, getSaveLocation;
+
+import 'cell_editors.dart';
+import 'export_dialog.dart';
 import 'insert_row_dialog.dart';
 import 'src/rust/api/db.dart';
 import 'src/rust/api/layouts.dart';
 import 'src/rust/api/value.dart';
+
+Future<String?> _systemSavePath(String suggestedName) async {
+  final extension = suggestedName.split('.').last;
+  final location = await getSaveLocation(
+    suggestedName: suggestedName,
+    acceptedTypeGroups: [XTypeGroup(label: extension.toUpperCase(), extensions: [extension])],
+  );
+  return location?.path;
+}
 
 /// 行号列的宽度。表头、数据行、总宽三处共用，漏掉任何一处都会让 Row 比容器宽
 const double _rowNumberWidth = 64;
@@ -28,12 +41,16 @@ class ResultGrid extends StatefulWidget {
   final String? sortColumn;
   final bool sortAscending;
 
+  /// 选导出文件的保存位置，返回 null 表示取消。不传就弹系统保存对话框，测试里换掉
+  final Future<String?> Function(String suggestedName)? pickSavePath;
+
   const ResultGrid({
     super.key,
     required this.source,
     this.onSortColumn,
     this.sortColumn,
     this.sortAscending = true,
+    this.pickSavePath,
   });
 
   QuerySummary get summary => source.summary;
@@ -292,24 +309,94 @@ class _ResultGridState extends State<ResultGrid> {
     }
     if (!mounted || row.isEmpty) return;
 
+    final column = widget.summary.columns[columnIndex];
     final cell = row[columnIndex];
+    // 当前值的文本；null 表示当前是 NULL
+    final String? current;
     switch (cell) {
-      case CellValue_Bytes():
-      case CellValue_InvalidText():
-        setState(() => _refusal = '二进制内容暂不支持在网格里编辑');
+      case CellValue_Bytes(:final field0):
+        await _showHex(column.name, field0, invalidText: false);
+        return;
+      case CellValue_InvalidText(:final field0):
+        await _showHex(column.name, field0, invalidText: true);
         return;
       case CellValue_Null():
-        _editController.text = '';
+        current = null;
       case CellValue_Int(:final field0):
-        _editController.text = field0.toString();
+        current = field0.toString();
       case CellValue_UInt(:final field0):
-        _editController.text = field0.toString();
+        current = field0.toString();
       case CellValue_Double(:final field0):
-        _editController.text = field0.toString();
+        current = field0.toString();
       case CellValue_Text(:final field0):
-        _editController.text = field0;
+        current = field0;
     }
 
+    if (!mounted) return;
+    // 按列类别选编辑器。类别来自列元数据，不从值反推
+    final CellValue? value;
+    switch (column.kind) {
+      case ColumnKind.binary:
+        setState(() => _refusal = '二进制内容暂不支持在网格里编辑');
+        return;
+      case ColumnKind.json:
+        value = await showJsonEditor(
+          context,
+          column: column.name,
+          initial: current ?? '',
+          format: widget.source.formatJson,
+        );
+      case ColumnKind.enum_:
+      case ColumnKind.set_:
+        final List<String> choices;
+        try {
+          choices = await widget.source.columnChoices(columnIndex);
+        } catch (e) {
+          if (mounted) setState(() => _refusal = '$e');
+          return;
+        }
+        if (!mounted) return;
+        value = column.kind == ColumnKind.enum_
+            ? await showEnumEditor(context, column: column.name, choices: choices, current: current)
+            : await showSetEditor(context, column: column.name, choices: choices, current: current);
+      case ColumnKind.date:
+      case ColumnKind.dateTime:
+        value = await showDateEditor(
+          context,
+          column: column.name,
+          initial: current ?? '',
+          withTime: column.kind == ColumnKind.dateTime,
+        );
+      case ColumnKind.text:
+      case ColumnKind.number:
+      case ColumnKind.time:
+        _editController.text = current ?? '';
+        _startInlineEdit(rowIndex, columnIndex);
+        return;
+    }
+
+    if (value != null) await _writeCell(rowIndex, columnIndex, value);
+  }
+
+  Future<void> _showHex(String column, Uint8List bytes, {required bool invalidText}) async {
+    final String dump;
+    try {
+      dump = await widget.source.hexDump(bytes);
+    } catch (e) {
+      if (mounted) setState(() => _refusal = '$e');
+      return;
+    }
+    if (!mounted) return;
+    await showHexViewer(
+      context,
+      column: column,
+      dump: dump,
+      byteCount: bytes.length,
+      invalidText: invalidText,
+    );
+  }
+
+  void _startInlineEdit(int rowIndex, int columnIndex) {
     setState(() => _editing = (row: rowIndex, column: columnIndex));
     // 编辑框这一帧才建出来，建好再给焦点
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -322,8 +409,12 @@ class _ResultGridState extends State<ResultGrid> {
     if (editing == null) return;
 
     setState(() => _editing = null);
+    await _writeCell(editing.row, editing.column, newValue);
+  }
+
+  Future<void> _writeCell(int rowIndex, int columnIndex, CellValue value) async {
     try {
-      await widget.source.edit(editing.row, editing.column, newValue);
+      await widget.source.edit(rowIndex, columnIndex, value);
       await _loadWindow(_windowStart, force: true);
     } catch (e) {
       if (mounted) setState(() => _refusal = '$e');
@@ -548,6 +639,61 @@ class _ResultGridState extends State<ResultGrid> {
     }
   }
 
+  /// 导出全部或选中区域。列按屏幕上的顺序；行直接从 Rust 侧写文件
+  Future<void> _export() async {
+    final range = _range;
+    final selectionLabel = range == null
+        ? null
+        : '${range.bottom - range.top + 1} 行 × ${range.right - range.left + 1} 列';
+    final editability = widget.summary.editability;
+    final suggestedTable = switch (editability) {
+      Editability_Editable(:final field0) => field0.table,
+      Editability_ReadOnly() => '',
+    };
+
+    final choice = await showExportDialog(
+      context,
+      totalRows: _totalRows,
+      selectionLabel: selectionLabel,
+      suggestedTable: suggestedTable,
+    );
+    if (choice == null || !mounted) return;
+
+    final extension = choice.options.format == ExportFormat.csv ? 'csv' : 'sql';
+    final baseName = suggestedTable.isEmpty ? 'result' : suggestedTable;
+    final pickSavePath = widget.pickSavePath ?? _systemSavePath;
+    final path = await pickSavePath('$baseName.$extension');
+    if (path == null || !mounted) return;
+
+    final useSelection = choice.selectionOnly && range != null;
+    final columns = useSelection ? _order.sublist(range.left, range.right + 1) : [..._order];
+    setState(() {
+      _refusal = null;
+      _notice = null;
+    });
+    try {
+      final summary = await widget.source.exportRows(
+        path,
+        useSelection ? range.top : 0,
+        useSelection ? range.bottom - range.top + 1 : null,
+        columns,
+        choice.options,
+      );
+      if (!mounted) return;
+      setState(() {
+        final written = '已导出 ${summary.rowsWritten} 行到 $path';
+        if (summary.sourceTruncated) {
+          // 截断过的结果导出去也是残缺的，用醒目的红字说
+          _refusal = '$written，但结果集本身被截断过，文件里不是全部数据';
+        } else {
+          _notice = written;
+        }
+      });
+    } catch (e) {
+      if (mounted) setState(() => _refusal = '导出失败：$e');
+    }
+  }
+
   void _scheduleLoad(int start) {
     if (_loading || start == _windowStart) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -650,6 +796,7 @@ class _ResultGridState extends State<ResultGrid> {
           notice: _notice,
           selectedCount: _selected.length,
           onInsert: _insertRow,
+          onExport: _export,
           onDeleteSelected: _deleteSelected,
         ),
       ],
@@ -1022,6 +1169,7 @@ class _StatusBar extends StatelessWidget {
   final int selectedCount;
   final VoidCallback onInsert;
   final VoidCallback onDeleteSelected;
+  final VoidCallback onExport;
 
   const _StatusBar({
     required this.totalRows,
@@ -1032,6 +1180,7 @@ class _StatusBar extends StatelessWidget {
     required this.selectedCount,
     required this.onInsert,
     required this.onDeleteSelected,
+    required this.onExport,
   });
 
   @override
@@ -1075,6 +1224,7 @@ class _StatusBar extends StatelessWidget {
           // 刻意不用 CircularProgressIndicator：它是无限动画，会让 pumpAndSettle
           // 永远等不到"稳定"，测试直接挂死。静态文字一样能表达状态
           if (loading) const Text('加载中…', style: TextStyle(fontSize: 11, color: Colors.black45)),
+          _BarButton(label: '导出', onPressed: onExport),
           // 只读结果集不给增删入口，原因已经显示在左边
           if (readOnlyReason == null) ...[
             if (selectedCount > 0)

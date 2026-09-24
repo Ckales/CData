@@ -6,6 +6,19 @@
 import '../frb_generated.dart';
 
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
+import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
+part 'schema.freezed.dart';
+
+/// 一张表的列、索引、外键和建表语句，结构页一次取齐
+Future<TableStructure> tableStructure({
+  required BigInt sessionId,
+  required String database,
+  required String table,
+}) => RustLib.instance.api.crateApiSchemaTableStructure(
+  sessionId: sessionId,
+  database: database,
+  table: table,
+);
 
 /// 服务器上的库列表
 Future<List<String>> listDatabases({required BigInt sessionId}) =>
@@ -23,6 +36,138 @@ Future<List<TableInfo>> listTables({
 /// 浏览整张表的 SQL。标识符转义在 core 里做，界面不要自己拼
 Future<String> browseSql({required String table}) =>
     RustLib.instance.api.crateApiSchemaBrowseSql(table: table);
+
+class ColumnDef {
+  final String name;
+  final String columnType;
+  final bool nullable;
+  final DefaultValue default_;
+  final String extra;
+  final String comment;
+  final String? collation;
+
+  const ColumnDef({
+    required this.name,
+    required this.columnType,
+    required this.nullable,
+    required this.default_,
+    required this.extra,
+    required this.comment,
+    this.collation,
+  });
+
+  @override
+  int get hashCode =>
+      name.hashCode ^
+      columnType.hashCode ^
+      nullable.hashCode ^
+      default_.hashCode ^
+      extra.hashCode ^
+      comment.hashCode ^
+      collation.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ColumnDef &&
+          runtimeType == other.runtimeType &&
+          name == other.name &&
+          columnType == other.columnType &&
+          nullable == other.nullable &&
+          default_ == other.default_ &&
+          extra == other.extra &&
+          comment == other.comment &&
+          collation == other.collation;
+}
+
+@freezed
+sealed class DefaultValue with _$DefaultValue {
+  const DefaultValue._();
+
+  const factory DefaultValue.noDefault() = DefaultValue_NoDefault;
+  const factory DefaultValue.null_() = DefaultValue_Null;
+  const factory DefaultValue.literal(String field0) = DefaultValue_Literal;
+  const factory DefaultValue.expression(String field0) =
+      DefaultValue_Expression;
+}
+
+class ForeignKeyDef {
+  final String name;
+  final List<String> columns;
+  final String referencedSchema;
+  final String referencedTable;
+  final List<String> referencedColumns;
+  final String onUpdate;
+  final String onDelete;
+
+  const ForeignKeyDef({
+    required this.name,
+    required this.columns,
+    required this.referencedSchema,
+    required this.referencedTable,
+    required this.referencedColumns,
+    required this.onUpdate,
+    required this.onDelete,
+  });
+
+  @override
+  int get hashCode =>
+      name.hashCode ^
+      columns.hashCode ^
+      referencedSchema.hashCode ^
+      referencedTable.hashCode ^
+      referencedColumns.hashCode ^
+      onUpdate.hashCode ^
+      onDelete.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ForeignKeyDef &&
+          runtimeType == other.runtimeType &&
+          name == other.name &&
+          columns == other.columns &&
+          referencedSchema == other.referencedSchema &&
+          referencedTable == other.referencedTable &&
+          referencedColumns == other.referencedColumns &&
+          onUpdate == other.onUpdate &&
+          onDelete == other.onDelete;
+}
+
+class IndexDef {
+  final String name;
+  final bool unique;
+  final List<String> columns;
+  final String indexType;
+  final String comment;
+
+  const IndexDef({
+    required this.name,
+    required this.unique,
+    required this.columns,
+    required this.indexType,
+    required this.comment,
+  });
+
+  @override
+  int get hashCode =>
+      name.hashCode ^
+      unique.hashCode ^
+      columns.hashCode ^
+      indexType.hashCode ^
+      comment.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is IndexDef &&
+          runtimeType == other.runtimeType &&
+          name == other.name &&
+          unique == other.unique &&
+          columns == other.columns &&
+          indexType == other.indexType &&
+          comment == other.comment;
+}
 
 class TableInfo {
   final String name;
@@ -46,4 +191,35 @@ class TableInfo {
           name == other.name &&
           estimatedRows == other.estimatedRows &&
           isView == other.isView;
+}
+
+class TableStructure {
+  final List<ColumnDef> columns;
+  final List<IndexDef> indexes;
+  final List<ForeignKeyDef> foreignKeys;
+  final String createSql;
+
+  const TableStructure({
+    required this.columns,
+    required this.indexes,
+    required this.foreignKeys,
+    required this.createSql,
+  });
+
+  @override
+  int get hashCode =>
+      columns.hashCode ^
+      indexes.hashCode ^
+      foreignKeys.hashCode ^
+      createSql.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is TableStructure &&
+          runtimeType == other.runtimeType &&
+          columns == other.columns &&
+          indexes == other.indexes &&
+          foreignKeys == other.foreignKeys &&
+          createSql == other.createSql;
 }
