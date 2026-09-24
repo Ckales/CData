@@ -81,6 +81,36 @@ Future<BigInt> deleteRows({
   rowIndexes: rowIndexes,
 );
 
+/// 把一片单元格编码成 TSV，列按 column_indexes 的顺序。选区不用在界面窗口里
+Future<String> copyRange({
+  required BigInt sessionId,
+  required BigInt rowStart,
+  required BigInt rowCount,
+  required Uint64List columnIndexes,
+}) => RustLib.instance.api.crateApiDbCopyRange(
+  sessionId: sessionId,
+  rowStart: rowStart,
+  rowCount: rowCount,
+  columnIndexes: columnIndexes,
+);
+
+/// 解析剪贴板里的 TSV。不带引号的 NULL 是 NULL，其余都是文本；不是规整矩形就报错
+Future<List<List<CellValue>>> parseClipboard({required String text}) =>
+    RustLib.instance.api.crateApiDbParseClipboard(text: text);
+
+/// 从 row_start 起把一块值粘进这几列，返回写了多少格。一个事务，任何一格失败整体回滚
+Future<BigInt> pasteCells({
+  required BigInt sessionId,
+  required BigInt rowStart,
+  required Uint64List columnIndexes,
+  required List<List<CellValue>> values,
+}) => RustLib.instance.api.crateApiDbPasteCells(
+  sessionId: sessionId,
+  rowStart: rowStart,
+  columnIndexes: columnIndexes,
+  values: values,
+);
+
 /// 关会话并断开连接池
 Future<void> closeSession({required BigInt sessionId}) =>
     RustLib.instance.api.crateApiDbCloseSession(sessionId: sessionId);

@@ -72,6 +72,12 @@ class FakeGridSource implements GridSource {
   /// saveLayout 的调用记录
   final List<List<ColumnLayout>> layoutSaves = [];
 
+  /// copyRange 的调用记录：(起始行, 行数, 列)
+  final List<(int, int, List<int>)> copies = [];
+
+  /// pasteCells 的调用记录：(起始行, 列, 值)
+  final List<(int, List<int>, List<List<CellValue>>)> pastes = [];
+
   /// 设成非 null 就让 edit / insertRow / deleteRows 抛错，用来测界面怎么显示失败
   String? editError;
 
@@ -159,6 +165,50 @@ class FakeGridSource implements GridSource {
   Future<void> saveLayout(List<ColumnLayout> columns) async {
     layoutSaves.add(columns);
     savedLayout = columns;
+  }
+
+  /// 简化版编码：只拼显示文本。真实的引号、NULL、二进制规则由 cdata-core 的测试保证
+  @override
+  Future<String> copyRange(int rowStart, int rowCount, List<int> columns) async {
+    copies.add((rowStart, rowCount, columns));
+    final lines = <String>[];
+    for (final row in rows.sublist(rowStart, rowStart + rowCount)) {
+      final fields = <String>[];
+      for (final column in columns) {
+        fields.add(_display(row[column]));
+      }
+      lines.add(fields.join('\t'));
+    }
+    return lines.join('\n');
+  }
+
+  @override
+  Future<List<List<CellValue>>> parseClipboard(String text) async {
+    final parsed = <List<CellValue>>[];
+    for (final line in text.trimRight().split('\n')) {
+      final values = <CellValue>[];
+      for (final field in line.split('\t')) {
+        values.add(field == 'NULL' ? const CellValue.null_() : CellValue.text(field));
+      }
+      parsed.add(values);
+    }
+    return parsed;
+  }
+
+  @override
+  Future<int> pasteCells(int rowStart, List<int> columns, List<List<CellValue>> values) async {
+    final error = editError;
+    if (error != null) throw Exception(error);
+
+    pastes.add((rowStart, columns, values));
+    var written = 0;
+    for (var r = 0; r < values.length; r++) {
+      for (var c = 0; c < columns.length; c++) {
+        rows[rowStart + r][columns[c]] = values[r][c];
+        written++;
+      }
+    }
+    return written;
   }
 
   /// 和 Rust 侧 display_text 保持一致的显示规则

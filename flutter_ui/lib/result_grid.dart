@@ -1,7 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart' show listEquals;
-import 'package:flutter/gestures.dart' show DragStartBehavior;
+import 'package:flutter/gestures.dart' show DragStartBehavior, kPrimaryButton;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -77,8 +77,23 @@ class _ResultGridState extends State<ResultGrid> {
   ({int row, int column})? _editing;
   final _editController = TextEditingController();
 
+  /// 编辑框的焦点。不能靠 autofocus：按下单元格时网格已经拿了焦点，
+  /// autofocus 只在作用域里没有焦点时才生效，结果是编辑框开了、打字却没反应
+  final _editFocus = FocusNode(debugLabel: 'cell-editor');
+
   /// 双击了不能改的单元格时的提示，显示在状态栏
   String? _refusal;
+
+  /// 操作成功的提示（复制了几格、写了几格），灰字显示在状态栏
+  String? _notice;
+
+  /// 单元格选区的两个角：锚点（普通点击）和另一角（Shift 点击）。
+  /// 列是显示位置而不是原始列下标，换了列顺序后选区跟着屏幕走
+  ({int row, int position})? _anchor;
+  ({int row, int position})? _corner;
+
+  /// 网格本身的焦点。复制粘贴快捷键只在它拿着焦点时接管，编辑框里的 ⌘C 归编辑框
+  final _gridFocus = FocusNode(debugLabel: 'result-grid');
 
   @override
   void initState() {
@@ -91,7 +106,9 @@ class _ResultGridState extends State<ResultGrid> {
   @override
   void dispose() {
     _editController.dispose();
+    _editFocus.dispose();
     _scroll.dispose();
+    _gridFocus.dispose();
     super.dispose();
   }
 
@@ -104,6 +121,8 @@ class _ResultGridState extends State<ResultGrid> {
       _windowRows = [];
       _totalRows = widget.summary.totalRows.toInt();
       _selected.clear();
+      _anchor = null;
+      _corner = null;
       // 同一批列（比如点列头排序重跑）保留当前布局，换了列才重新读
       if (!listEquals(oldWidget.summary.columns, widget.summary.columns)) {
         _resetLayout();
@@ -156,9 +175,7 @@ class _ResultGridState extends State<ResultGrid> {
 
   Future<void> _saveLayout() async {
     final columns = widget.summary.columns;
-    final layout = [
-      for (final i in _order) ColumnLayout(name: columns[i].name, width: _widths[i]),
-    ];
+    final layout = [for (final i in _order) ColumnLayout(name: columns[i].name, width: _widths[i])];
     try {
       await widget.source.saveLayout(layout);
     } catch (e) {
@@ -294,6 +311,10 @@ class _ResultGridState extends State<ResultGrid> {
     }
 
     setState(() => _editing = (row: rowIndex, column: columnIndex));
+    // 编辑框这一帧才建出来，建好再给焦点
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _editing != null) _editFocus.requestFocus();
+    });
   }
 
   Future<void> _commitEdit(CellValue newValue) async {
@@ -369,8 +390,159 @@ class _ResultGridState extends State<ResultGrid> {
         _totalRows = total;
         _selected.clear();
         _editing = null;
+        _anchor = null;
+        _corner = null;
       });
       await _loadWindow(math.min(_windowStart, math.max(0, total - _windowSize)), force: true);
+    } catch (e) {
+      if (mounted) setState(() => _refusal = '$e');
+    }
+  }
+
+  /// 选区的上下左右边界，都是闭区间
+  ({int top, int bottom, int left, int right})? get _range {
+    final anchor = _anchor;
+    final corner = _corner;
+    if (anchor == null || corner == null) return null;
+    return (
+      top: math.min(anchor.row, corner.row),
+      bottom: math.max(anchor.row, corner.row),
+      left: math.min(anchor.position, corner.position),
+      right: math.max(anchor.position, corner.position),
+    );
+  }
+
+  void _selectCell(int row, int position) {
+    _gridFocus.requestFocus();
+    setState(() {
+      _notice = null;
+      if (HardwareKeyboard.instance.isShiftPressed && _anchor != null) {
+        _corner = (row: row, position: position);
+      } else {
+        _anchor = (row: row, position: position);
+        _corner = _anchor;
+      }
+    });
+  }
+
+  KeyEventResult _handleKey(FocusNode node, KeyEvent event) {
+    // 编辑框拿着焦点时事件也会冒泡到这里，那时的 ⌘C / ⌘V 归编辑框
+    if (!node.hasPrimaryFocus || event is! KeyDownEvent) return KeyEventResult.ignored;
+
+    // macOS 用 ⌘，Windows 用 Ctrl，两个都认
+    final keyboard = HardwareKeyboard.instance;
+    if (!keyboard.isMetaPressed && !keyboard.isControlPressed) return KeyEventResult.ignored;
+
+    if (event.logicalKey == LogicalKeyboardKey.keyC) {
+      _copySelection();
+      return KeyEventResult.handled;
+    }
+    if (event.logicalKey == LogicalKeyboardKey.keyV) {
+      _pasteFromClipboard();
+      return KeyEventResult.handled;
+    }
+    return KeyEventResult.ignored;
+  }
+
+  /// 复制选区。编码在 Rust 侧做，NULL、二进制、带制表符的文本怎么写都在那里定
+  Future<void> _copySelection() async {
+    final range = _range;
+    if (range == null) return;
+
+    final rowCount = range.bottom - range.top + 1;
+    final columns = _order.sublist(range.left, range.right + 1);
+    try {
+      final tsv = await widget.source.copyRange(range.top, rowCount, columns);
+      await Clipboard.setData(ClipboardData(text: tsv));
+      if (!mounted) return;
+      setState(() {
+        _refusal = null;
+        _notice = '已复制 $rowCount 行 × ${columns.length} 列';
+      });
+    } catch (e) {
+      if (mounted) setState(() => _refusal = '$e');
+    }
+  }
+
+  /// 从选区左上角开始，按剪贴板内容的大小铺开粘贴。不按选区裁剪，也不重复填充
+  Future<void> _pasteFromClipboard() async {
+    final range = _range;
+    if (range == null) return;
+    setState(() {
+      _refusal = null;
+      _notice = null;
+    });
+
+    final editability = widget.summary.editability;
+    if (editability is Editability_ReadOnly) {
+      setState(() => _refusal = editability.field0);
+      return;
+    }
+
+    final data = await Clipboard.getData(Clipboard.kTextPlain);
+    final text = data?.text;
+    if (!mounted) return;
+    if (text == null || text.isEmpty) {
+      setState(() => _refusal = '剪贴板里没有文本');
+      return;
+    }
+
+    final List<List<CellValue>> values;
+    try {
+      values = await widget.source.parseClipboard(text);
+    } catch (e) {
+      if (mounted) setState(() => _refusal = '$e');
+      return;
+    }
+    if (!mounted) return;
+
+    final rowCount = values.length;
+    final columnCount = values.first.length;
+    // 显示位置换算成列下标是界面的事，放不下要在这里拦；行数 Rust 侧还会再核一次
+    if (range.left + columnCount > _order.length) {
+      setState(
+        () => _refusal = '剪贴板有 $columnCount 列，从第 ${range.left + 1} 列开始放不下（共 ${_order.length} 列）',
+      );
+      return;
+    }
+    if (range.top + rowCount > _totalRows) {
+      setState(
+        () => _refusal = '剪贴板有 $rowCount 行，从第 ${range.top + 1} 行开始会超出结果集末尾（共 $_totalRows 行）',
+      );
+      return;
+    }
+
+    final firstColumn = widget.summary.columns[_order[range.left]].name;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('粘贴 $rowCount 行 × $columnCount 列？', style: const TextStyle(fontSize: 16)),
+        content: Text(
+          '从第 ${range.top + 1} 行的 $firstColumn 列开始覆盖，直接写入数据库，不能撤销。\n'
+          '所有格子在一个事务里写入，任何一格没写成都会整体回滚。\n'
+          '不带引号的 NULL 写成 NULL，空格子写成空字符串。',
+          style: const TextStyle(fontSize: 13),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('取消')),
+          FilledButton(onPressed: () => Navigator.of(context).pop(true), child: const Text('粘贴')),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    try {
+      final columns = _order.sublist(range.left, range.left + columnCount);
+      final written = await widget.source.pasteCells(range.top, columns, values);
+      if (!mounted) return;
+      setState(() {
+        _editing = null;
+        _notice = '已写入 $written 个单元格';
+        // 选区换成实际粘贴的那一块，方便核对
+        _anchor = (row: range.top, position: range.left);
+        _corner = (row: range.top + rowCount - 1, position: range.left + columnCount - 1);
+      });
+      await _loadWindow(_windowStart, force: true);
     } catch (e) {
       if (mounted) setState(() => _refusal = '$e');
     }
@@ -408,52 +580,64 @@ class _ResultGridState extends State<ResultGrid> {
       children: [
         if (widget.summary.truncated) const _TruncationBanner(),
         Expanded(
-          child: SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: SizedBox(
-              width: totalWidth,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  _HeaderRow(
-                    columns: columns,
-                    order: _order,
-                    widths: _widths,
-                    onResize: _resizeColumn,
-                    onResizeEnd: _saveLayout,
-                    onAutoFit: _autoFitColumn,
-                    onMove: _moveColumn,
-                    onSortColumn: widget.onSortColumn,
-                    sortColumn: widget.sortColumn,
-                    sortAscending: widget.sortAscending,
-                  ),
-                  Expanded(
-                    child: ListView.builder(
-                      controller: _scroll,
-                      itemCount: _totalRows,
-                      itemExtent: _rowHeight,
-                      itemBuilder: (context, index) {
-                        final cells = _rowAt(index);
-                        final editing = _editing;
-                        return _DataRow(
-                          rowNumber: index + 1,
-                          selected: _selected.contains(index),
-                          onTapRowNumber: () => _toggleSelected(index),
-                          cells: cells,
-                          order: _order,
-                          widths: _widths,
-                          editingColumn:
-                              editing != null && editing.row == index ? editing.column : null,
-                          editController: _editController,
-                          onDoubleTapCell: (column) => _beginEdit(index, column),
-                          onCommit: (text) => _commitEdit(CellValue.text(text)),
-                          onSetNull: () => _commitEdit(const CellValue.null_()),
-                          onCancel: () => setState(() => _editing = null),
-                        );
-                      },
+          child: Focus(
+            focusNode: _gridFocus,
+            onKeyEvent: _handleKey,
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: SizedBox(
+                width: totalWidth,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    _HeaderRow(
+                      columns: columns,
+                      order: _order,
+                      widths: _widths,
+                      onResize: _resizeColumn,
+                      onResizeEnd: _saveLayout,
+                      onAutoFit: _autoFitColumn,
+                      onMove: _moveColumn,
+                      onSortColumn: widget.onSortColumn,
+                      sortColumn: widget.sortColumn,
+                      sortAscending: widget.sortAscending,
                     ),
-                  ),
-                ],
+                    Expanded(
+                      child: ListView.builder(
+                        controller: _scroll,
+                        itemCount: _totalRows,
+                        itemExtent: _rowHeight,
+                        itemBuilder: (context, index) {
+                          final cells = _rowAt(index);
+                          final editing = _editing;
+                          final range = _range;
+                          return _DataRow(
+                            selectedPositions:
+                                range != null && index >= range.top && index <= range.bottom
+                                ? (left: range.left, right: range.right)
+                                : null,
+                            onPointerDownCell: (position) => _selectCell(index, position),
+                            rowNumber: index + 1,
+                            selected: _selected.contains(index),
+                            onTapRowNumber: () => _toggleSelected(index),
+                            cells: cells,
+                            order: _order,
+                            widths: _widths,
+                            editingColumn: editing != null && editing.row == index
+                                ? editing.column
+                                : null,
+                            editController: _editController,
+                            editFocus: _editFocus,
+                            onDoubleTapCell: (column) => _beginEdit(index, column),
+                            onCommit: (text) => _commitEdit(CellValue.text(text)),
+                            onSetNull: () => _commitEdit(const CellValue.null_()),
+                            onCancel: () => setState(() => _editing = null),
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -463,6 +647,7 @@ class _ResultGridState extends State<ResultGrid> {
           loading: _loading,
           editability: widget.summary.editability,
           refusal: _refusal,
+          notice: _notice,
           selectedCount: _selected.length,
           onInsert: _insertRow,
           onDeleteSelected: _deleteSelected,
@@ -612,7 +797,9 @@ class _HeaderRow extends StatelessWidget {
               child: const SizedBox(
                 width: 6,
                 height: 32,
-                child: Center(child: SizedBox(width: 1, height: 16, child: ColoredBox(color: Colors.black26))),
+                child: Center(
+                  child: SizedBox(width: 1, height: 16, child: ColoredBox(color: Colors.black26)),
+                ),
               ),
             ),
           ),
@@ -629,8 +816,13 @@ class _DataRow extends StatelessWidget {
   final List<String>? cells;
   final List<int> order;
   final List<double> widths;
+
+  /// 这一行里落在选区内的显示位置，null 表示这一行不在选区里
+  final ({int left, int right})? selectedPositions;
+  final void Function(int position) onPointerDownCell;
   final int? editingColumn;
   final TextEditingController editController;
+  final FocusNode editFocus;
   final void Function(int column) onDoubleTapCell;
   final void Function(String text) onCommit;
   final VoidCallback onSetNull;
@@ -643,8 +835,11 @@ class _DataRow extends StatelessWidget {
     required this.cells,
     required this.order,
     required this.widths,
+    required this.selectedPositions,
+    required this.onPointerDownCell,
     required this.editingColumn,
     required this.editController,
+    required this.editFocus,
     required this.onDoubleTapCell,
     required this.onCommit,
     required this.onSetNull,
@@ -658,8 +853,8 @@ class _DataRow extends StatelessWidget {
         color: selected
             ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.12)
             : rowNumber.isEven
-                ? Colors.black.withValues(alpha: 0.02)
-                : null,
+            ? Colors.black.withValues(alpha: 0.02)
+            : null,
         border: const Border(bottom: BorderSide(color: Colors.black12)),
       ),
       child: Row(
@@ -682,33 +877,52 @@ class _DataRow extends StatelessWidget {
               ),
             ),
           ),
-          for (final i in order)
-            SizedBox(
-              // 行号列和数据列可能显示一样的文本，测试要靠 key 才能精确定位。
-              // i 是结果集里的原始列下标，和显示顺序无关
-              key: ValueKey('cell-${rowNumber - 1}-$i'),
-              width: widths[i],
-              child: editingColumn == i
-                  ? _CellEditor(
-                      controller: editController,
-                      onCommit: onCommit,
-                      onSetNull: onSetNull,
-                      onCancel: onCancel,
-                    )
-                  : GestureDetector(
-                      behavior: HitTestBehavior.opaque,
-                      onDoubleTap: () => onDoubleTapCell(i),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 8),
-                        child: Align(
-                          alignment: Alignment.centerLeft,
-                          child: _CellText(text: cells?[i]),
-                        ),
-                      ),
-                    ),
-            ),
+          for (var position = 0; position < order.length; position++)
+            _cell(context, position, order[position]),
         ],
       ),
+    );
+  }
+
+  Widget _cell(BuildContext context, int position, int i) {
+    final range = selectedPositions;
+    final inRange = range != null && position >= range.left && position <= range.right;
+
+    return SizedBox(
+      // 行号列和数据列可能显示一样的文本，测试要靠 key 才能精确定位。
+      // i 是结果集里的原始列下标，和显示顺序无关
+      key: ValueKey('cell-${rowNumber - 1}-$i'),
+      width: widths[i],
+      child: editingColumn == i
+          ? _CellEditor(
+              controller: editController,
+              focusNode: editFocus,
+              onCommit: onCommit,
+              onSetNull: onSetNull,
+              onCancel: onCancel,
+            )
+          // 按下就选中。用 Listener 而不是 onTap：onTap 要等双击判定超时才触发，点了会慢半拍
+          : Listener(
+              onPointerDown: (event) {
+                if (event.buttons == kPrimaryButton) onPointerDownCell(position);
+              },
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onDoubleTap: () => onDoubleTapCell(i),
+                child: ColoredBox(
+                  color: inRange
+                      ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.18)
+                      : Colors.transparent,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: _CellText(text: cells?[i]),
+                    ),
+                  ),
+                ),
+              ),
+            ),
     );
   }
 }
@@ -718,12 +932,14 @@ class _DataRow extends StatelessWidget {
 /// NULL 要有独立入口：清空输入提交的是空字符串，和 NULL 是两回事，不能靠猜。
 class _CellEditor extends StatelessWidget {
   final TextEditingController controller;
+  final FocusNode focusNode;
   final void Function(String text) onCommit;
   final VoidCallback onSetNull;
   final VoidCallback onCancel;
 
   const _CellEditor({
     required this.controller,
+    required this.focusNode,
     required this.onCommit,
     required this.onSetNull,
     required this.onCancel,
@@ -744,7 +960,7 @@ class _CellEditor extends StatelessWidget {
             },
             child: TextField(
               controller: controller,
-              autofocus: true,
+              focusNode: focusNode,
               style: const TextStyle(fontSize: 12, fontFamily: 'Menlo'),
               decoration: const InputDecoration(
                 isDense: true,
@@ -802,6 +1018,7 @@ class _StatusBar extends StatelessWidget {
   final bool loading;
   final Editability editability;
   final String? refusal;
+  final String? notice;
   final int selectedCount;
   final VoidCallback onInsert;
   final VoidCallback onDeleteSelected;
@@ -811,6 +1028,7 @@ class _StatusBar extends StatelessWidget {
     required this.loading,
     required this.editability,
     required this.refusal,
+    required this.notice,
     required this.selectedCount,
     required this.onInsert,
     required this.onDeleteSelected,
@@ -822,7 +1040,7 @@ class _StatusBar extends StatelessWidget {
       Editability_ReadOnly(:final field0) => field0,
       Editability_Editable() => null,
     };
-    final message = refusal ?? readOnlyReason;
+    final message = refusal ?? notice ?? readOnlyReason;
 
     return Container(
       height: 26,
@@ -850,14 +1068,13 @@ class _StatusBar extends StatelessWidget {
           else
             const Expanded(
               child: Text(
-                '双击单元格编辑，点行号选中行',
+                '双击编辑，Shift 点选区域后可复制粘贴，点行号选中行',
                 style: TextStyle(fontSize: 11, color: Colors.black38),
               ),
             ),
           // 刻意不用 CircularProgressIndicator：它是无限动画，会让 pumpAndSettle
           // 永远等不到"稳定"，测试直接挂死。静态文字一样能表达状态
-          if (loading)
-            const Text('加载中…', style: TextStyle(fontSize: 11, color: Colors.black45)),
+          if (loading) const Text('加载中…', style: TextStyle(fontSize: 11, color: Colors.black45)),
           // 只读结果集不给增删入口，原因已经显示在左边
           if (readOnlyReason == null) ...[
             if (selectedCount > 0)

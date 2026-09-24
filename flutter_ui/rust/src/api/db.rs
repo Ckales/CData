@@ -134,6 +134,35 @@ pub async fn delete_rows(session_id: u64, row_indexes: Vec<u64>) -> Result<u64> 
         .await
 }
 
+/// 把一片单元格编码成 TSV，列按 column_indexes 的顺序。选区不用在界面窗口里
+pub fn copy_range(
+    session_id: u64,
+    row_start: u64,
+    row_count: u64,
+    column_indexes: Vec<u64>,
+) -> Result<String> {
+    cdata_core::session::copy_range(session_id, row_start, row_count, column_indexes)
+        .map_err(to_message)
+}
+
+/// 解析剪贴板里的 TSV。不带引号的 NULL 是 NULL，其余都是文本；不是规整矩形就报错
+pub fn parse_clipboard(text: String) -> Result<Vec<Vec<CellValue>>> {
+    cdata_core::clipboard::decode(&text)
+}
+
+/// 从 row_start 起把一块值粘进这几列，返回写了多少格。一个事务，任何一格失败整体回滚
+pub async fn paste_cells(
+    session_id: u64,
+    row_start: u64,
+    column_indexes: Vec<u64>,
+    values: Vec<Vec<CellValue>>,
+) -> Result<u64> {
+    on_runtime(async move {
+        cdata_core::session::paste_cells(session_id, row_start, column_indexes, values).await
+    })
+    .await
+}
+
 /// 关会话并断开连接池
 pub async fn close_session(session_id: u64) -> Result<()> {
     on_runtime(async move { cdata_core::session::close_session(session_id).await }).await

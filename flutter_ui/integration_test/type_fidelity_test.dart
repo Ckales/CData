@@ -64,6 +64,13 @@ void main() {
     );
   });
 
+  test('剪贴板解析穿过 FFI 后 NULL 和文本 "NULL" 不混', () async {
+    final rows = await parseClipboard(text: 'NULL\t"NULL"\t\r\n');
+    expect(rows, [
+      [const CellValue.null_(), const CellValue.text('NULL'), const CellValue.text('')],
+    ]);
+  });
+
   test('新增行的 null（默认）和 CellValue（写值）穿过 FFI 不混淆，删除按下标生效', () async {
     if (_host.isEmpty) {
       markTestSkipped('未通过 --dart-define 提供连接信息');

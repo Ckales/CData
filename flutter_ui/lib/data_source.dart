@@ -2,7 +2,7 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge.dart' show Uint64List;
 
 import 'src/rust/api/db.dart';
 // 顶层函数和下面 GridSource 的同名方法重名，方法体里直接调会解析成方法自己
-import 'src/rust/api/db.dart' as db show insertRow, deleteRows;
+import 'src/rust/api/db.dart' as db show insertRow, deleteRows, copyRange, parseClipboard, pasteCells;
 import 'src/rust/api/layouts.dart';
 import 'src/rust/api/layouts.dart' as layouts show loadLayout, saveLayout;
 import 'src/rust/api/schema.dart';
@@ -34,6 +34,24 @@ abstract class GridSource {
   Future<List<ColumnLayout>> loadLayout();
 
   Future<void> saveLayout(List<ColumnLayout> columns);
+
+  /// 一片单元格编码成 TSV。columns 按显示顺序给，行可以不在当前窗口里
+  Future<String> copyRange(int rowStart, int rowCount, List<int> columns);
+
+  /// 解析剪贴板文本。不带引号的 NULL 是 NULL，其余都是文本
+  Future<List<List<CellValue>>> parseClipboard(String text);
+
+  /// 从 rowStart 起把一块值粘进这几列，返回写了多少格
+  Future<int> pasteCells(int rowStart, List<int> columns, List<List<CellValue>> values);
+}
+
+/// FRB 的 Uint64List 元素是 BigInt，没有 fromList，只能先开长度再逐个填
+Uint64List _u64List(List<int> values) {
+  final list = Uint64List(values.length);
+  for (var i = 0; i < values.length; i++) {
+    list[i] = BigInt.from(values[i]);
+  }
+  return list;
 }
 
 abstract class SchemaSource {
@@ -86,12 +104,7 @@ class RustGridSource implements GridSource {
 
   @override
   Future<int> deleteRows(List<int> rowIndexes) async {
-    // FRB 的 Uint64List 元素是 BigInt，没有 fromList，只能先开长度再逐个填
-    final indexes = Uint64List(rowIndexes.length);
-    for (var i = 0; i < rowIndexes.length; i++) {
-      indexes[i] = BigInt.from(rowIndexes[i]);
-    }
-    final total = await db.deleteRows(sessionId: sessionId, rowIndexes: indexes);
+    final total = await db.deleteRows(sessionId: sessionId, rowIndexes: _u64List(rowIndexes));
     return total.toInt();
   }
 
@@ -108,6 +121,30 @@ class RustGridSource implements GridSource {
     final key = summary.layoutKey;
     if (key == null) return;
     await layouts.saveLayout(key: key, columns: columns);
+  }
+
+  @override
+  Future<String> copyRange(int rowStart, int rowCount, List<int> columns) {
+    return db.copyRange(
+      sessionId: sessionId,
+      rowStart: BigInt.from(rowStart),
+      rowCount: BigInt.from(rowCount),
+      columnIndexes: _u64List(columns),
+    );
+  }
+
+  @override
+  Future<List<List<CellValue>>> parseClipboard(String text) => db.parseClipboard(text: text);
+
+  @override
+  Future<int> pasteCells(int rowStart, List<int> columns, List<List<CellValue>> values) async {
+    final written = await db.pasteCells(
+      sessionId: sessionId,
+      rowStart: BigInt.from(rowStart),
+      columnIndexes: _u64List(columns),
+      values: values,
+    );
+    return written.toInt();
   }
 }
 

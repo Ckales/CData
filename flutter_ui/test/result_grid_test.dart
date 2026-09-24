@@ -9,6 +9,7 @@ import 'package:cdata_flutter/src/rust/api/layouts.dart';
 import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:cdata_flutter/src/rust/api/value.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'fakes.dart';
@@ -61,6 +62,42 @@ double widthOf(WidgetTester tester, String key) => tester.getSize(find.byKey(Val
 double leftOf(WidgetTester tester, String key) => tester.getTopLeft(find.byKey(ValueKey(key))).dx;
 
 List<String> namesOf(List<ColumnLayout> layout) => [for (final column in layout) column.name];
+
+/// 接管系统剪贴板，读写都落在这个变量上
+String? clipboardText;
+
+void mockClipboard(WidgetTester tester) {
+  clipboardText = null;
+  final messenger = tester.binding.defaultBinaryMessenger;
+  messenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
+    if (call.method == 'Clipboard.setData') {
+      clipboardText = (call.arguments as Map)['text'] as String?;
+      return null;
+    }
+    if (call.method == 'Clipboard.getData') {
+      return {'text': clipboardText};
+    }
+    return null;
+  });
+  addTearDown(() => messenger.setMockMethodCallHandler(SystemChannels.platform, null));
+}
+
+/// ⌘ + 某个键
+Future<void> pressCommand(WidgetTester tester, LogicalKeyboardKey key) async {
+  await tester.sendKeyDownEvent(LogicalKeyboardKey.meta);
+  await tester.sendKeyEvent(key);
+  await tester.sendKeyUpEvent(LogicalKeyboardKey.meta);
+  await tester.pump();
+}
+
+Future<void> shiftTap(WidgetTester tester, Finder finder) async {
+  await tester.sendKeyDownEvent(LogicalKeyboardKey.shift);
+  await tester.tap(finder);
+  await tester.sendKeyUpEvent(LogicalKeyboardKey.shift);
+  await tester.pump();
+}
+
+Finder cell(int row, int column) => find.byKey(ValueKey('cell-$row-$column'));
 
 void main() {
   testWidgets('渲染列头、行号和数据', (tester) async {
@@ -422,5 +459,160 @@ void main() {
     // 排序会换一个新结果集，列不变；新结果集里读不到布局（比如 JOIN 结果不记）
     await pumpGrid(tester, FakeGridSource.rows(2));
     expect(widthOf(tester, 'cell-0-1'), closeTo(230, 1));
+  });
+
+  testWidgets('点一格再 Shift 点一格选出区域，⌘C 复制成 TSV', (tester) async {
+    mockClipboard(tester);
+    final source = FakeGridSource.rows(3);
+    await pumpGrid(tester, source);
+
+    await tester.tap(cell(0, 0));
+    await shiftTap(tester, cell(1, 1));
+    await pressCommand(tester, LogicalKeyboardKey.keyC);
+    await tester.pumpAndSettle();
+
+    expect(source.copies.single.$1, 0);
+    expect(source.copies.single.$2, 2);
+    expect(source.copies.single.$3, [0, 1]);
+    expect(clipboardText, '1\t用户1\n2\t用户2');
+    expect(find.text('已复制 2 行 × 2 列'), findsOneWidget);
+  });
+
+  testWidgets('反方向拖出的选区一样按左上到右下复制', (tester) async {
+    mockClipboard(tester);
+    final source = FakeGridSource.rows(3);
+    await pumpGrid(tester, source);
+
+    await tester.tap(cell(2, 1));
+    await shiftTap(tester, cell(1, 0));
+    await pressCommand(tester, LogicalKeyboardKey.keyC);
+    await tester.pumpAndSettle();
+
+    expect(source.copies.single.$1, 1);
+    expect(source.copies.single.$2, 2);
+    expect(source.copies.single.$3, [0, 1]);
+  });
+
+  testWidgets('换了列顺序，复制按屏幕上的顺序', (tester) async {
+    mockClipboard(tester);
+    final source = FakeGridSource.rows(2)
+      ..savedLayout = [ColumnLayout(name: 'name', width: 170), ColumnLayout(name: 'id', width: 170)];
+    await pumpGrid(tester, source);
+
+    await tester.tap(cell(0, 1));
+    await shiftTap(tester, cell(0, 0));
+    await pressCommand(tester, LogicalKeyboardKey.keyC);
+    await tester.pumpAndSettle();
+
+    expect(source.copies.single.$3, [1, 0]);
+    expect(clipboardText, '用户1\t1');
+  });
+
+  testWidgets('编辑框里的 ⌘C 归编辑框，网格不接管', (tester) async {
+    mockClipboard(tester);
+    final source = FakeGridSource.rows(2);
+    await pumpGrid(tester, source);
+
+    await doubleTap(tester, cell(0, 1));
+    expect(find.byType(TextField), findsOneWidget);
+    // 按下单元格时网格先拿了焦点，编辑框必须把焦点抢过来，否则打字没反应
+    final editable = tester.widget<EditableText>(find.byType(EditableText));
+    expect(editable.focusNode.hasPrimaryFocus, isTrue, reason: '双击进入编辑后焦点要在编辑框里');
+    await pressCommand(tester, LogicalKeyboardKey.keyC);
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(source.copies, isEmpty);
+  });
+
+  testWidgets('⌘V 确认后从选区左上角铺开粘贴', (tester) async {
+    mockClipboard(tester);
+    clipboardText = '甲\n乙\n';
+    final source = FakeGridSource.rows(3);
+    await pumpGrid(tester, source);
+
+    await tester.tap(cell(1, 1));
+    await pressCommand(tester, LogicalKeyboardKey.keyV);
+    await tester.pumpAndSettle();
+    expect(find.text('粘贴 2 行 × 1 列？'), findsOneWidget, reason: '写库前必须确认');
+
+    await tester.tap(find.widgetWithText(FilledButton, '粘贴'));
+    await tester.pumpAndSettle();
+
+    expect(source.pastes.single.$1, 1);
+    expect(source.pastes.single.$2, [1]);
+    expect(find.text('甲'), findsOneWidget);
+    expect(find.text('乙'), findsOneWidget);
+    expect(find.text('已写入 2 个单元格'), findsOneWidget);
+  });
+
+  testWidgets('取消粘贴就一格都不写', (tester) async {
+    mockClipboard(tester);
+    clipboardText = '甲';
+    final source = FakeGridSource.rows(2);
+    await pumpGrid(tester, source);
+
+    await tester.tap(cell(0, 1));
+    await pressCommand(tester, LogicalKeyboardKey.keyV);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('取消'));
+    await tester.pumpAndSettle();
+
+    expect(source.pastes, isEmpty);
+    expect(find.text('用户1'), findsOneWidget);
+  });
+
+  testWidgets('粘贴放不下时直接说明原因，不弹确认', (tester) async {
+    mockClipboard(tester);
+    final source = FakeGridSource.rows(2);
+    await pumpGrid(tester, source);
+
+    // 行超出
+    clipboardText = 'x\ny\nz';
+    await tester.tap(cell(1, 1));
+    await pressCommand(tester, LogicalKeyboardKey.keyV);
+    await tester.pumpAndSettle();
+    expect(find.textContaining('超出结果集末尾'), findsOneWidget);
+    expect(find.byType(AlertDialog), findsNothing);
+
+    // 列超出
+    clipboardText = 'a\tb';
+    await pressCommand(tester, LogicalKeyboardKey.keyV);
+    await tester.pumpAndSettle();
+    expect(find.textContaining('放不下'), findsOneWidget);
+    expect(find.byType(AlertDialog), findsNothing);
+    expect(source.pastes, isEmpty);
+  });
+
+  testWidgets('只读结果集粘贴时说明原因', (tester) async {
+    mockClipboard(tester);
+    clipboardText = 'x';
+    final source = FakeGridSource.rows(
+      2,
+      editability: const Editability.readOnly('结果集来自多张表（orders 和 users），不能编辑'),
+    );
+    await pumpGrid(tester, source);
+
+    await tester.tap(cell(0, 1));
+    await pressCommand(tester, LogicalKeyboardKey.keyV);
+    await tester.pumpAndSettle();
+
+    expect(find.byType(AlertDialog), findsNothing);
+    expect(source.pastes, isEmpty);
+    expect(find.textContaining('多张表'), findsOneWidget);
+  });
+
+  testWidgets('粘贴失败要把错误显示出来', (tester) async {
+    mockClipboard(tester);
+    clipboardText = 'x';
+    final source = FakeGridSource.rows(2)..editError = '第 1 行预期修改 1 行，实际 0 行，已整体回滚';
+    await pumpGrid(tester, source);
+
+    await tester.tap(cell(0, 1));
+    await pressCommand(tester, LogicalKeyboardKey.keyV);
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, '粘贴'));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('已整体回滚'), findsOneWidget);
   });
 }

@@ -620,3 +620,169 @@ async fn read_only_result_refuses_insert_and_delete() {
 
     cdata_core::session::close_session(id).await.ok();
 }
+
+#[tokio::test]
+async fn edit_caches_what_the_database_stored_not_what_was_typed() {
+    let Some(config) = config_from_env() else {
+        return;
+    };
+
+    let id = cdata_core::session::open_session(&config);
+    let summary = cdata_core::session::execute(
+        id,
+        "SELECT id, name, amount FROM edit_target ORDER BY id",
+        100,
+    )
+    .await
+    .expect("查询失败");
+    let index = summary.total_rows;
+    cdata_core::session::insert_row(id, vec![None, Some(CellValue::Text("缓存回读".into())), None])
+        .await
+        .expect("插入失败");
+
+    // DECIMAL(12,2) 存进去是 7.50，缓存里要是库里的值
+    cdata_core::session::apply_edit(id, index, 2, CellValue::Text("7.5".into()))
+        .await
+        .expect("写回失败");
+    let row = cdata_core::session::fetch_window(id, index, 1).expect("取窗口失败").remove(0);
+    assert_eq!(row[2], CellValue::Text("7.50".to_string()), "界面要显示库里真实存下的值");
+
+    cdata_core::session::delete_rows(id, vec![index]).await.expect("清理失败");
+    cdata_core::session::close_session(id).await.ok();
+}
+
+/// 在 edit_target 末尾插 n 行给粘贴测试用，返回第一行的下标和这些行的 id
+async fn insert_scratch_rows(session: u64, first: u64, n: usize, tag: &str) -> Vec<i64> {
+    for i in 0..n {
+        cdata_core::session::insert_row(
+            session,
+            vec![None, Some(CellValue::Text(format!("{tag}-{i}"))), None, None],
+        )
+        .await
+        .expect("插入失败");
+    }
+    let rows = cdata_core::session::fetch_window(session, first, n as u64).expect("取窗口失败");
+    let mut ids = Vec::new();
+    for row in rows {
+        match row[0] {
+            CellValue::Int(id) => ids.push(id),
+            ref other => panic!("自增主键没有回填：{other:?}"),
+        }
+    }
+    ids
+}
+
+#[tokio::test]
+async fn paste_writes_a_block_and_caches_stored_values() {
+    let Some(config) = config_from_env() else {
+        return;
+    };
+
+    let id = cdata_core::session::open_session(&config);
+    let summary = cdata_core::session::execute(
+        id,
+        "SELECT id, name, amount, note FROM edit_target ORDER BY id",
+        100,
+    )
+    .await
+    .expect("查询失败");
+    let first = summary.total_rows;
+    insert_scratch_rows(id, first, 2, "粘贴").await;
+
+    // 从表格软件粘两行两列：amount、note。note 第二行是 NULL
+    let values = cdata_core::clipboard::decode("1.5\t备注一\r\n2\tNULL\r\n").expect("解析失败");
+    let written = cdata_core::session::paste_cells(id, first, vec![2, 3], values)
+        .await
+        .expect("粘贴失败");
+    // 第二行 note 本来就是 NULL，没变的格子不写
+    assert_eq!(written, 3);
+
+    let rows = cdata_core::session::fetch_window(id, first, 2).expect("取窗口失败");
+    assert_eq!(rows[0][2], CellValue::Text("1.50".to_string()), "缓存里是库里存的值");
+    assert_eq!(rows[0][3], CellValue::Text("备注一".to_string()));
+    assert_eq!(rows[1][2], CellValue::Text("2.00".to_string()));
+    assert_eq!(rows[1][3], CellValue::Null);
+
+    // 复制出来就是库里的值，列按给的顺序
+    let tsv = cdata_core::session::copy_range(id, first, 2, vec![3, 2]).expect("复制失败");
+    assert_eq!(tsv, "备注一\t1.50\nNULL\t2.00");
+
+    // 再粘一遍同样的值：开了 CLIENT_FOUND_ROWS，写入相同内容不会被误判成定位失败
+    let rewritten = cdata_core::session::paste_cells(id, first, vec![2], vec![vec![CellValue::Text("1.5".into())]])
+        .await
+        .expect("写入相同的值不该失败");
+    assert_eq!(rewritten, 1);
+
+    cdata_core::session::delete_rows(id, vec![first, first + 1]).await.expect("清理失败");
+    cdata_core::session::close_session(id).await.ok();
+}
+
+#[tokio::test]
+async fn paste_refuses_primary_key_and_out_of_range_before_writing() {
+    let Some(config) = config_from_env() else {
+        return;
+    };
+
+    let id = cdata_core::session::open_session(&config);
+    let summary = cdata_core::session::execute(
+        id,
+        "SELECT id, name FROM edit_target ORDER BY id",
+        100,
+    )
+    .await
+    .expect("查询失败");
+    let total = summary.total_rows;
+
+    let err = cdata_core::session::paste_cells(id, 0, vec![0], vec![vec![CellValue::Text("99".into())]])
+        .await
+        .unwrap_err();
+    assert!(err.to_string().contains("主键"), "{err}");
+
+    let two_rows = vec![vec![CellValue::Text("x".into())], vec![CellValue::Text("y".into())]];
+    let err = cdata_core::session::paste_cells(id, total - 1, vec![1], two_rows)
+        .await
+        .unwrap_err();
+    assert!(err.to_string().contains("超出"), "{err}");
+
+    cdata_core::session::close_session(id).await.ok();
+}
+
+#[tokio::test]
+async fn paste_rolls_back_when_any_row_is_stale() {
+    let Some(config) = config_from_env() else {
+        return;
+    };
+
+    let id = cdata_core::session::open_session(&config);
+    let summary = cdata_core::session::execute(
+        id,
+        "SELECT id, name, amount, note FROM edit_target ORDER BY id",
+        100,
+    )
+    .await
+    .expect("查询失败");
+    let first = summary.total_rows;
+    let ids = insert_scratch_rows(id, first, 2, "粘贴回滚").await;
+
+    // 别人把第二行删了
+    let other = cdata_core::session::open_session(&config);
+    cdata_core::session::execute(other, &format!("DELETE FROM edit_target WHERE id = {}", ids[1]), 10)
+        .await
+        .expect("外部删除失败");
+
+    let values = vec![vec![CellValue::Text("改了".into())], vec![CellValue::Text("也改了".into())]];
+    let err = cdata_core::session::paste_cells(id, first, vec![1], values).await.unwrap_err();
+    assert!(err.to_string().contains("回滚"), "{err}");
+
+    // 第一行写成功过，但必须被回滚
+    assert_eq!(
+        count_where(&config, &format!("SELECT COUNT(*) FROM edit_target WHERE id = {} AND name = '粘贴回滚-0'", ids[0])).await,
+        1
+    );
+
+    cdata_core::session::execute(other, &format!("DELETE FROM edit_target WHERE id = {}", ids[0]), 10)
+        .await
+        .expect("清理失败");
+    cdata_core::session::close_session(other).await.ok();
+    cdata_core::session::close_session(id).await.ok();
+}

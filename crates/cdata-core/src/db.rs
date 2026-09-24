@@ -52,7 +52,10 @@ pub fn open_pool(config: &ConnectionConfig) -> Pool {
         .pass(Some(config.password.clone()))
         // 不设就走服务器默认的握手字符集，中文会按 latin1 解出乱码 —— 不报错、数据全错。
         // 必须用 setup 而不是 init：连接池归还连接时会 reset 会话，init 不重跑，SET NAMES 会丢
-        .setup(vec!["SET NAMES utf8mb4"]);
+        .setup(vec!["SET NAMES utf8mb4"])
+        // UPDATE 返回「匹配到的行数」而不是「真正变了的行数」。写回靠 affected_rows == 1
+        // 判断定位成功，不开的话写入和原值相同的内容（粘贴时很常见）会被误判成没找到这一行
+        .client_found_rows(true);
 
     if let Some(database) = &config.database {
         builder = builder.db_name(Some(database.clone()));

@@ -27,6 +27,8 @@ pub enum Error {
     NotEditable(String),
     /// 写回没有按预期生效
     EditFailed(String),
+    /// 复制粘贴的区域或内容不对
+    Clipboard(String),
 }
 
 impl std::fmt::Display for Error {
@@ -37,6 +39,7 @@ impl std::fmt::Display for Error {
             Error::Mysql(message) => write!(f, "MySQL 错误：{message}"),
             Error::NotEditable(reason) => write!(f, "{reason}"),
             Error::EditFailed(reason) => write!(f, "{reason}"),
+            Error::Clipboard(reason) => write!(f, "{reason}"),
         }
     }
 }
@@ -198,9 +201,9 @@ fn pool_of(session_id: u64) -> Result<Pool> {
 
 /// 改一个单元格并写回数据库。
 ///
-/// 值没变就不发 SQL —— 这样 affected_rows 为 0 就一定是定位失败，而不是
-/// 「MySQL 对相同值不计数」的歧义。写回成功后同步更新本地缓存，
-/// 否则界面显示的还是旧值。
+/// 值没变就不发 SQL。连接开了 CLIENT_FOUND_ROWS，affected_rows 是匹配行数，
+/// 不为 1 就是定位失败。写回后按主键重读这一行放进缓存 —— 用户填 `7.5`，
+/// DECIMAL(12,2) 存的是 `7.50`，缓存里放填的值就是在显示假数据。
 pub async fn apply_edit(
     session_id: u64,
     row_index: u64,
@@ -249,6 +252,9 @@ pub async fn apply_edit(
         )));
     }
 
+    drop(conn);
+    let fresh = reread_row(&pool, &target, &columns, &row).await?;
+
     let mut guard = store().lock().unwrap();
     let session = guard
         .sessions
@@ -258,9 +264,184 @@ pub async fn apply_edit(
         .result
         .as_mut()
         .ok_or(Error::NoResult(session_id))?;
-    result.rows[row_index][column_index] = new_value;
+    result.rows[row_index] = fresh;
 
     Ok(())
+}
+
+/// 按主键从库里重读一行。写库之后用它刷新缓存，界面显示的永远是库里真实存下的值
+async fn reread_row(
+    pool: &Pool,
+    target: &EditTarget,
+    columns: &[ColumnMeta],
+    row: &[CellValue],
+) -> Result<Vec<CellValue>> {
+    let select = build_select_by_key(target, columns, row).map_err(Error::EditFailed)?;
+    let reread = run_query_with_params(pool, &select.sql, select.params, 1).await?;
+    reread.rows.into_iter().next().ok_or_else(|| {
+        Error::EditFailed(
+            "已写入，但按主键读不回这一行（可能被 MySQL 转换了主键值），请重新查询确认".to_string(),
+        )
+    })
+}
+
+/// 把一片单元格编码成 TSV，复制用。
+///
+/// 直接读会话里的整份结果，选区超出界面当前窗口也没关系，不用把行搬过 FFI。
+/// column_indexes 按显示顺序给，TSV 里的列就是这个顺序。
+pub fn copy_range(
+    session_id: u64,
+    row_start: u64,
+    row_count: u64,
+    column_indexes: Vec<u64>,
+) -> Result<String> {
+    let guard = store().lock().unwrap();
+    let session = guard
+        .sessions
+        .get(&session_id)
+        .ok_or(Error::NoSuchSession(session_id))?;
+    let result = session.result.as_ref().ok_or(Error::NoResult(session_id))?;
+
+    let start = row_start as usize;
+    let end = start.saturating_add(row_count as usize);
+    if end > result.rows.len() {
+        return Err(Error::Clipboard(format!(
+            "复制区域到第 {end} 行，结果集只有 {} 行",
+            result.rows.len()
+        )));
+    }
+
+    let mut columns = Vec::with_capacity(column_indexes.len());
+    for index in column_indexes {
+        columns.push(index as usize);
+    }
+    crate::clipboard::encode(&result.rows[start..end], &columns).map_err(Error::Clipboard)
+}
+
+/// 从 row_start 行起，把一块值粘贴进 column_indexes 这几列，返回写了多少个单元格。
+///
+/// 和批量删除一样放一个事务，任何一格没写成就整体回滚。主键列、二进制列拒绝粘贴。
+/// 写完按主键重读改过的行，缓存里放库里真实存下的值。
+pub async fn paste_cells(
+    session_id: u64,
+    row_start: u64,
+    column_indexes: Vec<u64>,
+    values: Vec<Vec<CellValue>>,
+) -> Result<u64> {
+    let row_start = row_start as usize;
+    let mut column_indexes_usize = Vec::with_capacity(column_indexes.len());
+    for index in column_indexes {
+        column_indexes_usize.push(index as usize);
+    }
+    let column_indexes = column_indexes_usize;
+
+    // 先全部生成好再动库，任何一格有问题都一格不写
+    let (pool, target, columns, statements, touched) = {
+        let guard = store().lock().unwrap();
+        let session = guard
+            .sessions
+            .get(&session_id)
+            .ok_or(Error::NoSuchSession(session_id))?;
+        let result = session.result.as_ref().ok_or(Error::NoResult(session_id))?;
+        let target = edit_target(session, session_id)?;
+
+        if row_start + values.len() > result.rows.len() {
+            return Err(Error::Clipboard(format!(
+                "从第 {} 行粘贴 {} 行会超出结果集末尾（共 {} 行）",
+                row_start + 1,
+                values.len(),
+                result.rows.len()
+            )));
+        }
+        for &index in &column_indexes {
+            let column = result
+                .columns
+                .get(index)
+                .ok_or_else(|| Error::Clipboard(format!("列下标 {index} 越界")))?;
+            if target.key_indexes.contains(&index) {
+                return Err(Error::NotEditable(format!(
+                    "粘贴区域包含主键列 {}，改主键要用专门的流程",
+                    column.name
+                )));
+            }
+            if column.is_binary {
+                return Err(Error::NotEditable(format!(
+                    "粘贴区域包含二进制列 {}，暂不支持粘贴",
+                    column.name
+                )));
+            }
+        }
+
+        let mut statements = Vec::new();
+        let mut touched = Vec::new();
+        for (offset, pasted_row) in values.iter().enumerate() {
+            if pasted_row.len() != column_indexes.len() {
+                return Err(Error::Clipboard(format!(
+                    "第 {} 行有 {} 个值，选中的是 {} 列",
+                    offset + 1,
+                    pasted_row.len(),
+                    column_indexes.len()
+                )));
+            }
+
+            let row_index = row_start + offset;
+            let row = &result.rows[row_index];
+            let mut changed = false;
+            for (value, &column_index) in pasted_row.iter().zip(&column_indexes) {
+                if &row[column_index] == value {
+                    continue;
+                }
+                let statement = build_update(&target, &result.columns, row, column_index, value)
+                    .map_err(Error::NotEditable)?;
+                statements.push((row_index, statement));
+                changed = true;
+            }
+            if changed {
+                touched.push((row_index, row.clone()));
+            }
+        }
+
+        (session.pool.clone(), target, result.columns.clone(), statements, touched)
+    };
+
+    if statements.is_empty() {
+        return Ok(0);
+    }
+    let written = statements.len() as u64;
+
+    // ponytail: 一格一条 UPDATE，粘贴几千格以内够用；更大再改成一行一条多列 SET
+    let mut conn = pool.get_conn().await?;
+    let mut tx = conn.start_transaction(TxOpts::default()).await?;
+    for (row_index, statement) in statements {
+        tx.exec_drop(&statement.sql, statement.params).await?;
+        let affected = tx.affected_rows();
+        if affected != 1 {
+            tx.rollback().await?;
+            return Err(Error::EditFailed(format!(
+                "第 {} 行预期修改 1 行，实际 {affected} 行，已整体回滚（不支持事务的引擎无法回滚，请重新查询确认）",
+                row_index + 1
+            )));
+        }
+    }
+    tx.commit().await?;
+    drop(conn);
+
+    let mut fresh_rows = Vec::with_capacity(touched.len());
+    for (row_index, row) in &touched {
+        fresh_rows.push((*row_index, reread_row(&pool, &target, &columns, row).await?));
+    }
+
+    let mut guard = store().lock().unwrap();
+    let session = guard
+        .sessions
+        .get_mut(&session_id)
+        .ok_or(Error::NoSuchSession(session_id))?;
+    let result = session.result.as_mut().ok_or(Error::NoResult(session_id))?;
+    for (row_index, fresh) in fresh_rows {
+        result.rows[row_index] = fresh;
+    }
+
+    Ok(written)
 }
 
 /// 插一行并把它追加到结果集末尾，返回新的总行数。
@@ -329,13 +510,7 @@ pub async fn insert_row(session_id: u64, values: Vec<Option<CellValue>>) -> Resu
     }
     drop(conn);
 
-    let select = build_select_by_key(&target, &columns, &locator).map_err(Error::EditFailed)?;
-    let reread = run_query_with_params(&pool, &select.sql, select.params, 1).await?;
-    let Some(row) = reread.rows.into_iter().next() else {
-        return Err(Error::EditFailed(
-            "已插入，但按主键读不回这一行（可能被 MySQL 转换了主键值），请重新查询确认".to_string(),
-        ));
-    };
+    let row = reread_row(&pool, &target, &columns, &locator).await?;
 
     let mut guard = store().lock().unwrap();
     let session = guard
