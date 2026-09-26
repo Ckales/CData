@@ -10,6 +10,7 @@ import 'package:cdata_flutter/src/rust/api/db.dart';
 import 'package:cdata_flutter/src/rust/api/editor.dart';
 import 'package:cdata_flutter/src/rust/api/value.dart';
 import 'package:cdata_flutter/theme.dart';
+import 'package:flutter/gestures.dart' show kSecondaryButton;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -247,6 +248,34 @@ void main() {
     await tester.tap(find.text('运行'));
     await tester.pumpAndSettle();
     expect(runner.runs.last.filter.items, isEmpty);
+  });
+
+  testWidgets('右键加入筛选按格子的值加条件并重跑；刷新全部行按原条件重跑', (tester) async {
+    tester.view.physicalSize = const Size(1400, 1400);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final runner = FakeRunner();
+    await pumpTab(tester, runner, FakeLibrary());
+    await tester.tap(find.text('运行'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('cell-1-1')), buttons: kSecondaryButton);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('将 "name" 加入筛选…'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('应用'));
+    await tester.pumpAndSettle();
+    expect(describeFilterGroup(runner.runs.last.filter), 'name = 用户2');
+
+    final before = runner.runs.length;
+    await tester.tap(find.byKey(const ValueKey('cell-0-0')), buttons: kSecondaryButton);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('刷新全部行'));
+    await tester.pumpAndSettle();
+    expect(runner.runs, hasLength(before + 1));
+    expect(runner.runs.last.sql, 'SELECT * FROM t');
+    expect(describeFilterGroup(runner.runs.last.filter), 'name = 用户2', reason: '刷新保留当前筛选');
   });
 
   testWidgets('查询失败显示错误，历史没记上也要说', (tester) async {

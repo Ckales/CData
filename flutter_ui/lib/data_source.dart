@@ -5,7 +5,7 @@ import 'src/rust/api/csv_import.dart' as csv_import show suggestMapping;
 import 'src/rust/api/db.dart';
 // 顶层函数和下面 GridSource 的同名方法重名，方法体里直接调会解析成方法自己
 import 'src/rust/api/db.dart' as db
-    show insertRow, deleteRows, copyRange, parseClipboard, pasteCells, columnChoices, exportRows;
+    show refreshRow, insertRow, deleteRows, copyRange, parseClipboard, pasteCells, columnChoices, exportRows;
 import 'src/rust/api/layouts.dart';
 import 'src/rust/api/layouts.dart' as layouts show loadLayout, saveLayout;
 import 'src/rust/api/schema.dart';
@@ -30,6 +30,9 @@ abstract class GridSource {
   Future<List<CellValue>> row(int index);
 
   Future<void> edit(int rowIndex, int columnIndex, CellValue value);
+
+  /// 按主键从库里重读一行。库里找不到这一行就抛错
+  Future<void> refreshRow(int rowIndex);
 
   /// 插一行，返回新的总行数。values[i] 为 null 表示这一列交给 DEFAULT / 自增
   Future<int> insertRow(List<CellValue?> values);
@@ -146,6 +149,11 @@ class RustGridSource implements GridSource {
       columnIndex: BigInt.from(columnIndex),
       newValue: value,
     );
+  }
+
+  @override
+  Future<void> refreshRow(int rowIndex) {
+    return db.refreshRow(sessionId: sessionId, rowIndex: BigInt.from(rowIndex));
   }
 
   @override

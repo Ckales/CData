@@ -129,6 +129,9 @@ class SidebarItem extends StatelessWidget {
   final String? trailing;
   final bool selected;
   final VoidCallback? onTap;
+
+  /// 双击。设了之后单击要等双击判定超时才触发，只在确实需要双击的列表上用
+  final VoidCallback? onDoubleTap;
   final void Function(Offset position)? onSecondaryTap;
   final double indent;
 
@@ -140,6 +143,7 @@ class SidebarItem extends StatelessWidget {
     this.trailing,
     this.selected = false,
     this.onTap,
+    this.onDoubleTap,
     this.onSecondaryTap,
     this.indent = 0,
   });
@@ -159,6 +163,7 @@ class SidebarItem extends StatelessWidget {
           child: InkWell(
             borderRadius: BorderRadius.circular(5),
             onTap: onTap,
+            onDoubleTap: onDoubleTap,
             child: Container(
               height: 24,
               padding: EdgeInsets.only(left: 6 + indent, right: 8),

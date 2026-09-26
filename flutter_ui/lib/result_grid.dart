@@ -57,6 +57,12 @@ class ResultGrid extends StatefulWidget {
   /// 校验 TIME 输入，返回错误说明，合法返回 null。不传就调 core 的 checkTimeText，测试里换掉
   final String? Function(String text, int fsp)? checkTime;
 
+  /// 右键「加入筛选」：带着列名和这一格的原始值交给查询页。null 表示这个结果集不能筛选
+  final void Function(String column, CellValue value)? onAddToSearch;
+
+  /// 右键「刷新全部行」：重新执行查询。null 表示这个结果集不能单独重跑（脚本结果、执行计划）
+  final VoidCallback? onRefreshAll;
+
   const ResultGrid({
     super.key,
     required this.source,
@@ -65,6 +71,8 @@ class ResultGrid extends StatefulWidget {
     this.sortAscending = true,
     this.pickSavePath,
     this.checkTime,
+    this.onAddToSearch,
+    this.onRefreshAll,
   });
 
   QuerySummary get summary => source.summary;
@@ -306,23 +314,25 @@ class _ResultGridState extends State<ResultGrid> {
     return null;
   }
 
-  /// 双击进入编辑。先取原始值判断能不能改 —— 不从显示文本反推类型
-  Future<void> _beginEdit(int rowIndex, int columnIndex) async {
-    setState(() => _refusal = null);
-
+  /// 这一列不能改的原因，能改返回 null
+  String? _editRefusal(int columnIndex) {
     final editability = widget.summary.editability;
-    if (editability is Editability_ReadOnly) {
-      setState(() => _refusal = editability.field0);
-      return;
-    }
+    if (editability is Editability_ReadOnly) return editability.field0;
     final target = (editability as Editability_Editable).field0;
 
     // keyIndexes 是 FRB 的 Uint64List，元素是 BigInt（u64 装不进 Dart 的 int）。
     // contains 收 Object?，拿 int 去比会永远 false 而且编译不报错
     if (target.keyIndexes.contains(BigInt.from(columnIndex))) {
-      setState(() => _refusal = '${widget.summary.columns[columnIndex].name} 是主键列，改主键要用专门的流程');
-      return;
+      return '${widget.summary.columns[columnIndex].name} 是主键列，改主键要用专门的流程';
     }
+    return null;
+  }
+
+  /// 双击进入编辑。先取原始值判断能不能改 —— 不从显示文本反推类型
+  Future<void> _beginEdit(int rowIndex, int columnIndex) async {
+    final refusal = _editRefusal(columnIndex);
+    setState(() => _refusal = refusal);
+    if (refusal != null) return;
 
     final List<CellValue> row;
     try {
@@ -462,6 +472,14 @@ class _ResultGridState extends State<ResultGrid> {
     _gridFocus.requestFocus();
   }
 
+  /// 右键「设为 NULL」。直接写库，和编辑框里的 ∅ 一样不再确认
+  Future<void> _setNull(int rowIndex, int columnIndex) async {
+    final refusal = _editRefusal(columnIndex);
+    setState(() => _refusal = refusal);
+    if (refusal != null) return;
+    await _writeCell(rowIndex, columnIndex, const CellValue.null_());
+  }
+
   Future<void> _writeCell(int rowIndex, int columnIndex, CellValue value) async {
     try {
       await widget.source.edit(rowIndex, columnIndex, value);
@@ -477,9 +495,10 @@ class _ResultGridState extends State<ResultGrid> {
     });
   }
 
-  Future<void> _insertRow() async {
+  /// 新增一行。initial 是「复制行」带进来的原值
+  Future<void> _insertRow({List<CellValue?>? initial}) async {
     setState(() => _refusal = null);
-    final values = await showInsertRowDialog(context, widget.summary.columns);
+    final values = await showInsertRowDialog(context, widget.summary.columns, initial: initial);
     if (values == null || !mounted) return;
 
     try {
@@ -499,9 +518,63 @@ class _ResultGridState extends State<ResultGrid> {
     }
   }
 
-  /// 删选中的行。直接写库、不能撤销，所以不管几行都要确认
-  Future<void> _deleteSelected() async {
-    final rows = _selected.toList()..sort();
+  /// 复制行：拿这一行的原始值预填新增行表单。主键交给默认 / 自增，否则一定撞主键
+  Future<void> _duplicateRow(int rowIndex) async {
+    final editability = widget.summary.editability;
+    if (editability is Editability_ReadOnly) {
+      setState(() => _refusal = editability.field0);
+      return;
+    }
+    final target = (editability as Editability_Editable).field0;
+
+    final List<CellValue> row;
+    try {
+      row = await widget.source.row(rowIndex);
+    } catch (e) {
+      if (mounted) setState(() => _refusal = '$e');
+      return;
+    }
+    if (!mounted || row.isEmpty) return;
+
+    final initial = <CellValue?>[];
+    for (var i = 0; i < row.length; i++) {
+      initial.add(target.keyIndexes.contains(BigInt.from(i)) ? null : row[i]);
+    }
+    await _insertRow(initial: initial);
+  }
+
+  /// 按主键从库里重读这一行
+  Future<void> _refreshRow(int rowIndex) async {
+    setState(() {
+      _refusal = null;
+      _notice = null;
+    });
+    try {
+      await widget.source.refreshRow(rowIndex);
+      await _loadWindow(_windowStart, force: true);
+      if (mounted) setState(() => _notice = '已刷新第 ${rowIndex + 1} 行');
+    } catch (e) {
+      if (mounted) setState(() => _refusal = '$e');
+    }
+  }
+
+  /// 右键「加入筛选」：取这一格的原始值交给查询页，不从显示文本反推
+  Future<void> _addToSearch(int rowIndex, int columnIndex) async {
+    final onAddToSearch = widget.onAddToSearch;
+    if (onAddToSearch == null) return;
+    final List<CellValue> row;
+    try {
+      row = await widget.source.row(rowIndex);
+    } catch (e) {
+      if (mounted) setState(() => _refusal = '$e');
+      return;
+    }
+    if (!mounted || row.isEmpty) return;
+    onAddToSearch(widget.summary.columns[columnIndex].name, row[columnIndex]);
+  }
+
+  /// 删若干行。直接写库、不能撤销，所以不管几行都要确认
+  Future<void> _deleteRows(List<int> rows) async {
     setState(() => _refusal = null);
 
     final confirmed = await showDialog<bool>(
@@ -798,15 +871,16 @@ class _ResultGridState extends State<ResultGrid> {
         key == LogicalKeyboardKey.end;
   }
 
-  /// 复制选区。编码在 Rust 侧做，NULL、二进制、带制表符的文本怎么写都在那里定
   Future<void> _copySelection() async {
     final range = _range;
     if (range == null) return;
+    await _copyCells(range.top, range.bottom - range.top + 1, _order.sublist(range.left, range.right + 1));
+  }
 
-    final rowCount = range.bottom - range.top + 1;
-    final columns = _order.sublist(range.left, range.right + 1);
+  /// 复制一片单元格。编码在 Rust 侧做，NULL、二进制、带制表符的文本怎么写都在那里定
+  Future<void> _copyCells(int rowStart, int rowCount, List<int> columns) async {
     try {
-      final tsv = await widget.source.copyRange(range.top, rowCount, columns);
+      final tsv = await widget.source.copyRange(rowStart, rowCount, columns);
       await Clipboard.setData(ClipboardData(text: tsv));
       if (!mounted) return;
       setState(() {
@@ -956,6 +1030,85 @@ class _ResultGridState extends State<ResultGrid> {
     }
   }
 
+  /// 单元格右键菜单，按 Querious 的分组：值、行、表。
+  /// 右键点在选区外就先选中这一格；点在选中的行上，删除作用于全部选中行
+  Future<void> _showCellMenu(int row, int position, Offset globalPosition) async {
+    _gridFocus.requestFocus();
+    final range = _range;
+    final inRange =
+        range != null &&
+        row >= range.top &&
+        row <= range.bottom &&
+        position >= range.left &&
+        position <= range.right;
+    if (!inRange) {
+      setState(() {
+        _anchor = (row: row, position: position);
+        _corner = _anchor;
+      });
+    }
+
+    final columnIndex = _order[position];
+    final name = widget.summary.columns[columnIndex].name;
+    final editable = widget.summary.editability is Editability_Editable;
+    final rows = _selected.contains(row) ? (_selected.toList()..sort()) : [row];
+
+    final choice = await showMenu<String>(
+      context: context,
+      position: RelativeRect.fromLTRB(globalPosition.dx, globalPosition.dy, globalPosition.dx, globalPosition.dy),
+      items: [
+        PopupMenuItem(value: 'copy-value', height: 26, child: Text('复制 "$name" 的值')),
+        PopupMenuItem(value: 'edit', height: 26, enabled: editable, child: Text('编辑 "$name" 的值…')),
+        PopupMenuItem(value: 'null', height: 26, enabled: editable, child: Text('将 "$name" 设为 NULL')),
+        if (widget.onAddToSearch != null) ...[
+          const PopupMenuDivider(height: 8),
+          PopupMenuItem(value: 'search', height: 26, child: Text('将 "$name" 加入筛选…')),
+        ],
+        const PopupMenuDivider(height: 8),
+        PopupMenuItem(
+          value: 'delete',
+          height: 26,
+          enabled: editable,
+          child: Text(rows.length == 1 ? '删除行' : '删除 ${rows.length} 行'),
+        ),
+        const PopupMenuDivider(height: 8),
+        PopupMenuItem(value: 'insert', height: 26, enabled: editable, child: const Text('新增行…')),
+        PopupMenuItem(value: 'duplicate', height: 26, enabled: editable, child: const Text('复制为新行…')),
+        const PopupMenuItem(value: 'copy-row', height: 26, child: Text('复制整行')),
+        PopupMenuItem(value: 'refresh-row', height: 26, enabled: editable, child: const Text('刷新行')),
+        const PopupMenuDivider(height: 8),
+        if (widget.onRefreshAll != null)
+          const PopupMenuItem(value: 'refresh-all', height: 26, child: Text('刷新全部行')),
+        const PopupMenuItem(value: 'export', height: 26, child: Text('导出…')),
+      ],
+    );
+    if (!mounted || choice == null) return;
+    switch (choice) {
+      case 'copy-value':
+        await _copyCells(row, 1, [columnIndex]);
+      case 'edit':
+        await _beginEdit(row, columnIndex);
+      case 'null':
+        await _setNull(row, columnIndex);
+      case 'search':
+        await _addToSearch(row, columnIndex);
+      case 'duplicate':
+        await _duplicateRow(row);
+      case 'refresh-row':
+        await _refreshRow(row);
+      case 'refresh-all':
+        widget.onRefreshAll?.call();
+      case 'copy-row':
+        await _copyCells(row, 1, [..._order]);
+      case 'delete':
+        await _deleteRows(rows);
+      case 'insert':
+        await _insertRow();
+      case 'export':
+        await _export();
+    }
+  }
+
   void _scheduleLoad(int start) {
     if (_loading || start == _windowStart) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -1032,6 +1185,8 @@ class _ResultGridState extends State<ResultGrid> {
                                   ? (left: range.left, right: range.right)
                                   : null,
                               onPointerDownCell: (event, position) => _selectCell(event, index, position),
+                              onSecondaryTapCell: (position, globalPosition) =>
+                                  _showCellMenu(index, position, globalPosition),
                               rowNumber: index + 1,
                               selected: _selected.contains(index),
                               onTapRowNumber: () => _toggleSelected(index),
@@ -1068,7 +1223,7 @@ class _ResultGridState extends State<ResultGrid> {
           selectedCount: _selected.length,
           onInsert: _insertRow,
           onExport: _export,
-          onDeleteSelected: _deleteSelected,
+          onDeleteSelected: () => _deleteRows(_selected.toList()..sort()),
         ),
       ],
     );
@@ -1249,6 +1404,7 @@ class _DataRow extends StatelessWidget {
   /// 这一行里落在选区内的显示位置，null 表示这一行不在选区里
   final ({int left, int right})? selectedPositions;
   final void Function(PointerDownEvent event, int position) onPointerDownCell;
+  final void Function(int position, Offset globalPosition) onSecondaryTapCell;
   final int? editingColumn;
   final TextEditingController editController;
   final FocusNode editFocus;
@@ -1267,6 +1423,7 @@ class _DataRow extends StatelessWidget {
     required this.widths,
     required this.selectedPositions,
     required this.onPointerDownCell,
+    required this.onSecondaryTapCell,
     required this.editingColumn,
     required this.editController,
     required this.editFocus,
@@ -1345,6 +1502,7 @@ class _DataRow extends StatelessWidget {
                 child: GestureDetector(
                   behavior: HitTestBehavior.opaque,
                   onDoubleTap: () => onDoubleTapCell(i),
+                  onSecondaryTapUp: (details) => onSecondaryTapCell(position, details.globalPosition),
                   child: ColoredBox(
                     color: inRange ? mac.accent.withValues(alpha: 0.24) : Colors.transparent,
                     child: Padding(

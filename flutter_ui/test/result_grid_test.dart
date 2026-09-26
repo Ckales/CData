@@ -6,7 +6,7 @@
 import 'package:cdata_flutter/result_grid.dart';
 import 'package:cdata_flutter/src/rust/api/db.dart';
 import 'package:cdata_flutter/src/rust/api/layouts.dart';
-import 'package:flutter/gestures.dart' show PointerDeviceKind;
+import 'package:flutter/gestures.dart' show PointerDeviceKind, kSecondaryButton;
 import 'package:cdata_flutter/src/rust/api/value.dart';
 import 'package:cdata_flutter/theme.dart';
 import 'package:flutter/material.dart';
@@ -484,6 +484,139 @@ void main() {
     // 排序会换一个新结果集，列不变；新结果集里读不到布局（比如 JOIN 结果不记）
     await pumpGrid(tester, FakeGridSource.rows(2));
     expect(widthOf(tester, 'cell-0-1'), closeTo(230, 1));
+  });
+
+  group('右键菜单', () {
+    Future<void> rightClick(WidgetTester tester, Finder finder) async {
+      await tester.tap(finder, buttons: kSecondaryButton);
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('复制值只复制点中的那一格，复制整行按屏幕列序', (tester) async {
+      mockClipboard(tester);
+      final source = FakeGridSource.rows(3);
+      await pumpGrid(tester, source);
+
+      await rightClick(tester, cell(1, 1));
+      await tester.tap(find.text('复制 "name" 的值'));
+      await tester.pumpAndSettle();
+      expect(clipboardText, '用户2');
+
+      await rightClick(tester, cell(1, 1));
+      await tester.tap(find.text('复制整行'));
+      await tester.pumpAndSettle();
+      expect(source.copies.last.$1, 1);
+      expect(source.copies.last.$2, 1);
+      expect(source.copies.last.$3, [0, 1]);
+    });
+
+    testWidgets('设为 NULL 写回 NULL；主键列拒绝并说明原因', (tester) async {
+      final source = FakeGridSource.rows(2);
+      await pumpGrid(tester, source);
+
+      await rightClick(tester, cell(0, 1));
+      await tester.tap(find.text('将 "name" 设为 NULL'));
+      await tester.pumpAndSettle();
+      expect(source.edits.single, (0, 1, const CellValue.null_()));
+
+      await rightClick(tester, cell(0, 0));
+      await tester.tap(find.text('将 "id" 设为 NULL'));
+      await tester.pumpAndSettle();
+      expect(source.edits, hasLength(1));
+      expect(find.textContaining('主键'), findsOneWidget);
+    });
+
+    testWidgets('删除行要确认；点在选中行上删全部选中行', (tester) async {
+      final source = FakeGridSource.rows(3);
+      await pumpGrid(tester, source);
+
+      await tester.tap(find.byKey(const ValueKey('row-number-0')));
+      await tester.tap(find.byKey(const ValueKey('row-number-2')));
+      await tester.pumpAndSettle();
+
+      await rightClick(tester, cell(2, 1));
+      await tester.tap(find.text('删除 2 行').last);
+      await tester.pumpAndSettle();
+      expect(find.text('删除 2 行？'), findsOneWidget);
+
+      await tester.tap(find.widgetWithText(FilledButton, '删除'));
+      await tester.pumpAndSettle();
+      expect(source.deletes, [
+        [0, 2],
+      ]);
+    });
+
+    testWidgets('复制为新行：原值预填，主键交给默认，插入后多一行', (tester) async {
+      final source = FakeGridSource.rows(2);
+      await pumpGrid(tester, source);
+
+      await rightClick(tester, cell(1, 1));
+      await tester.tap(find.text('复制为新行…'));
+      await tester.pumpAndSettle();
+      expect(find.text('复制为新行'), findsOneWidget);
+      expect(tester.widget<TextField>(find.byKey(const ValueKey('insert-field-1'))).controller!.text, '用户2');
+
+      await tester.tap(find.text('插入'));
+      await tester.pumpAndSettle();
+      expect(source.inserts.single, [null, const CellValue.text('用户2')]);
+      expect(find.text('3 行'), findsOneWidget);
+    });
+
+    testWidgets('复制为新行：二进制原值原样写回，不经过文本', (tester) async {
+      final bytes = Uint8List.fromList([0, 159, 255]);
+      final source = FakeGridSource(
+        summary: summaryOf(columns: [column('id'), column('blob', isBinary: true)], totalRows: 1),
+        rows: [
+          [const CellValue.int(1), CellValue.bytes(bytes)],
+        ],
+      );
+      await pumpGrid(tester, source);
+
+      await rightClick(tester, cell(0, 1));
+      await tester.tap(find.text('复制为新行…'));
+      await tester.pumpAndSettle();
+      expect(find.text('保留原值（3 字节）'), findsOneWidget);
+
+      await tester.tap(find.text('插入'));
+      await tester.pumpAndSettle();
+      expect(source.inserts.single, [null, CellValue.bytes(bytes)]);
+    });
+
+    testWidgets('刷新行按行下标交给数据源，失败显示原因', (tester) async {
+      final source = FakeGridSource.rows(2);
+      await pumpGrid(tester, source);
+
+      await rightClick(tester, cell(1, 1));
+      await tester.tap(find.text('刷新行'));
+      await tester.pumpAndSettle();
+      expect(source.refreshes, [1]);
+      expect(find.text('已刷新第 2 行'), findsOneWidget);
+
+      source.editError = '库里已经找不到这一行';
+      await rightClick(tester, cell(0, 1));
+      await tester.tap(find.text('刷新行'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('找不到这一行'), findsOneWidget);
+    });
+
+    testWidgets('没接查询页时不给加入筛选和刷新全部行', (tester) async {
+      await pumpGrid(tester, FakeGridSource.rows(2));
+      await rightClick(tester, cell(0, 1));
+      expect(find.textContaining('加入筛选'), findsNothing);
+      expect(find.text('刷新全部行'), findsNothing);
+    });
+
+    testWidgets('只读结果集的改动项置灰', (tester) async {
+      final source = FakeGridSource.rows(2, editability: const Editability.readOnly('没有主键'));
+      await pumpGrid(tester, source);
+
+      await rightClick(tester, cell(0, 1));
+      PopupMenuItem<String> item(String text) =>
+          tester.widget<PopupMenuItem<String>>(find.widgetWithText(PopupMenuItem<String>, text));
+      expect(item('将 "name" 设为 NULL').enabled, isFalse);
+      expect(item('删除行').enabled, isFalse);
+      expect(item('复制整行').enabled, isTrue);
+    });
   });
 
   testWidgets('点一格再 Shift 点一格选出区域，⌘C 复制成 TSV', (tester) async {

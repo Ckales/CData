@@ -735,6 +735,44 @@ pub async fn apply_edit(
     Ok(())
 }
 
+/// 按主键从库里重读缓存里的一行，右键「刷新行」用。
+///
+/// 库里已经没有这一行（被删了或主键被改了）就报错，缓存原样留着 —— 不替用户把行删掉，
+/// 让他重新查询确认。
+pub async fn refresh_row(session_id: u64, row_index: u64) -> Result<()> {
+    let row_index = row_index as usize;
+    let (pool, target, columns, row) = {
+        let guard = store().lock().unwrap();
+        let session = guard
+            .sessions
+            .get(&session_id)
+            .ok_or(Error::NoSuchSession(session_id))?;
+        let result = session.result.as_ref().ok_or(Error::NoResult(session_id))?;
+        let target = edit_target(session, session_id)?;
+        let row = result
+            .rows
+            .get(row_index)
+            .ok_or_else(|| Error::EditFailed(format!("行下标 {row_index} 越界")))?
+            .clone();
+        (session.pool.clone(), target, result.columns.clone(), row)
+    };
+
+    let select = build_select_by_key(&target, &columns, &row).map_err(Error::EditFailed)?;
+    let reread = run_query_with_params(&pool, &select.sql, select.params, 1).await?;
+    let fresh = reread.rows.into_iter().next().ok_or_else(|| {
+        Error::EditFailed("库里已经找不到这一行（可能被删除或改了主键），请重新查询".to_string())
+    })?;
+
+    let mut guard = store().lock().unwrap();
+    let session = guard
+        .sessions
+        .get_mut(&session_id)
+        .ok_or(Error::NoSuchSession(session_id))?;
+    let result = session.result.as_mut().ok_or(Error::NoResult(session_id))?;
+    result.rows[row_index] = fresh;
+    Ok(())
+}
+
 /// 按主键从库里重读一行。写库之后用它刷新缓存，界面显示的永远是库里真实存下的值
 async fn reread_row(
     pool: &DbPool,

@@ -622,6 +622,48 @@ async fn insert_reads_back_real_values_and_delete_removes_it() {
 }
 
 #[tokio::test]
+async fn refresh_row_rereads_by_key_and_reports_a_vanished_row() {
+    let Some(config) = config_from_env() else {
+        return;
+    };
+
+    let id = cdata_core::session::open_session(&config).await.unwrap();
+    let summary = cdata_core::session::execute(id, "SELECT id, name FROM edit_target ORDER BY id", 100)
+        .await
+        .expect("查询失败");
+    let before = summary.total_rows;
+    cdata_core::session::insert_row(id, vec![None, Some(CellValue::Text("刷新前".into()))])
+        .await
+        .expect("插入失败");
+    let CellValue::Int(new_id) = cdata_core::session::fetch_window(id, before, 1).unwrap()[0][0] else {
+        panic!("自增主键没有回填");
+    };
+
+    // 另一个会话改掉这一行，本会话的缓存还是旧值，刷新后才变
+    let other = cdata_core::session::open_session(&config).await.unwrap();
+    cdata_core::session::execute(other, &format!("SELECT id, name FROM edit_target WHERE id = {new_id}"), 10)
+        .await
+        .expect("查询失败");
+    cdata_core::session::apply_edit(other, 0, 1, CellValue::Text("刷新后".into()))
+        .await
+        .expect("改值失败");
+
+    cdata_core::session::refresh_row(id, before).await.expect("刷新失败");
+    let row = cdata_core::session::fetch_window(id, before, 1).unwrap().remove(0);
+    assert_eq!(row[1], CellValue::Text("刷新后".to_string()));
+
+    // 另一个会话把行删了：刷新要报错，缓存原样留着，不替用户删
+    cdata_core::session::delete_rows(other, vec![0]).await.expect("删除失败");
+    let err = cdata_core::session::refresh_row(id, before).await.unwrap_err();
+    assert!(err.to_string().contains("找不到这一行"), "{err}");
+    let row = cdata_core::session::fetch_window(id, before, 1).unwrap().remove(0);
+    assert_eq!(row[1], CellValue::Text("刷新后".to_string()));
+
+    cdata_core::session::close_session(other).await.ok();
+    cdata_core::session::close_session(id).await.ok();
+}
+
+#[tokio::test]
 async fn batch_delete_rolls_back_when_any_row_is_stale() {
     let Some(config) = config_from_env() else {
         return;

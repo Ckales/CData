@@ -139,6 +139,16 @@ class FakeGridSource implements GridSource {
     rows[rowIndex][columnIndex] = value;
   }
 
+  /// refreshRow 的调用记录：行下标
+  final List<int> refreshes = [];
+
+  @override
+  Future<void> refreshRow(int rowIndex) async {
+    final error = editError;
+    if (error != null) throw Exception(error);
+    refreshes.add(rowIndex);
+  }
+
   @override
   Future<int> insertRow(List<CellValue?> values) async {
     final error = editError;

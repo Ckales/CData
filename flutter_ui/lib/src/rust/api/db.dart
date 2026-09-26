@@ -83,6 +83,15 @@ Future<void> applyEdit({
   newValue: newValue,
 );
 
+/// 按主键从库里重读一行放回缓存。库里找不到这一行就报错，缓存不动
+Future<void> refreshRow({
+  required BigInt sessionId,
+  required BigInt rowIndex,
+}) => RustLib.instance.api.crateApiDbRefreshRow(
+  sessionId: sessionId,
+  rowIndex: rowIndex,
+);
+
 /// 插一行，返回新的总行数。values[i] 为 null 表示这一列交给 DEFAULT / 自增
 Future<BigInt> insertRow({
   required BigInt sessionId,

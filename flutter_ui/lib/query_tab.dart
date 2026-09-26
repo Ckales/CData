@@ -10,6 +10,7 @@ import 'src/rust/api/editor.dart';
 // 和下面 QueryRunner 的同名方法重名，方法体里直接调会解析成方法自己
 import 'src/rust/api/editor.dart' as editor show explain, dropChildResults;
 import 'src/rust/api/options.dart';
+import 'src/rust/api/value.dart';
 
 /// 一个标签页跑查询的后端。每个标签一个会话：结果集留在会话里，一个会话只放一份结果
 abstract class QueryRunner {
@@ -395,6 +396,43 @@ class QueryTabState extends State<QueryTab> {
     await _runView();
   }
 
+  /// 右键「加入筛选」：按这一格的值加一条条件，打开筛选框让用户确认或改。
+  /// 当前是「或」分组时整组包进括号再「且」上新条件，不然新条件只是多一个或项，结果反而变多
+  Future<void> _addToSearch(String column, CellValue value) async {
+    final FilterCondition condition;
+    switch (value) {
+      case CellValue_Null():
+        condition = FilterCondition(column: column, op: FilterOp.isNull, value: '');
+      case CellValue_Int(:final field0):
+        condition = FilterCondition(column: column, op: FilterOp.eq, value: field0.toString());
+      case CellValue_UInt(:final field0):
+        condition = FilterCondition(column: column, op: FilterOp.eq, value: field0.toString());
+      case CellValue_Double(:final field0):
+        condition = FilterCondition(column: column, op: FilterOp.eq, value: field0.toString());
+      case CellValue_Text(:final field0):
+        condition = FilterCondition(column: column, op: FilterOp.eq, value: field0);
+      // 二进制和解码失败的文本没法写成文本条件，值留空让用户自己填
+      case CellValue_Bytes():
+      case CellValue_InvalidText():
+        condition = FilterCondition(column: column, op: FilterOp.eq, value: '');
+    }
+
+    final FilterGroup initial;
+    if (_filter.items.isEmpty || _filter.matchAll) {
+      initial = FilterGroup(matchAll: true, items: [..._filter.items, FilterItem.condition(condition)]);
+    } else {
+      initial = FilterGroup(
+        matchAll: true,
+        items: [FilterItem.group(_filter), FilterItem.condition(condition)],
+      );
+    }
+
+    final result = await showFilterGroupDialog(context, columns: _columns, initial: initial);
+    if (result == null || !mounted) return;
+    setState(() => _filter = result);
+    await _runView();
+  }
+
   Future<void> _clearFilter() async {
     setState(() => _filter = _noFilter);
     await _runView();
@@ -500,6 +538,9 @@ class QueryTabState extends State<QueryTab> {
                         sortColumn: view.isMain ? _sortColumn : null,
                         sortAscending: _sortAscending,
                         pickSavePath: widget.pickSavePath,
+                        onAddToSearch: view.isMain && !_busy ? _addToSearch : null,
+                        // 按当前的 SQL + 筛选 + 排序重跑一次，拿库里最新的数据
+                        onRefreshAll: view.isMain && !_busy ? _runView : null,
                       ),
                   ],
                 ),

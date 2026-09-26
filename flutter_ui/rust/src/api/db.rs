@@ -248,6 +248,11 @@ pub async fn apply_edit(
     .await
 }
 
+/// 按主键从库里重读一行放回缓存。库里找不到这一行就报错，缓存不动
+pub async fn refresh_row(session_id: u64, row_index: u64) -> Result<()> {
+    on_runtime(async move { cdata_core::session::refresh_row(session_id, row_index).await }).await
+}
+
 /// 插一行，返回新的总行数。values[i] 为 null 表示这一列交给 DEFAULT / 自增
 pub async fn insert_row(session_id: u64, values: Vec<Option<CellValue>>) -> Result<u64> {
     on_runtime(async move { cdata_core::session::insert_row(session_id, values).await }).await

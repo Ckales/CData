@@ -81,15 +81,29 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
     }
   }
 
-  /// 点左边一条收藏：填表单，密码从钥匙串取
-  Future<void> _pick(SavedConnection connection) async {
+  /// 点左边一条收藏：填表单，密码从钥匙串取。钥匙串读失败（比如点了拒绝）返回 false
+  Future<bool> _pick(SavedConnection connection) async {
     _name.text = connection.name;
     _host.text = connection.host;
     _port.text = connection.port.toString();
     _user.text = connection.user;
     _database.text = connection.database ?? '';
-    final password = await loadPassword(id: connection.id);
-    if (!mounted) return;
+    final String? password;
+    try {
+      password = await loadPassword(id: connection.id);
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _savedId = connection.id;
+          _options = connection.options;
+          _sshSecrets = const [];
+          _password.clear();
+          _error = '从钥匙串读密码失败：$e';
+        });
+      }
+      return false;
+    }
+    if (!mounted) return false;
     setState(() {
       _savedId = connection.id;
       _options = connection.options;
@@ -99,6 +113,7 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
       _password.text = password ?? '';
       _error = null;
     });
+    return true;
   }
 
   void _newConnection() {
@@ -210,6 +225,13 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
     });
   }
 
+  /// 双击收藏：填好表单直接连
+  Future<void> _open(SavedConnection connection) async {
+    final picked = await _pick(connection);
+    if (!picked || !mounted) return;
+    await _connect();
+  }
+
   Future<void> _connect() async {
     if (_connecting) return;
     final port = int.tryParse(_port.text.trim());
@@ -275,6 +297,7 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
                   saved: _saved,
                   selectedId: _savedId,
                   onPick: _pick,
+                  onOpen: _open,
                   onNew: _newConnection,
                   onDelete: _delete,
                 ),
@@ -385,6 +408,7 @@ class _FavoriteList extends StatelessWidget {
   final List<SavedConnection> saved;
   final String? selectedId;
   final void Function(SavedConnection connection) onPick;
+  final void Function(SavedConnection connection) onOpen;
   final VoidCallback onNew;
   final void Function(SavedConnection connection) onDelete;
 
@@ -392,6 +416,7 @@ class _FavoriteList extends StatelessWidget {
     required this.saved,
     required this.selectedId,
     required this.onPick,
+    required this.onOpen,
     required this.onNew,
     required this.onDelete,
   });
@@ -429,6 +454,7 @@ class _FavoriteList extends StatelessWidget {
                           label: connection.name,
                           selected: connection.id == selectedId,
                           onTap: () => onPick(connection),
+                          onDoubleTap: () => onOpen(connection),
                         ),
                     ],
                   ),
