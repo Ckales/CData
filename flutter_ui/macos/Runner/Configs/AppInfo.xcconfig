@@ -12,3 +12,6 @@ PRODUCT_BUNDLE_IDENTIFIER = com.ckales.cdata
 
 // The copyright displayed in application information
 PRODUCT_COPYRIGHT = Copyright © 2026 Ckales. All rights reserved.
+
+// 本机签名覆盖（可选，不入库），见 DEV_NOTES.md「开发版签名」
+#include? "Local.xcconfig"
