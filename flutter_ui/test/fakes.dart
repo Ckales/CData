@@ -469,6 +469,54 @@ class FakeSchemaSource implements SchemaSource {
     if (error != null) throw error;
     applied.add(statements);
   }
+
+  /// 收到的表操作预览，和执行过的表操作
+  final List<(String, TableAction)> actionPreviews = [];
+  final List<(String, TableAction, List<String>)> actionsApplied = [];
+
+  @override
+  Future<AlterPlan> previewTableAction(String database, String table, TableAction action) async {
+    actionPreviews.add((table, action));
+    final error = previewError;
+    if (error != null) throw error;
+    return plan;
+  }
+
+  /// 假装库里真的改了：改名、删除会反映到表清单上，侧栏重读时能看到
+  @override
+  Future<void> applyTableAction(String database, String table, TableAction action, List<String> statements) async {
+    final error = applyError;
+    if (error != null) throw error;
+    actionsApplied.add((table, action, statements));
+    final tables = tablesByDb[database]!;
+    final index = tables.indexWhere((info) => info.name == table);
+    switch (action) {
+      case TableAction_Rename(:final newName):
+        final old = tables[index];
+        tables[index] = TableInfo(name: newName, estimatedRows: old.estimatedRows, isView: old.isView);
+      case TableAction_Drop():
+        tables.removeAt(index);
+      case TableAction_Duplicate() || TableAction_Truncate():
+        break;
+    }
+  }
+
+  int rowCount = 1234;
+
+  @override
+  Future<int> countRows(String database, String table) async => rowCount;
+
+  List<MaintenanceMessage> maintenanceMessages = const [MaintenanceMessage(msgType: 'status', text: 'OK')];
+  final List<(String, Maintenance)> maintenanceRuns = [];
+
+  @override
+  Future<List<MaintenanceMessage>> runMaintenance(String database, String table, Maintenance op) async {
+    maintenanceRuns.add((table, op));
+    return maintenanceMessages;
+  }
+
+  @override
+  Future<String> insertTemplate(String database, String table) async => 'INSERT INTO `$table` (`id`)\nVALUES\n\t(?);';
 }
 
 TargetColumn targetColumn(

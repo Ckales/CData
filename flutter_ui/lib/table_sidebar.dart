@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'data_source.dart';
 import 'mac_widgets.dart';
 import 'src/rust/api/schema.dart';
+import 'structure_editor.dart' show showDdlPreview;
 import 'theme.dart';
 
 /// 左侧的库表清单（Querious 的样子）：库选择器、过滤框、蓝色表图标的紧凑列表。
@@ -26,6 +28,12 @@ class TableSidebar extends StatefulWidget {
   /// 取消返回 null。null 就不给这一项
   final Future<String?> Function(String database)? onCreateTable;
 
+  /// 右键「在新标签中打开」。null 就不给这一项
+  final void Function(String table)? onOpenInNewTab;
+
+  /// 改名、复制、删除、清空执行成功之后通知外面：标签要跟着换表名、清掉已删的表、重读数据和补全目录
+  final void Function(String table, TableAction action)? onTableAction;
+
   const TableSidebar({
     super.key,
     required this.source,
@@ -36,6 +44,8 @@ class TableSidebar extends StatefulWidget {
     this.onShowStructure,
     this.onImport,
     this.onCreateTable,
+    this.onOpenInNewTab,
+    this.onTableAction,
   });
 
   @override
@@ -134,27 +144,216 @@ class _TableSidebarState extends State<TableSidebar> {
     if (choice == 'create') await _createTable();
   }
 
-  /// 右键菜单，出现在鼠标位置
-  Future<void> _showMenu(String table, Offset position) async {
+  /// 右键菜单，出现在鼠标位置。分组照 Querious：打开、改名复制、删除、复制文本、导入统计、新建
+  Future<void> _showMenu(TableInfo info, Offset position) async {
+    final table = info.name;
+    final isView = info.isView;
     final onShowStructure = widget.onShowStructure;
     final onImport = widget.onImport;
+    final onOpenInNewTab = widget.onOpenInNewTab;
+    final at = RelativeRect.fromLTRB(position.dx, position.dy, position.dx, position.dy);
     final choice = await showMenu<String>(
       context: context,
-      position: RelativeRect.fromLTRB(position.dx, position.dy, position.dx, position.dy),
+      position: at,
       items: [
         const PopupMenuItem(value: 'browse', height: 26, child: Text('浏览数据')),
-        if (onShowStructure != null)
-          const PopupMenuItem(value: 'structure', height: 26, child: Text('查看结构')),
-        if (onImport != null)
-          const PopupMenuItem(value: 'import', height: 26, child: Text('导入 CSV…')),
+        if (onOpenInNewTab != null) const PopupMenuItem(value: 'new-tab', height: 26, child: Text('在新标签中打开')),
+        const PopupMenuDivider(height: 8),
+        const PopupMenuItem(value: 'rename', height: 26, child: Text('重命名…')),
+        // 视图没法 CREATE TABLE … LIKE，复制请拿建表语句改
+        if (!isView) const PopupMenuItem(value: 'duplicate', height: 26, child: Text('复制表…')),
+        const PopupMenuDivider(height: 8),
+        const PopupMenuItem(value: 'drop', height: 26, child: Text('删除…')),
+        const PopupMenuDivider(height: 8),
+        const PopupMenuItem(value: 'copy-name', height: 26, child: Text('复制名称')),
+        const PopupMenuItem(value: 'copy-create', height: 26, child: Text('复制建表语句')),
+        if (!isView) const PopupMenuItem(value: 'copy-insert', height: 26, child: Text('复制 INSERT 语句')),
+        const PopupMenuDivider(height: 8),
+        if (onShowStructure != null) const PopupMenuItem(value: 'structure', height: 26, child: Text('查看结构')),
+        if (onImport != null && !isView) const PopupMenuItem(value: 'import', height: 26, child: Text('导入 CSV…')),
+        if (!isView) const PopupMenuItem(value: 'count', height: 26, child: Text('统计行数')),
+        if (!isView)
+          const PopupMenuItem(
+            value: 'operations',
+            height: 26,
+            child: Row(children: [Expanded(child: Text('表操作')), Icon(Icons.chevron_right, size: 16)]),
+          ),
         if (widget.onCreateTable != null) ...[const PopupMenuDivider(height: 8), _createTableItem],
       ],
     );
+    if (!mounted || choice == null) return;
+    setState(() => _error = null);
+    switch (choice) {
+      case 'browse':
+        _browse(table);
+      case 'new-tab':
+        onOpenInNewTab?.call(table);
+      case 'rename':
+        await _rename(table);
+      case 'duplicate':
+        await _duplicate(table);
+      case 'drop':
+        await _runAction(table, const TableAction.drop());
+      case 'copy-name':
+        await Clipboard.setData(ClipboardData(text: table));
+      case 'copy-create':
+        await _copy(() async => (await widget.source.structure(widget.database, table)).createSql);
+      case 'copy-insert':
+        await _copy(() => widget.source.insertTemplate(widget.database, table));
+      case 'structure':
+        onShowStructure?.call(table);
+      case 'import':
+        onImport?.call(table);
+      case 'count':
+        await _countRows(table);
+      case 'operations':
+        await _showOperations(table, at);
+      case 'create':
+        await _createTable();
+    }
+  }
+
+  /// 「表操作」二级菜单，在同一个位置弹出
+  Future<void> _showOperations(String table, RelativeRect at) async {
+    final choice = await showMenu<Object>(
+      context: context,
+      position: at,
+      items: const [
+        PopupMenuItem(value: 'truncate', height: 26, child: Text('清空表…')),
+        PopupMenuDivider(height: 8),
+        PopupMenuItem(value: Maintenance.analyze, height: 26, child: Text('分析表')),
+        PopupMenuItem(value: Maintenance.check, height: 26, child: Text('检查表')),
+        PopupMenuItem(value: Maintenance.optimize, height: 26, child: Text('优化表')),
+        PopupMenuItem(value: Maintenance.repair, height: 26, child: Text('修复表')),
+      ],
+    );
+    if (!mounted || choice == null) return;
+    if (choice == 'truncate') await _runAction(table, const TableAction.truncate());
+    if (choice is Maintenance) await _maintain(table, choice);
+  }
+
+  Future<void> _copy(Future<String> Function() read) async {
+    try {
+      final text = await read();
+      await Clipboard.setData(ClipboardData(text: text));
+    } catch (e) {
+      if (mounted) setState(() => _error = '$e');
+    }
+  }
+
+  Future<void> _rename(String table) async {
+    final result = await _askName(title: '重命名 $table', initial: table, confirm: '预览');
+    if (result == null || !mounted) return;
+    await _runAction(table, TableAction.rename(newName: result.name));
+  }
+
+  Future<void> _duplicate(String table) async {
+    final result = await _askName(title: '复制表 $table', initial: '${table}_copy', confirm: '预览', askData: true);
+    if (result == null || !mounted) return;
+    await _runAction(table, TableAction.duplicate(newName: result.name, withData: result.withData));
+  }
+
+  /// 预览 → 确认框 → 执行。成功后重读清单并通知外面
+  Future<void> _runAction(String table, TableAction action) async {
+    final database = widget.database;
+    final AlterPlan plan;
+    try {
+      plan = await widget.source.previewTableAction(database, table, action);
+    } catch (e) {
+      if (mounted) setState(() => _error = '$e');
+      return;
+    }
     if (!mounted) return;
-    if (choice == 'browse') _browse(table);
-    if (choice == 'structure' && onShowStructure != null) onShowStructure(table);
-    if (choice == 'import' && onImport != null) onImport(table);
-    if (choice == 'create') await _createTable();
+    final applied = await showDdlPreview(
+      context,
+      plan: plan,
+      cancelLabel: '取消',
+      apply: () => widget.source.applyTableAction(database, table, action, plan.statements),
+    );
+    if (!applied || !mounted) return;
+    widget.onTableAction?.call(table, action);
+    await _reload();
+  }
+
+  Future<void> _countRows(String table) async {
+    final int count;
+    try {
+      count = await widget.source.countRows(widget.database, table);
+    } catch (e) {
+      if (mounted) setState(() => _error = '$e');
+      return;
+    }
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(table),
+        content: Text('共 $count 行（COUNT(*) 精确值）'),
+        actions: [FilledButton(onPressed: () => Navigator.of(context).pop(), child: const Text('好'))],
+      ),
+    );
+  }
+
+  Future<void> _maintain(String table, Maintenance op) async {
+    final List<MaintenanceMessage> messages;
+    try {
+      messages = await widget.source.runMaintenance(widget.database, table, op);
+    } catch (e) {
+      if (mounted) setState(() => _error = '$e');
+      return;
+    }
+    if (!mounted) return;
+    final title = switch (op) {
+      Maintenance.analyze => '分析表',
+      Maintenance.check => '检查表',
+      Maintenance.optimize => '优化表',
+      Maintenance.repair => '修复表',
+    };
+    await showDialog<void>(
+      context: context,
+      builder: (context) {
+        final scheme = Theme.of(context).colorScheme;
+        return AlertDialog(
+          title: Text('$title $table'),
+          content: SizedBox(
+            width: 480,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (messages.isEmpty) const Text('MySQL 没有返回消息'),
+                for (final message in messages)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 4),
+                    child: SelectableText(
+                      '${message.msgType}：${message.text}',
+                      style: TextStyle(
+                        fontSize: 12,
+                        // Msg_type 是 status / error / info / note / warning
+                        color: message.msgType == 'error' ? scheme.error : null,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          actions: [FilledButton(onPressed: () => Navigator.of(context).pop(), child: const Text('好'))],
+        );
+      },
+    );
+  }
+
+  /// 问一个新名字。名字原样交给 core，不在这里修剪；askData 时多一个「同时复制数据」
+  Future<({String name, bool withData})?> _askName({
+    required String title,
+    required String initial,
+    required String confirm,
+    bool askData = false,
+  }) {
+    return showDialog<({String name, bool withData})>(
+      context: context,
+      builder: (context) => _NameDialog(title: title, initial: initial, confirm: confirm, askData: askData),
+    );
   }
 
   @override
@@ -221,7 +420,7 @@ class _TableSidebarState extends State<TableSidebar> {
                         trailing: !table.isView && table.estimatedRows > BigInt.zero ? '~${table.estimatedRows}' : null,
                         selected: table.name == widget.selectedTable,
                         onTap: () => _browse(table.name),
-                        onSecondaryTap: (position) => _showMenu(table.name, position),
+                        onSecondaryTap: (position) => _showMenu(table, position),
                       );
                     },
                   ),
@@ -298,6 +497,69 @@ class _SidebarFooter extends StatelessWidget {
           if (loading) Text('加载中…', style: TextStyle(fontSize: 11, color: mac.secondaryText)),
         ],
       ),
+    );
+  }
+}
+
+class _NameDialog extends StatefulWidget {
+  final String title;
+  final String initial;
+  final String confirm;
+  final bool askData;
+
+  const _NameDialog({required this.title, required this.initial, required this.confirm, required this.askData});
+
+  @override
+  State<_NameDialog> createState() => _NameDialogState();
+}
+
+class _NameDialogState extends State<_NameDialog> {
+  late final _name = TextEditingController(text: widget.initial)
+    ..selection = TextSelection(baseOffset: 0, extentOffset: widget.initial.length);
+  bool _withData = true;
+
+  @override
+  void dispose() {
+    _name.dispose();
+    super.dispose();
+  }
+
+  void _submit() => Navigator.of(context).pop((name: _name.text, withData: _withData));
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text(widget.title),
+      content: SizedBox(
+        width: 360,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            TextField(
+              key: const ValueKey('table-name-field'),
+              controller: _name,
+              autofocus: true,
+              style: const TextStyle(fontSize: 13),
+              decoration: const InputDecoration(labelText: '新名字'),
+              onSubmitted: (_) => _submit(),
+            ),
+            if (widget.askData)
+              CheckboxListTile(
+                contentPadding: EdgeInsets.zero,
+                dense: true,
+                controlAffinity: ListTileControlAffinity.leading,
+                value: _withData,
+                onChanged: (value) => setState(() => _withData = value ?? false),
+                title: const Text('同时复制数据', style: TextStyle(fontSize: 13)),
+              ),
+          ],
+        ),
+      ),
+      actions: [
+        OutlinedButton(onPressed: () => Navigator.of(context).pop(), child: const Text('取消')),
+        FilledButton(onPressed: _submit, child: Text(widget.confirm)),
+      ],
     );
   }
 }

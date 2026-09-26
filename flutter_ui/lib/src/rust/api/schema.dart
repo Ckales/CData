@@ -105,6 +105,69 @@ Future<List<TableInfo>> listTables({
 Future<String> browseSql({required String table}) =>
     RustLib.instance.api.crateApiSchemaBrowseSql(table: table);
 
+/// 预览侧栏右键的表操作（改名、复制、删除、清空）：语句、危险操作、执行须知
+Future<AlterPlan> previewTableAction({
+  required BigInt sessionId,
+  required String database,
+  required String table,
+  required TableAction action,
+}) => RustLib.instance.api.crateApiSchemaPreviewTableAction(
+  sessionId: sessionId,
+  database: database,
+  table: table,
+  action: action,
+);
+
+/// 执行预览过的表操作。statements 是预览时拿到的语句，重新生成的不一致就不执行
+Future<void> applyTableAction({
+  required BigInt sessionId,
+  required String database,
+  required String table,
+  required TableAction action,
+  required List<String> statements,
+}) => RustLib.instance.api.crateApiSchemaApplyTableAction(
+  sessionId: sessionId,
+  database: database,
+  table: table,
+  action: action,
+  statements: statements,
+);
+
+/// 精确行数（真的 COUNT(*)，大表会慢）
+Future<BigInt> countRows({
+  required BigInt sessionId,
+  required String database,
+  required String table,
+}) => RustLib.instance.api.crateApiSchemaCountRows(
+  sessionId: sessionId,
+  database: database,
+  table: table,
+);
+
+/// ANALYZE / CHECK / OPTIMIZE / REPAIR TABLE，返回 MySQL 给的消息
+Future<List<MaintenanceMessage>> runMaintenance({
+  required BigInt sessionId,
+  required String database,
+  required String table,
+  required Maintenance op,
+}) => RustLib.instance.api.crateApiSchemaRunMaintenance(
+  sessionId: sessionId,
+  database: database,
+  table: table,
+  op: op,
+);
+
+/// 这张表的 INSERT 模板
+Future<String> insertTemplate({
+  required BigInt sessionId,
+  required String database,
+  required String table,
+}) => RustLib.instance.api.crateApiSchemaInsertTemplate(
+  sessionId: sessionId,
+  database: database,
+  table: table,
+);
+
 class AlterPlan {
   final List<String> statements;
   final List<String> dangers;
@@ -481,6 +544,40 @@ class IndexPart {
           column == other.column &&
           prefix == other.prefix &&
           descending == other.descending;
+}
+
+enum Maintenance { analyze, check, optimize, repair }
+
+class MaintenanceMessage {
+  final String msgType;
+  final String text;
+
+  const MaintenanceMessage({required this.msgType, required this.text});
+
+  @override
+  int get hashCode => msgType.hashCode ^ text.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is MaintenanceMessage &&
+          runtimeType == other.runtimeType &&
+          msgType == other.msgType &&
+          text == other.text;
+}
+
+@freezed
+sealed class TableAction with _$TableAction {
+  const TableAction._();
+
+  const factory TableAction.rename({required String newName}) =
+      TableAction_Rename;
+  const factory TableAction.duplicate({
+    required String newName,
+    required bool withData,
+  }) = TableAction_Duplicate;
+  const factory TableAction.drop() = TableAction_Drop;
+  const factory TableAction.truncate() = TableAction_Truncate;
 }
 
 class TableDraft {

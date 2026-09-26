@@ -304,6 +304,33 @@ class _WorkspaceViewState extends State<WorkspaceView> {
     return created;
   }
 
+  /// 侧栏改名、删除、清空、复制表成功之后：显示这张表的标签跟着换表名、清掉已删的表、
+  /// 重新查数据；表清单变了，补全目录也重读
+  void _afterTableAction(String table, TableAction action) {
+    final database = _tab.database;
+    final reload = <WorkspaceTab>[];
+    setState(() {
+      for (final tab in _ws.tabs) {
+        if (tab.database != database || tab.table != table) continue;
+        switch (action) {
+          case TableAction_Rename(:final newName):
+            tab.table = newName;
+            reload.add(tab);
+          case TableAction_Drop():
+            tab.table = null;
+          case TableAction_Truncate():
+            reload.add(tab);
+          case TableAction_Duplicate():
+            break;
+        }
+      }
+    });
+    for (final tab in reload) {
+      _loadTable(tab);
+    }
+    _ensureCatalog(_tab, force: true);
+  }
+
   Future<void> _showConnectionMenu(Offset position) async {
     final choice = await showMenu<Object>(
       context: context,
@@ -375,6 +402,8 @@ class _WorkspaceViewState extends State<WorkspaceView> {
                       onTableSelected: _openTable,
                       onShowStructure: _showStructureOf,
                       onCreateTable: _createTable,
+                      onOpenInNewTab: (table) => setState(() => _addTab(database: tab.database, table: table)),
+                      onTableAction: _afterTableAction,
                       // 导入用侧栏的会话开自己独占的连接，不占标签的会话
                       onImport: (table) => showImportDialog(
                         context,

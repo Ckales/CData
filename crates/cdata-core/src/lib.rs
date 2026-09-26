@@ -20,6 +20,7 @@ pub mod session;
 pub mod sql;
 pub mod ssh;
 pub mod structure;
+pub mod table_ops;
 pub mod users;
 pub mod value;
 

@@ -585,8 +585,13 @@ pub async fn apply_alter(
         ));
     }
 
-    let total = plan.statements.len();
-    crate::alter::run_statements(&mut conn, &plan.statements).await.map_err(|(index, err)| {
+    run_planned(&mut conn, &plan.statements).await
+}
+
+/// 按顺序执行一批 DDL。失败时说清楚第几条失败、这一条和前面的生效了没有
+async fn run_planned(conn: &mut mysql_async::Conn, statements: &[String]) -> Result<()> {
+    let total = statements.len();
+    crate::alter::run_statements(conn, statements).await.map_err(|(index, err)| {
         let err = Error::from(err);
         let this_one = if matches!(err, Error::ConnectionLost(_)) {
             "这一条可能已经生效也可能没有，请重新读取结构确认"
@@ -1322,4 +1327,99 @@ pub async fn execute_filtered_view(
 ) -> Result<QuerySummary> {
     let statement = crate::sql::build_filtered_view(sql, filter, sort).map_err(Error::BadInput)?;
     execute_statement(session_id, &statement.sql, statement.params, max_rows).await
+}
+
+/// 预览侧栏右键对整张表的写库操作（改名、复制、删除、清空）
+pub async fn preview_table_action(
+    session_id: u64,
+    database: &str,
+    table: &str,
+    action: &crate::table_ops::TableAction,
+) -> Result<crate::alter::AlterPlan> {
+    let pool = pool_of(session_id)?;
+    let mut conn = pool.get_conn().await?;
+    plan_table_action_on(&mut conn, database, table, action).await
+}
+
+/// 执行预览过的表操作。在同一条连接上重新生成，和预览时的语句不一致就不执行
+pub async fn apply_table_action(
+    session_id: u64,
+    database: &str,
+    table: &str,
+    action: &crate::table_ops::TableAction,
+    previewed: &[String],
+) -> Result<()> {
+    let pool = pool_of(session_id)?;
+    let mut conn = pool.get_conn().await?;
+    let plan = plan_table_action_on(&mut conn, database, table, action).await?;
+    if plan.statements != previewed {
+        return Err(Error::BadInput(
+            "要执行的语句和预览时不一样了（表被改过或换成了视图），请重新操作".to_string(),
+        ));
+    }
+    run_planned(&mut conn, &plan.statements).await
+}
+
+/// 是表还是视图从 information_schema 读，不信界面传的
+async fn plan_table_action_on(
+    conn: &mut mysql_async::Conn,
+    database: &str,
+    table: &str,
+    action: &crate::table_ops::TableAction,
+) -> Result<crate::alter::AlterPlan> {
+    let kind: Option<String> = conn
+        .exec_first(
+            "SELECT TABLE_TYPE FROM information_schema.TABLES WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?",
+            (database, table),
+        )
+        .await?;
+    let Some(kind) = kind else {
+        return Err(Error::BadInput(format!("{database} 里没有 {table}，可能已经被删除或改名，请刷新侧栏")));
+    };
+    let is_view = kind == "VIEW" || kind == "SYSTEM VIEW";
+
+    let columns = match action {
+        crate::table_ops::TableAction::Duplicate { with_data: true, .. } => {
+            crate::structure::read_columns(conn, database, table).await?
+        }
+        _ => Vec::new(),
+    };
+    crate::table_ops::plan_action(database, table, is_view, &columns, action).map_err(Error::BadInput)
+}
+
+/// 精确行数。information_schema 里的是估算值，这里真的 COUNT(*) 一遍，大表会慢
+pub async fn count_rows(session_id: u64, database: &str, table: &str) -> Result<u64> {
+    let pool = pool_of(session_id)?;
+    let mut conn = pool.get_conn().await?;
+    let count: Option<u64> = conn.query_first(crate::table_ops::count_sql(database, table)).await?;
+    count.ok_or_else(|| Error::BadInput("COUNT(*) 没有返回结果".to_string()))
+}
+
+/// ANALYZE / CHECK / OPTIMIZE / REPAIR TABLE，返回 MySQL 给的消息
+pub async fn run_maintenance(
+    session_id: u64,
+    database: &str,
+    table: &str,
+    op: crate::table_ops::Maintenance,
+) -> Result<Vec<crate::table_ops::MaintenanceMessage>> {
+    let pool = pool_of(session_id)?;
+    let mut conn = pool.get_conn().await?;
+    // 结果列是 Table / Op / Msg_type / Msg_text
+    let rows: Vec<(String, String, String, String)> =
+        conn.query(crate::table_ops::maintenance_sql(database, table, op)).await?;
+    let mut messages = Vec::with_capacity(rows.len());
+    for (_, _, msg_type, text) in rows {
+        messages.push(crate::table_ops::MaintenanceMessage { msg_type, text });
+    }
+    Ok(messages)
+}
+
+/// 这张表的 INSERT 模板，复制到剪贴板用
+pub async fn insert_template(session_id: u64, database: &str, table: &str) -> Result<String> {
+    let pool = pool_of(session_id)?;
+    let columns = crate::structure::table_columns(&pool, database, table).await?;
+    if columns.is_empty() {
+        return Err(Error::BadInput(format!("读不到 {table} 的列，可能已经被删除或改名")));
+    }
+    Ok(crate::table_ops::insert_template(table, &columns))
 }

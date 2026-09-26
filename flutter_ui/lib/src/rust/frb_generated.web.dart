@@ -109,6 +109,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   StatusSnapshot dco_decode_box_autoadd_status_snapshot(dynamic raw);
 
   @protected
+  TableAction dco_decode_box_autoadd_table_action(dynamic raw);
+
+  @protected
   TableDraft dco_decode_box_autoadd_table_draft(dynamic raw);
 
   @protected
@@ -340,6 +343,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<List<DisplayCell>> dco_decode_list_list_display_cell(dynamic raw);
 
   @protected
+  List<MaintenanceMessage> dco_decode_list_maintenance_message(dynamic raw);
+
+  @protected
   List<String?> dco_decode_list_opt_String(dynamic raw);
 
   @protected
@@ -398,6 +404,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<Variable> dco_decode_list_variable(dynamic raw);
+
+  @protected
+  Maintenance dco_decode_maintenance(dynamic raw);
+
+  @protected
+  MaintenanceMessage dco_decode_maintenance_message(dynamic raw);
 
   @protected
   OnError dco_decode_on_error(dynamic raw);
@@ -500,6 +512,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   StatusSnapshot dco_decode_status_snapshot(dynamic raw);
+
+  @protected
+  TableAction dco_decode_table_action(dynamic raw);
 
   @protected
   TableDraft dco_decode_table_draft(dynamic raw);
@@ -656,6 +671,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   StatusSnapshot sse_decode_box_autoadd_status_snapshot(
     SseDeserializer deserializer,
   );
+
+  @protected
+  TableAction sse_decode_box_autoadd_table_action(SseDeserializer deserializer);
 
   @protected
   TableDraft sse_decode_box_autoadd_table_draft(SseDeserializer deserializer);
@@ -905,6 +923,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  List<MaintenanceMessage> sse_decode_list_maintenance_message(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   List<String?> sse_decode_list_opt_String(SseDeserializer deserializer);
 
   @protected
@@ -975,6 +998,14 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<Variable> sse_decode_list_variable(SseDeserializer deserializer);
+
+  @protected
+  Maintenance sse_decode_maintenance(SseDeserializer deserializer);
+
+  @protected
+  MaintenanceMessage sse_decode_maintenance_message(
+    SseDeserializer deserializer,
+  );
 
   @protected
   OnError sse_decode_on_error(SseDeserializer deserializer);
@@ -1087,6 +1118,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   StatusSnapshot sse_decode_status_snapshot(SseDeserializer deserializer);
+
+  @protected
+  TableAction sse_decode_table_action(SseDeserializer deserializer);
 
   @protected
   TableDraft sse_decode_table_draft(SseDeserializer deserializer);
@@ -1273,6 +1307,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_box_autoadd_status_snapshot(
     StatusSnapshot self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_table_action(
+    TableAction self,
     SseSerializer serializer,
   );
 
@@ -1595,6 +1635,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_list_maintenance_message(
+    List<MaintenanceMessage> self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_list_opt_String(List<String?> self, SseSerializer serializer);
 
   @protected
@@ -1692,6 +1738,15 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_list_variable(List<Variable> self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_maintenance(Maintenance self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_maintenance_message(
+    MaintenanceMessage self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_on_error(OnError self, SseSerializer serializer);
@@ -1833,6 +1888,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
     StatusSnapshot self,
     SseSerializer serializer,
   );
+
+  @protected
+  void sse_encode_table_action(TableAction self, SseSerializer serializer);
 
   @protected
   void sse_encode_table_draft(TableDraft self, SseSerializer serializer);

@@ -384,4 +384,378 @@ as String,
 
 }
 
+/// @nodoc
+mixin _$TableAction {
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is TableAction);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+    return 'TableAction()';
+}
+
+
+}
+
+/// @nodoc
+class $TableActionCopyWith<$Res>  {
+$TableActionCopyWith(TableAction _, $Res Function(TableAction) __);
+}
+
+
+/// Adds pattern-matching-related methods to [TableAction].
+extension TableActionPatterns on TableAction {
+/// A variant of `map` that fallback to returning `orElse`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( TableAction_Rename value)?  rename,TResult Function( TableAction_Duplicate value)?  duplicate,TResult Function( TableAction_Drop value)?  drop,TResult Function( TableAction_Truncate value)?  truncate,required TResult orElse(),}){
+final _that = this;
+switch (_that) {
+case TableAction_Rename() when rename != null:
+return rename(_that);case TableAction_Duplicate() when duplicate != null:
+return duplicate(_that);case TableAction_Drop() when drop != null:
+return drop(_that);case TableAction_Truncate() when truncate != null:
+return truncate(_that);case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// Callbacks receives the raw object, upcasted.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case final Subclass2 value:
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( TableAction_Rename value)  rename,required TResult Function( TableAction_Duplicate value)  duplicate,required TResult Function( TableAction_Drop value)  drop,required TResult Function( TableAction_Truncate value)  truncate,}){
+final _that = this;
+switch (_that) {
+case TableAction_Rename():
+return rename(_that);case TableAction_Duplicate():
+return duplicate(_that);case TableAction_Drop():
+return drop(_that);case TableAction_Truncate():
+return truncate(_that);}
+}
+/// A variant of `map` that fallback to returning `null`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( TableAction_Rename value)?  rename,TResult? Function( TableAction_Duplicate value)?  duplicate,TResult? Function( TableAction_Drop value)?  drop,TResult? Function( TableAction_Truncate value)?  truncate,}){
+final _that = this;
+switch (_that) {
+case TableAction_Rename() when rename != null:
+return rename(_that);case TableAction_Duplicate() when duplicate != null:
+return duplicate(_that);case TableAction_Drop() when drop != null:
+return drop(_that);case TableAction_Truncate() when truncate != null:
+return truncate(_that);case _:
+  return null;
+
+}
+}
+/// A variant of `when` that fallback to an `orElse` callback.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( String newName)?  rename,TResult Function( String newName,  bool withData)?  duplicate,TResult Function()?  drop,TResult Function()?  truncate,required TResult orElse(),}) {final _that = this;
+switch (_that) {
+case TableAction_Rename() when rename != null:
+return rename(_that.newName);case TableAction_Duplicate() when duplicate != null:
+return duplicate(_that.newName,_that.withData);case TableAction_Drop() when drop != null:
+return drop();case TableAction_Truncate() when truncate != null:
+return truncate();case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// As opposed to `map`, this offers destructuring.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case Subclass2(:final field2):
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( String newName)  rename,required TResult Function( String newName,  bool withData)  duplicate,required TResult Function()  drop,required TResult Function()  truncate,}) {final _that = this;
+switch (_that) {
+case TableAction_Rename():
+return rename(_that.newName);case TableAction_Duplicate():
+return duplicate(_that.newName,_that.withData);case TableAction_Drop():
+return drop();case TableAction_Truncate():
+return truncate();}
+}
+/// A variant of `when` that fallback to returning `null`
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( String newName)?  rename,TResult? Function( String newName,  bool withData)?  duplicate,TResult? Function()?  drop,TResult? Function()?  truncate,}) {final _that = this;
+switch (_that) {
+case TableAction_Rename() when rename != null:
+return rename(_that.newName);case TableAction_Duplicate() when duplicate != null:
+return duplicate(_that.newName,_that.withData);case TableAction_Drop() when drop != null:
+return drop();case TableAction_Truncate() when truncate != null:
+return truncate();case _:
+  return null;
+
+}
+}
+
+}
+
+/// @nodoc
+
+
+class TableAction_Rename extends TableAction {
+  const TableAction_Rename({required this.newName}): super._();
+  
+
+ final  String newName;
+
+/// Create a copy of TableAction
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$TableAction_RenameCopyWith<TableAction_Rename> get copyWith => _$TableAction_RenameCopyWithImpl<TableAction_Rename>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is TableAction_Rename&&(identical(other.newName, newName) || other.newName == newName));
+}
+
+
+@override
+int get hashCode {
+    return Object.hash(runtimeType,newName);
+}
+
+@override
+String toString() {
+    return 'TableAction.rename(newName: $newName)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $TableAction_RenameCopyWith<$Res> implements $TableActionCopyWith<$Res> {
+  factory $TableAction_RenameCopyWith(TableAction_Rename value, $Res Function(TableAction_Rename) _then) = _$TableAction_RenameCopyWithImpl;
+@useResult
+$Res call({
+ String newName
+});
+
+
+
+
+}
+/// @nodoc
+class _$TableAction_RenameCopyWithImpl<$Res>
+    implements $TableAction_RenameCopyWith<$Res> {
+  _$TableAction_RenameCopyWithImpl(this._self, this._then);
+
+  final TableAction_Rename _self;
+  final $Res Function(TableAction_Rename) _then;
+
+/// Create a copy of TableAction
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') $Res call({Object? newName = null,}) {
+  return _then(TableAction_Rename(
+newName: null == newName ? _self.newName : newName // ignore: cast_nullable_to_non_nullable
+as String,
+  ));
+}
+
+
+}
+
+/// @nodoc
+
+
+class TableAction_Duplicate extends TableAction {
+  const TableAction_Duplicate({required this.newName, required this.withData}): super._();
+  
+
+ final  String newName;
+ final  bool withData;
+
+/// Create a copy of TableAction
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$TableAction_DuplicateCopyWith<TableAction_Duplicate> get copyWith => _$TableAction_DuplicateCopyWithImpl<TableAction_Duplicate>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is TableAction_Duplicate&&(identical(other.newName, newName) || other.newName == newName)&&(identical(other.withData, withData) || other.withData == withData));
+}
+
+
+@override
+int get hashCode {
+    return Object.hash(runtimeType,newName,withData);
+}
+
+@override
+String toString() {
+    return 'TableAction.duplicate(newName: $newName, withData: $withData)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $TableAction_DuplicateCopyWith<$Res> implements $TableActionCopyWith<$Res> {
+  factory $TableAction_DuplicateCopyWith(TableAction_Duplicate value, $Res Function(TableAction_Duplicate) _then) = _$TableAction_DuplicateCopyWithImpl;
+@useResult
+$Res call({
+ String newName, bool withData
+});
+
+
+
+
+}
+/// @nodoc
+class _$TableAction_DuplicateCopyWithImpl<$Res>
+    implements $TableAction_DuplicateCopyWith<$Res> {
+  _$TableAction_DuplicateCopyWithImpl(this._self, this._then);
+
+  final TableAction_Duplicate _self;
+  final $Res Function(TableAction_Duplicate) _then;
+
+/// Create a copy of TableAction
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') $Res call({Object? newName = null,Object? withData = null,}) {
+  return _then(TableAction_Duplicate(
+newName: null == newName ? _self.newName : newName // ignore: cast_nullable_to_non_nullable
+as String,withData: null == withData ? _self.withData : withData // ignore: cast_nullable_to_non_nullable
+as bool,
+  ));
+}
+
+
+}
+
+/// @nodoc
+
+
+class TableAction_Drop extends TableAction {
+  const TableAction_Drop(): super._();
+  
+
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is TableAction_Drop);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+    return 'TableAction.drop()';
+}
+
+
+}
+
+
+
+
+/// @nodoc
+
+
+class TableAction_Truncate extends TableAction {
+  const TableAction_Truncate(): super._();
+  
+
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is TableAction_Truncate);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+    return 'TableAction.truncate()';
+}
+
+
+}
+
+
+
+
 // dart format on

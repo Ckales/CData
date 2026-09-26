@@ -10,7 +10,18 @@ import 'src/rust/api/layouts.dart';
 import 'src/rust/api/layouts.dart' as layouts show loadLayout, saveLayout;
 import 'src/rust/api/schema.dart';
 import 'src/rust/api/schema.dart' as schema
-    show tableDraft, previewAlter, applyAlter, newTableDraft, previewCreateTable, createTable;
+    show
+        tableDraft,
+        previewAlter,
+        applyAlter,
+        newTableDraft,
+        previewCreateTable,
+        createTable,
+        previewTableAction,
+        applyTableAction,
+        countRows,
+        runMaintenance,
+        insertTemplate;
 import 'src/rust/api/value.dart';
 import 'src/rust/api/value.dart' as value show formatJson, hexDump;
 import 'dart:typed_data' show Uint8List;
@@ -112,6 +123,21 @@ abstract class SchemaSource {
 
   /// 执行预览过的建表。statements 是预览时拿到的语句，core 重新生成的不一致就拒绝
   Future<void> createTable(String database, String table, TableDraft draft, List<String> statements);
+
+  /// 预览侧栏右键的表操作（改名、复制、删除、清空）。是表还是视图由 core 自己查
+  Future<AlterPlan> previewTableAction(String database, String table, TableAction action);
+
+  /// 执行预览过的表操作。statements 是预览时拿到的语句，core 重新生成的不一致就拒绝
+  Future<void> applyTableAction(String database, String table, TableAction action, List<String> statements);
+
+  /// 精确行数（真的 COUNT(*)）
+  Future<int> countRows(String database, String table);
+
+  /// ANALYZE / CHECK / OPTIMIZE / REPAIR TABLE 的结果消息
+  Future<List<MaintenanceMessage>> runMaintenance(String database, String table, Maintenance op);
+
+  /// INSERT 模板，列名写全、值用 ? 占位
+  Future<String> insertTemplate(String database, String table);
 }
 
 class RustGridSource implements GridSource {
@@ -305,6 +331,38 @@ class RustSchemaSource implements SchemaSource {
       draft: draft,
       statements: statements,
     );
+  }
+
+  @override
+  Future<AlterPlan> previewTableAction(String database, String table, TableAction action) {
+    return schema.previewTableAction(sessionId: sessionId, database: database, table: table, action: action);
+  }
+
+  @override
+  Future<void> applyTableAction(String database, String table, TableAction action, List<String> statements) {
+    return schema.applyTableAction(
+      sessionId: sessionId,
+      database: database,
+      table: table,
+      action: action,
+      statements: statements,
+    );
+  }
+
+  @override
+  Future<int> countRows(String database, String table) async {
+    final count = await schema.countRows(sessionId: sessionId, database: database, table: table);
+    return count.toInt();
+  }
+
+  @override
+  Future<List<MaintenanceMessage>> runMaintenance(String database, String table, Maintenance op) {
+    return schema.runMaintenance(sessionId: sessionId, database: database, table: table, op: op);
+  }
+
+  @override
+  Future<String> insertTemplate(String database, String table) {
+    return schema.insertTemplate(sessionId: sessionId, database: database, table: table);
   }
 }
 

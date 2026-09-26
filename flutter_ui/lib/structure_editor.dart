@@ -417,17 +417,14 @@ class _EditorDialogState extends State<_EditorDialog> {
     if (!mounted) return;
     setState(() => _previewing = false);
 
-    final applied = await showDialog<bool>(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => _PreviewDialog(
-        plan: plan,
-        apply: () => structure == null
-            ? widget.source.createTable(widget.database, table, draft, plan.statements)
-            : widget.source.applyAlter(widget.database, table, structure, draft, plan.statements),
-      ),
+    final applied = await showDdlPreview(
+      context,
+      plan: plan,
+      apply: () => structure == null
+          ? widget.source.createTable(widget.database, table, draft, plan.statements)
+          : widget.source.applyAlter(widget.database, table, structure, draft, plan.statements),
     );
-    if (applied == true && mounted) Navigator.of(context).pop(table);
+    if (applied && mounted) Navigator.of(context).pop(table);
   }
 
   void _addColumn() {
@@ -1125,12 +1122,28 @@ class _Table extends StatelessWidget {
   }
 }
 
-/// DDL 预览：危险操作醒目标出，执行须知写清楚，确认后才执行
+/// DDL 预览：危险操作醒目标出，执行须知写清楚，确认后才执行 apply。执行成功返回 true，
+/// 取消返回 false；执行失败留在框里显示错误，不关
+Future<bool> showDdlPreview(
+  BuildContext context, {
+  required AlterPlan plan,
+  required Future<void> Function() apply,
+  String cancelLabel = '返回修改',
+}) async {
+  final applied = await showDialog<bool>(
+    context: context,
+    barrierDismissible: false,
+    builder: (context) => _PreviewDialog(plan: plan, apply: apply, cancelLabel: cancelLabel),
+  );
+  return applied == true;
+}
+
 class _PreviewDialog extends StatefulWidget {
   final AlterPlan plan;
   final Future<void> Function() apply;
+  final String cancelLabel;
 
-  const _PreviewDialog({required this.plan, required this.apply});
+  const _PreviewDialog({required this.plan, required this.apply, required this.cancelLabel});
 
   @override
   State<_PreviewDialog> createState() => _PreviewDialogState();
@@ -1246,7 +1259,7 @@ class _PreviewDialogState extends State<_PreviewDialog> {
                 children: [
                   OutlinedButton(
                     onPressed: _running ? null : () => Navigator.of(context).pop(false),
-                    child: const Text('返回修改'),
+                    child: Text(widget.cancelLabel),
                   ),
                   const SizedBox(width: 8),
                   FilledButton(

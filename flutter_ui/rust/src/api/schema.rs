@@ -9,6 +9,7 @@ pub use cdata_core::alter::{
 pub use cdata_core::structure::{
     CheckDef, ColumnDef, DefaultValue, ForeignKeyDef, IndexDef, IndexPart, TableStructure,
 };
+pub use cdata_core::table_ops::{Maintenance, MaintenanceMessage, TableAction};
 
 use crate::api::db::{on_runtime, Result};
 
@@ -259,4 +260,74 @@ pub async fn list_tables(session_id: u64, database: String) -> Result<Vec<TableI
 /// 浏览整张表的 SQL。标识符转义在 core 里做，界面不要自己拼
 pub fn browse_sql(table: String) -> String {
     cdata_core::sql::browse_table(&table)
+}
+
+#[frb(mirror(TableAction))]
+pub enum _TableAction {
+    Rename { new_name: String },
+    Duplicate { new_name: String, with_data: bool },
+    Drop,
+    Truncate,
+}
+
+#[frb(mirror(Maintenance))]
+pub enum _Maintenance {
+    Analyze,
+    Check,
+    Optimize,
+    Repair,
+}
+
+#[frb(mirror(MaintenanceMessage))]
+pub struct _MaintenanceMessage {
+    pub msg_type: String,
+    pub text: String,
+}
+
+/// 预览侧栏右键的表操作（改名、复制、删除、清空）：语句、危险操作、执行须知
+pub async fn preview_table_action(
+    session_id: u64,
+    database: String,
+    table: String,
+    action: TableAction,
+) -> Result<AlterPlan> {
+    on_runtime(async move {
+        cdata_core::session::preview_table_action(session_id, &database, &table, &action).await
+    })
+    .await
+}
+
+/// 执行预览过的表操作。statements 是预览时拿到的语句，重新生成的不一致就不执行
+pub async fn apply_table_action(
+    session_id: u64,
+    database: String,
+    table: String,
+    action: TableAction,
+    statements: Vec<String>,
+) -> Result<()> {
+    on_runtime(async move {
+        cdata_core::session::apply_table_action(session_id, &database, &table, &action, &statements).await
+    })
+    .await
+}
+
+/// 精确行数（真的 COUNT(*)，大表会慢）
+pub async fn count_rows(session_id: u64, database: String, table: String) -> Result<u64> {
+    on_runtime(async move { cdata_core::session::count_rows(session_id, &database, &table).await }).await
+}
+
+/// ANALYZE / CHECK / OPTIMIZE / REPAIR TABLE，返回 MySQL 给的消息
+pub async fn run_maintenance(
+    session_id: u64,
+    database: String,
+    table: String,
+    op: Maintenance,
+) -> Result<Vec<MaintenanceMessage>> {
+    on_runtime(async move { cdata_core::session::run_maintenance(session_id, &database, &table, op).await })
+        .await
+}
+
+/// 这张表的 INSERT 模板
+pub async fn insert_template(session_id: u64, database: String, table: String) -> Result<String> {
+    on_runtime(async move { cdata_core::session::insert_template(session_id, &database, &table).await }).await
 }

@@ -294,7 +294,7 @@ pub async fn table_columns(
     read_columns(&mut conn, schema, table).await
 }
 
-async fn read_columns(conn: &mut Conn, schema: &str, table: &str) -> Result<Vec<ColumnDef>, mysql_async::Error> {
+pub async fn read_columns(conn: &mut Conn, schema: &str, table: &str) -> Result<Vec<ColumnDef>, mysql_async::Error> {
     let rows: Vec<Row> = conn
         .exec(
             "SELECT COLUMN_NAME, COLUMN_TYPE, IS_NULLABLE, COLUMN_DEFAULT, EXTRA, \
