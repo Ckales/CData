@@ -534,7 +534,9 @@ class _TableSidebarState extends State<TableSidebar> {
 }
 
 /// 库选择器：看起来像一个带库图标的圆角框，点开是库列表
-class _DatabasePicker extends StatelessWidget {
+/// 选库：按钮下方弹出带过滤框的列表。库多的时候 PopupMenuButton 会按当前项对齐，整个菜单被推到窗口顶上，
+/// 所以自己画：固定挂在按钮下面、限高滚动、打开时滚到当前库，输入即过滤，回车选第一个
+class _DatabasePicker extends StatefulWidget {
   final List<String> databases;
   final String current;
   final void Function(String database) onChanged;
@@ -542,17 +544,200 @@ class _DatabasePicker extends StatelessWidget {
   const _DatabasePicker({required this.databases, required this.current, required this.onChanged});
 
   @override
+  State<_DatabasePicker> createState() => _DatabasePickerState();
+}
+
+class _DatabasePickerState extends State<_DatabasePicker> {
+  static const _rowHeight = 24.0;
+  static const _maxListHeight = 360.0;
+
+  final _portal = OverlayPortalController();
+  final _link = LayerLink();
+  final _filter = TextEditingController();
+  final _filterFocus = FocusNode();
+  final _tapGroup = Object();
+  ScrollController? _scroll;
+
+  @override
+  void dispose() {
+    _filter.dispose();
+    _filterFocus.dispose();
+    _scroll?.dispose();
+    super.dispose();
+  }
+
+  List<String> get _visible {
+    final keyword = _filter.text.trim().toLowerCase();
+    if (keyword.isEmpty) return widget.databases;
+
+    final matched = <String>[];
+    for (final database in widget.databases) {
+      if (database.toLowerCase().contains(keyword)) matched.add(database);
+    }
+    return matched;
+  }
+
+  void _open() {
+    _filter.clear();
+    // 当前库放在列表第三行左右，上面留点上下文
+    final index = widget.databases.indexOf(widget.current);
+    final offset = index < 0 ? 0.0 : (index - 2).clamp(0, index) * _rowHeight;
+    _scroll?.dispose();
+    _scroll = ScrollController(initialScrollOffset: offset);
+    _portal.show();
+    _filterFocus.requestFocus();
+    setState(() {});
+  }
+
+  void _close() {
+    _portal.hide();
+    setState(() {});
+  }
+
+  void _pick(String database) {
+    _close();
+    if (database != widget.current) widget.onChanged(database);
+  }
+
+  @override
   Widget build(BuildContext context) {
     final mac = MacColors.of(context);
-    // 当前库可能还没出现在列表里（刚连上、或者没权限列库），先补进去，否则按钮只显示占位符
-    final items = databases.contains(current) ? databases : [current, ...databases];
+    final hasCurrent = widget.current.isNotEmpty;
 
-    return MacPopupButton<String>(
-      value: current,
-      items: {for (final database in items) database: database},
-      expand: true,
-      leading: Icon(Icons.storage, size: 14, color: mac.databaseIcon),
-      onChanged: onChanged,
+    return LayoutBuilder(
+      builder: (context, constraints) => OverlayPortal(
+        controller: _portal,
+        overlayChildBuilder: (context) => _popover(mac, constraints.maxWidth),
+        child: CompositedTransformTarget(
+          link: _link,
+          child: TapRegion(
+            groupId: _tapGroup,
+            child: GestureDetector(
+              key: const ValueKey('database-picker'),
+              onTap: () => _portal.isShowing ? _close() : _open(),
+              child: Container(
+                height: 24,
+                padding: const EdgeInsets.only(left: 8, right: 4),
+                decoration: BoxDecoration(
+                  color: mac.control,
+                  border: Border.all(color: mac.controlBorder),
+                  borderRadius: BorderRadius.circular(5),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.storage, size: 14, color: mac.databaseIcon),
+                    const SizedBox(width: 5),
+                    Expanded(
+                      child: Text(
+                        hasCurrent ? widget.current : '选择数据库',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(fontSize: 12, color: hasCurrent ? mac.text : mac.tertiaryText),
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    Icon(Icons.unfold_more, size: 14, color: mac.secondaryText),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _popover(MacColors mac, double width) {
+    final visible = _visible;
+    return CompositedTransformFollower(
+      link: _link,
+      targetAnchor: Alignment.bottomLeft,
+      offset: const Offset(0, 2),
+      child: Align(
+        alignment: Alignment.topLeft,
+        child: TapRegion(
+          groupId: _tapGroup,
+          onTapOutside: (_) => _close(),
+          child: CallbackShortcuts(
+            bindings: {const SingleActivator(LogicalKeyboardKey.escape): _close},
+            child: Material(
+              color: mac.content,
+              elevation: 8,
+              borderRadius: BorderRadius.circular(6),
+              child: SizedBox(
+                width: width,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.all(6),
+                      child: SizedBox(
+                        height: 26,
+                        child: TextField(
+                          key: const ValueKey('database-picker-filter'),
+                          controller: _filter,
+                          focusNode: _filterFocus,
+                          style: const TextStyle(fontSize: 13),
+                          decoration: InputDecoration(
+                            hintText: '过滤库名',
+                            prefixIcon: Icon(Icons.search, size: 15, color: mac.tertiaryText),
+                            prefixIconConstraints: const BoxConstraints(minWidth: 28, minHeight: 24),
+                            contentPadding: const EdgeInsets.symmetric(vertical: 5),
+                          ),
+                          onChanged: (_) => setState(() {}),
+                          onSubmitted: (_) {
+                            if (visible.isNotEmpty) _pick(visible.first);
+                          },
+                        ),
+                      ),
+                    ),
+                    Divider(height: 1, color: mac.separator),
+                    if (visible.isEmpty)
+                      Padding(
+                        padding: const EdgeInsets.all(10),
+                        child: Text('没有匹配的库', style: TextStyle(fontSize: 12, color: mac.secondaryText)),
+                      )
+                    else
+                      ConstrainedBox(
+                        constraints: const BoxConstraints(maxHeight: _maxListHeight),
+                        child: ListView.builder(
+                          // 过滤后列表短了，旧的滚动位置会越界，换个新的从头开始
+                          controller: _filter.text.isEmpty ? _scroll : null,
+                          shrinkWrap: true,
+                          padding: const EdgeInsets.symmetric(vertical: 4),
+                          itemExtent: _rowHeight,
+                          itemCount: visible.length,
+                          itemBuilder: (context, index) => _row(mac, visible[index]),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _row(MacColors mac, String database) {
+    return InkWell(
+      onTap: () => _pick(database),
+      child: Padding(
+        padding: const EdgeInsets.only(left: 4, right: 12),
+        child: Row(
+          children: [
+            SizedBox(
+              width: 18,
+              child: database == widget.current ? Icon(Icons.check, size: 13, color: mac.text) : null,
+            ),
+            Expanded(
+              child: Text(database, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13)),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

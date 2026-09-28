@@ -40,7 +40,9 @@ class Workspace {
 
   final List<WorkspaceTab> tabs = [];
   int active = 0;
-  int _nextTabNumber = 1;
+
+  // 标签栏里各条连接的标签排在一起，编号全局唯一
+  static int _nextTabNumber = 1;
 
   /// 补全目录现在装的是哪个库。一个会话只缓存一个库的目录，切到别的库的标签时要重读
   String? catalogDatabase;
@@ -110,9 +112,14 @@ class WorkspaceTab {
 class WorkspaceView extends StatefulWidget {
   final Workspace workspace;
 
-  /// 同时打开的其他连接，标题菜单里可以切过去
-  final List<Workspace> others;
-  final void Function(Workspace workspace) onSwitch;
+  /// 窗口里全部连接，按顺序，包括自己。标签栏把它们的标签排成一排，和 Querious 一样一个标签一条连接
+  final List<Workspace> all;
+
+  /// 切到别的连接的某个标签
+  final void Function(Workspace workspace, int tab) onSwitch;
+
+  /// 关掉别的连接的某个标签
+  final void Function(Workspace workspace, int tab) onCloseTab;
   final VoidCallback onNewConnection;
   final VoidCallback onDisconnect;
   final VoidCallback onPreferences;
@@ -124,8 +131,9 @@ class WorkspaceView extends StatefulWidget {
   const WorkspaceView({
     super.key,
     required this.workspace,
-    required this.others,
+    required this.all,
     required this.onSwitch,
+    required this.onCloseTab,
     required this.onNewConnection,
     required this.onDisconnect,
     required this.onPreferences,
@@ -135,10 +143,10 @@ class WorkspaceView extends StatefulWidget {
   });
 
   @override
-  State<WorkspaceView> createState() => _WorkspaceViewState();
+  State<WorkspaceView> createState() => WorkspaceViewState();
 }
 
-class _WorkspaceViewState extends State<WorkspaceView> {
+class WorkspaceViewState extends State<WorkspaceView> {
   static const _library = RustSqlLibrary();
 
   /// 快捷键挂在这个节点上。切标签时旧标签被 IndexedStack 设成不可聚焦，焦点会退到路由那一层、
@@ -182,14 +190,18 @@ class _WorkspaceViewState extends State<WorkspaceView> {
     if (table != null) _loadTable(tab);
   }
 
-  /// 新标签沿用当前标签的库、表和模式
-  void _duplicateTab() {
+  /// 新标签沿用当前标签的库、表和模式。菜单栏的「新建已连接标签」也调这个
+  void duplicateTab() {
     final current = _tab;
     setState(() => _addTab(database: current.database, table: current.table, mode: current.mode));
   }
 
-  Future<void> _closeTab(int index) async {
-    if (_ws.tabs.length == 1) return;
+  /// 关这条连接的最后一个标签就是断开它；整个窗口只剩这一个标签时不给关
+  Future<void> closeTab(int index) async {
+    if (_ws.tabs.length == 1) {
+      if (widget.all.length > 1) widget.onDisconnect();
+      return;
+    }
     final tab = _ws.tabs[index];
     setState(() {
       _ws.tabs.removeAt(index);
@@ -199,11 +211,37 @@ class _WorkspaceViewState extends State<WorkspaceView> {
     await tab.close();
   }
 
-  void _selectTab(int index) {
+  void selectTab(int index) {
     if (index < 0 || index >= _ws.tabs.length) return;
     setState(() => _ws.active = index);
     _keepShortcutsAlive();
     _ensureCatalog(_tab);
+  }
+
+  /// 标签栏上的全部标签：（连接，这条连接里的第几个标签）
+  List<(Workspace, int)> get _allTabs => [
+    for (final workspace in widget.all)
+      for (var i = 0; i < workspace.tabs.length; i++) (workspace, i),
+  ];
+
+  void _selectAt(int index) {
+    final entries = _allTabs;
+    if (index < 0 || index >= entries.length) return;
+    final (workspace, tab) = entries[index];
+    if (workspace == _ws) {
+      selectTab(tab);
+    } else {
+      widget.onSwitch(workspace, tab);
+    }
+  }
+
+  void _closeAt(int index) {
+    final (workspace, tab) = _allTabs[index];
+    if (workspace == _ws) {
+      closeTab(tab);
+    } else {
+      widget.onCloseTab(workspace, tab);
+    }
   }
 
   /// 等这一帧把旧标签设成不可聚焦之后再收回焦点
@@ -332,19 +370,23 @@ class _WorkspaceViewState extends State<WorkspaceView> {
   }
 
   Future<void> _showConnectionMenu(Offset position) async {
+    final others = [
+      for (final workspace in widget.all)
+        if (workspace != _ws) workspace,
+    ];
     final choice = await showMenu<Object>(
       context: context,
       position: RelativeRect.fromLTRB(position.dx, position.dy, position.dx, position.dy),
       items: [
-        for (final other in widget.others)
+        for (final other in others)
           PopupMenuItem(value: other, height: 26, child: Text('切换到 ${other.name}')),
-        if (widget.others.isNotEmpty) const PopupMenuDivider(height: 8),
+        if (others.isNotEmpty) const PopupMenuDivider(height: 8),
         const PopupMenuItem(value: 'new', height: 26, child: Text('新建连接…')),
         PopupMenuItem(value: 'disconnect', height: 26, child: Text('断开 ${_ws.name}')),
       ],
     );
     if (!mounted || choice == null) return;
-    if (choice is Workspace) widget.onSwitch(choice);
+    if (choice is Workspace) widget.onSwitch(choice, choice.active);
     if (choice == 'new') widget.onNewConnection();
     if (choice == 'disconnect') widget.onDisconnect();
   }
@@ -360,17 +402,21 @@ class _WorkspaceViewState extends State<WorkspaceView> {
       LogicalKeyboardKey.digit7,
       LogicalKeyboardKey.digit8,
     ];
-    final count = _ws.tabs.length;
+    final entries = _allTabs;
+    final count = entries.length;
+    final current = entries.indexOf((_ws, _ws.active));
     return {
-      commandKey(LogicalKeyboardKey.keyT): _duplicateTab,
-      commandKey(LogicalKeyboardKey.keyW): () => _closeTab(_ws.active),
+      // 和 Querious 一样：⌘T 开新连接，⇧⌘T 在当前连接上开新标签
+      commandKey(LogicalKeyboardKey.keyT): widget.onNewConnection,
+      SingleActivator(LogicalKeyboardKey.keyT, meta: _isMac, control: !_isMac, shift: true): duplicateTab,
+      commandKey(LogicalKeyboardKey.keyW): () => closeTab(_ws.active),
       commandKey(LogicalKeyboardKey.comma): widget.onPreferences,
-      const SingleActivator(LogicalKeyboardKey.tab, control: true): () => _selectTab((_ws.active + 1) % count),
+      const SingleActivator(LogicalKeyboardKey.tab, control: true): () => _selectAt((current + 1) % count),
       const SingleActivator(LogicalKeyboardKey.tab, control: true, shift: true): () =>
-          _selectTab((_ws.active - 1 + count) % count),
-      for (var i = 0; i < digits.length; i++) commandKey(digits[i]): () => _selectTab(i),
+          _selectAt((current - 1 + count) % count),
+      for (var i = 0; i < digits.length; i++) commandKey(digits[i]): () => _selectAt(i),
       // 和浏览器一样，9 是最后一个
-      commandKey(LogicalKeyboardKey.digit9): () => _selectTab(count - 1),
+      commandKey(LogicalKeyboardKey.digit9): () => _selectAt(count - 1),
     };
   }
 
@@ -418,14 +464,18 @@ class _WorkspaceViewState extends State<WorkspaceView> {
                         children: [
                           MacTabStrip(
                             tabs: [
-                              for (final item in _ws.tabs)
-                                MacTab(key: ValueKey('tab-${item.id}'), title: item.title, tooltip: '${_ws.name} · ${item.title}'),
+                              for (final (workspace, index) in _allTabs)
+                                MacTab(
+                                  key: ValueKey('tab-${workspace.tabs[index].id}'),
+                                  title: workspace.tabs[index].title,
+                                  tooltip: '${workspace.name} · ${workspace.tabs[index].title}',
+                                ),
                             ],
-                            active: _ws.active,
-                            onSelect: _selectTab,
-                            onClose: _closeTab,
-                            onAdd: _duplicateTab,
-                            addTooltip: '新标签（${commandLabel('T')}）',
+                            active: _allTabs.indexOf((_ws, _ws.active)),
+                            onSelect: _selectAt,
+                            onClose: _closeAt,
+                            onAdd: duplicateTab,
+                            addTooltip: '新标签（${_isMac ? '⇧⌘T' : 'Ctrl+Shift+T'}）',
                           ),
                           Expanded(
                             // 不在前台的标签也留着，切回来结果、编辑器内容、滚动位置都还在

@@ -1,4 +1,8 @@
+import 'dart:io';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'connection_screen.dart';
 import 'preferences_dialog.dart';
@@ -35,6 +39,8 @@ class QueryPage extends StatefulWidget {
 
 class _QueryPageState extends State<QueryPage> {
   final List<Workspace> _workspaces = [];
+  // 菜单栏的「新建已连接标签」要找到当前工作区的状态
+  final Map<Workspace, GlobalKey<WorkspaceViewState>> _workspaceKeys = {};
   int _active = 0;
   int _nextWorkspaceId = 1;
 
@@ -85,10 +91,27 @@ class _QueryPageState extends State<QueryPage> {
     await closeSession(sessionId: workspace.schemaId);
   }
 
+  /// 标签栏点了别的连接的标签：那条连接先选中这个标签，再整个工作区切过去
+  void _switchTo(Workspace workspace, int tab) {
+    _workspaceKeys[workspace]?.currentState?.selectTab(tab);
+    setState(() => _active = _workspaces.indexOf(workspace));
+  }
+
   Future<void> _disconnect(Workspace workspace) async {
+    final activeWorkspace = _workspaces[_active];
     setState(() {
+      final index = _workspaces.indexOf(workspace);
       _workspaces.remove(workspace);
-      _active = _workspaces.isEmpty ? 0 : _active.clamp(0, _workspaces.length - 1);
+      _workspaceKeys.remove(workspace);
+      if (_workspaces.isEmpty) {
+        _active = 0;
+      } else if (activeWorkspace == workspace) {
+        // 断开的是当前连接：切到标签栏上挨着它的那条
+        _active = index.clamp(0, _workspaces.length - 1);
+      } else {
+        // 断开的是后台的连接（关了它最后一个标签）：留在当前连接
+        _active = _workspaces.indexOf(activeWorkspace);
+      }
     });
     await _closeWorkspace(workspace);
   }
@@ -122,8 +145,99 @@ class _QueryPageState extends State<QueryPage> {
     if (updated != null) widget.onPreferencesChanged(updated);
   }
 
+  /// 新窗口就是再起一个 app 进程，各窗口的连接互不相干。
+  // ponytail: 多进程代替多窗口，Dock 上会多一个图标；Flutter 多窗口 API 稳定后换成真窗口
+  Future<void> _newWindow() async {
+    try {
+      if (Platform.isMacOS) {
+        // resolvedExecutable 是 CData.app/Contents/MacOS/xxx，往上三层是 .app
+        final bundle = File(Platform.resolvedExecutable).parent.parent.parent.path;
+        await Process.run('open', ['-n', bundle]);
+      } else {
+        await Process.start(Platform.resolvedExecutable, [], mode: ProcessStartMode.detached);
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('打开新窗口失败：$e')));
+    }
+  }
+
+  /// macOS 菜单栏。工作区里的快捷键由工作区自己的 CallbackShortcuts 先接住，菜单只在焦点不在那里时响应
+  List<PlatformMenuItem> _menus() {
+    final showingWorkspace = !_showConnectionScreen;
+    return [
+      PlatformMenu(
+        label: 'CData',
+        menus: [
+          const PlatformMenuItemGroup(members: [PlatformProvidedMenuItem(type: PlatformProvidedMenuItemType.about)]),
+          PlatformMenuItemGroup(
+            members: [
+              PlatformMenuItem(
+                label: '偏好设置…',
+                shortcut: const SingleActivator(LogicalKeyboardKey.comma, meta: true),
+                onSelected: _editPreferences,
+              ),
+            ],
+          ),
+          const PlatformMenuItemGroup(
+            members: [PlatformProvidedMenuItem(type: PlatformProvidedMenuItemType.servicesSubmenu)],
+          ),
+          const PlatformMenuItemGroup(
+            members: [
+              PlatformProvidedMenuItem(type: PlatformProvidedMenuItemType.hide),
+              PlatformProvidedMenuItem(type: PlatformProvidedMenuItemType.hideOtherApplications),
+              PlatformProvidedMenuItem(type: PlatformProvidedMenuItemType.showAllApplications),
+            ],
+          ),
+          const PlatformMenuItemGroup(members: [PlatformProvidedMenuItem(type: PlatformProvidedMenuItemType.quit)]),
+        ],
+      ),
+      PlatformMenu(
+        label: '文件',
+        menus: [
+          PlatformMenuItem(
+            label: '新建连接窗口',
+            shortcut: const SingleActivator(LogicalKeyboardKey.keyN, meta: true),
+            onSelected: _newWindow,
+          ),
+          PlatformMenuItem(
+            label: '新建连接标签',
+            shortcut: const SingleActivator(LogicalKeyboardKey.keyT, meta: true),
+            onSelected: () => setState(() => _connecting = true),
+          ),
+          PlatformMenuItem(
+            label: '新建已连接标签',
+            shortcut: const SingleActivator(LogicalKeyboardKey.keyT, meta: true, shift: true),
+            // 连接页上没有「当前连接」，置灰
+            onSelected: showingWorkspace
+                ? () => _workspaceKeys[_workspaces[_active]]?.currentState?.duplicateTab()
+                : null,
+          ),
+        ],
+      ),
+      const PlatformMenu(
+        label: '窗口',
+        menus: [
+          PlatformProvidedMenuItem(type: PlatformProvidedMenuItemType.minimizeWindow),
+          PlatformProvidedMenuItem(type: PlatformProvidedMenuItemType.zoomWindow),
+          PlatformProvidedMenuItem(type: PlatformProvidedMenuItemType.toggleFullScreen),
+          PlatformMenuItemGroup(
+            members: [PlatformProvidedMenuItem(type: PlatformProvidedMenuItemType.arrangeWindowsInFront)],
+          ),
+        ],
+      ),
+    ];
+  }
+
   @override
   Widget build(BuildContext context) {
+    final page = _buildPage();
+    // 只有 macOS 自带菜单栏的实现，其他平台没有 delegate
+    if (defaultTargetPlatform != TargetPlatform.macOS) return page;
+    return PlatformMenuBar(menus: _menus(), child: page);
+  }
+
+  Widget _buildPage() {
     final connectionScreen = ConnectionScreen(
       onConnect: _connect,
       onPreferences: _editPreferences,
@@ -138,13 +252,15 @@ class _QueryPageState extends State<QueryPage> {
       children: [
         for (final workspace in _workspaces)
           WorkspaceView(
-            key: ValueKey('workspace-${workspace.id}'),
+            key: _workspaceKeys.putIfAbsent(workspace, () => GlobalKey(debugLabel: 'workspace-${workspace.id}')),
             workspace: workspace,
-            others: [
-              for (final other in _workspaces)
-                if (other != workspace) other,
-            ],
-            onSwitch: (other) => setState(() => _active = _workspaces.indexOf(other)),
+            all: _workspaces,
+            onSwitch: _switchTo,
+            onCloseTab: (other, tab) {
+              _workspaceKeys[other]?.currentState?.closeTab(tab);
+              // 那条连接在后台，它自己 setState 刷不到当前工作区的标签栏
+              setState(() {});
+            },
             onNewConnection: () => setState(() => _connecting = true),
             onDisconnect: () => _disconnect(workspace),
             onPreferences: _editPreferences,

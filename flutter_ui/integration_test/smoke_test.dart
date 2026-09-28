@@ -154,16 +154,18 @@ void main() {
     expect(find.text('用户1'), findsOneWidget, reason: '切回第一个标签，结果要还在');
 
     // 快捷键：焦点在编辑器里也要生效
-    Future<void> command(LogicalKeyboardKey key) async {
+    Future<void> command(LogicalKeyboardKey key, {bool shift = false}) async {
       final modifier = Platform.isMacOS ? LogicalKeyboardKey.metaLeft : LogicalKeyboardKey.controlLeft;
       await tester.sendKeyDownEvent(modifier);
+      if (shift) await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
       await tester.sendKeyEvent(key);
+      if (shift) await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
       await tester.sendKeyUpEvent(modifier);
       await settle(tester, rounds: 1);
     }
 
-    await command(LogicalKeyboardKey.keyT);
-    expect(find.byKey(const ValueKey('tab-3')), findsOneWidget, reason: '⌘T 没开新标签');
+    await command(LogicalKeyboardKey.keyT, shift: true);
+    expect(find.byKey(const ValueKey('tab-3')), findsOneWidget, reason: '⇧⌘T 没开新标签');
     await command(LogicalKeyboardKey.keyW);
     expect(find.byKey(const ValueKey('tab-3')), findsNothing, reason: '⌘W 没关掉当前标签');
     await command(LogicalKeyboardKey.digit1);

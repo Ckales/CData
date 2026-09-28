@@ -53,6 +53,38 @@ void main() {
     expect(find.text('4 张表'), findsOneWidget);
   });
 
+  testWidgets('选库：弹层挂在按钮下面，过滤后回车选第一个，Esc 关掉', (tester) async {
+    final source = FakeSchemaSource(
+      dbs: [for (var i = 0; i < 60; i++) 'db_$i', 'shop'],
+      tablesByDb: {'shop': []},
+    );
+    String? switchedTo;
+    await pumpSidebar(tester, source, onDatabaseChanged: (database) => switchedTo = database);
+
+    final button = tester.getRect(find.byKey(const ValueKey('database-picker')));
+    await tester.tap(find.byKey(const ValueKey('database-picker')));
+    await tester.pumpAndSettle();
+    final filter = find.byKey(const ValueKey('database-picker-filter'));
+    expect(tester.getTopLeft(filter).dy, greaterThan(button.bottom), reason: '库多的时候也不能被推到窗口顶上');
+    expect(find.byIcon(Icons.check), findsOneWidget, reason: '打开时滚到当前库，打勾');
+
+    await tester.enterText(filter, 'B_4');
+    await tester.pump();
+    expect(find.text('db_4'), findsOneWidget, reason: '不分大小写');
+    expect(find.text('db_40'), findsOneWidget);
+    expect(find.text('db_1'), findsNothing);
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.pumpAndSettle();
+    expect(switchedTo, 'db_4');
+    expect(filter, findsNothing);
+
+    await tester.tap(find.byKey(const ValueKey('database-picker')));
+    await tester.pumpAndSettle();
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+    expect(filter, findsNothing);
+  });
+
   testWidgets('估算行数标 ~，视图不标', (tester) async {
     await pumpSidebar(tester, FakeSchemaSource.simple());
 
