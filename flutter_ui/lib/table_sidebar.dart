@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'data_source.dart';
+import 'export_dialog.dart';
 import 'mac_widgets.dart';
+import 'src/rust/api/db.dart' show ExportFormat;
 import 'src/rust/api/schema.dart';
 import 'structure_editor.dart' show showDdlPreview;
 import 'theme.dart';
@@ -34,6 +36,9 @@ class TableSidebar extends StatefulWidget {
   /// 改名、复制、删除、清空执行成功之后通知外面：标签要跟着换表名、清掉已删的表、重读数据和补全目录
   final void Function(String table, TableAction action)? onTableAction;
 
+  /// 选导出文件的保存位置，返回 null 表示取消。不传就弹系统保存对话框，测试里换掉
+  final Future<String?> Function(String suggestedName)? pickSavePath;
+
   const TableSidebar({
     super.key,
     required this.source,
@@ -46,6 +51,7 @@ class TableSidebar extends StatefulWidget {
     this.onCreateTable,
     this.onOpenInNewTab,
     this.onTableAction,
+    this.pickSavePath,
   });
 
   @override
@@ -59,6 +65,9 @@ class _TableSidebarState extends State<TableSidebar> {
   List<TableInfo> _tables = [];
   String? _error;
   bool _loading = false;
+
+  /// 正在做的耗时操作（比如导出），显示在底栏
+  String? _busy;
 
   @override
   void initState() {
@@ -132,15 +141,24 @@ class _TableSidebarState extends State<TableSidebar> {
     child: Text('新建表…'),
   );
 
-  /// 没有表可以右键时（空库、过滤后没有匹配），在空白处右键只给「新建表…」
+  static const _createDatabaseItem = PopupMenuItem(
+    value: 'create-database',
+    height: 26,
+    child: Text('新建数据库…'),
+  );
+
+  /// 没有表可以右键时（空库、过滤后没有匹配），在空白处右键只给「新建库…」「新建表…」
   Future<void> _showBlankMenu(Offset position) async {
-    if (widget.onCreateTable == null) return;
     final choice = await showMenu<String>(
       context: context,
       position: RelativeRect.fromLTRB(position.dx, position.dy, position.dx, position.dy),
-      items: const [_createTableItem],
+      items: [
+        _createDatabaseItem,
+        if (widget.onCreateTable != null && widget.database.isNotEmpty) _createTableItem,
+      ],
     );
     if (!mounted) return;
+    if (choice == 'create-database') await _createDatabase();
     if (choice == 'create') await _createTable();
   }
 
@@ -171,6 +189,7 @@ class _TableSidebarState extends State<TableSidebar> {
         const PopupMenuDivider(height: 8),
         if (onShowStructure != null) const PopupMenuItem(value: 'structure', height: 26, child: Text('查看结构')),
         if (onImport != null && !isView) const PopupMenuItem(value: 'import', height: 26, child: Text('导入 CSV…')),
+        const PopupMenuItem(value: 'export', height: 26, child: Text('导出…')),
         if (!isView) const PopupMenuItem(value: 'count', height: 26, child: Text('统计行数')),
         if (!isView)
           const PopupMenuItem(
@@ -178,7 +197,9 @@ class _TableSidebarState extends State<TableSidebar> {
             height: 26,
             child: Row(children: [Expanded(child: Text('表操作')), Icon(Icons.chevron_right, size: 16)]),
           ),
-        if (widget.onCreateTable != null) ...[const PopupMenuDivider(height: 8), _createTableItem],
+        const PopupMenuDivider(height: 8),
+        _createDatabaseItem,
+        if (widget.onCreateTable != null) _createTableItem,
       ],
     );
     if (!mounted || choice == null) return;
@@ -204,13 +225,88 @@ class _TableSidebarState extends State<TableSidebar> {
         onShowStructure?.call(table);
       case 'import':
         onImport?.call(table);
+      case 'export':
+        await _export(table);
       case 'count':
         await _countRows(table);
       case 'operations':
         await _showOperations(table, at);
+      case 'create-database':
+        await _createDatabase();
       case 'create':
         await _createTable();
     }
+  }
+
+  /// 导出整张表：选项 → 保存位置 → core 从库里逐行读写。不经过结果网格，不受行数上限限制
+  Future<void> _export(String table) async {
+    final choice = await showExportDialog(
+      context,
+      allRowsLabel: '整张表（不受行数上限限制）',
+      selectionLabel: null,
+      suggestedTable: '',
+    );
+    if (choice == null || !mounted) return;
+    final extension = choice.options.format == ExportFormat.csv ? 'csv' : 'sql';
+    final pickSavePath = widget.pickSavePath ?? pickExportPath;
+    final path = await pickSavePath('$table.$extension');
+    if (path == null || !mounted) return;
+
+    final database = widget.database;
+    setState(() => _busy = '正在导出 $table…');
+    final int written;
+    try {
+      written = await widget.source.exportTable(database, table, path, choice.options);
+    } catch (e) {
+      if (mounted) setState(() => _error = '导出 $table 失败：$e');
+      return;
+    } finally {
+      if (mounted) setState(() => _busy = null);
+    }
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('导出完成'),
+        content: SelectableText('已把 $table 的 $written 行导出到\n$path'),
+        actions: [FilledButton(onPressed: () => Navigator.of(context).pop(), child: const Text('好'))],
+      ),
+    );
+  }
+
+  /// 新建库：选项 → 预览 DDL → 执行。建好后切到新库
+  Future<void> _createDatabase() async {
+    final DatabaseOptions options;
+    try {
+      options = await widget.source.databaseOptions();
+    } catch (e) {
+      if (mounted) setState(() => _error = '$e');
+      return;
+    }
+    if (!mounted) return;
+    final input = await showDialog<({String name, String charset, String collation})>(
+      context: context,
+      builder: (context) => _CreateDatabaseDialog(options: options),
+    );
+    if (input == null || !mounted) return;
+
+    final AlterPlan plan;
+    try {
+      plan = await widget.source.previewCreateDatabase(input.name, input.charset, input.collation);
+    } catch (e) {
+      if (mounted) setState(() => _error = '$e');
+      return;
+    }
+    if (!mounted) return;
+    final applied = await showDdlPreview(
+      context,
+      plan: plan,
+      cancelLabel: '取消',
+      apply: () => widget.source.applyCreateDatabase(input.name, input.charset, input.collation, plan.statements),
+    );
+    if (!applied || !mounted) return;
+    widget.onDatabaseChanged(input.name);
+    await _reload();
   }
 
   /// 「表操作」二级菜单，在同一个位置弹出
@@ -428,7 +524,7 @@ class _TableSidebarState extends State<TableSidebar> {
           _SidebarFooter(
             count: visible.length,
             total: _tables.length,
-            loading: _loading,
+            status: _busy ?? (_loading ? '加载中…' : null),
             onCreateTable: widget.onCreateTable == null ? null : _createTable,
           ),
         ],
@@ -464,10 +560,11 @@ class _DatabasePicker extends StatelessWidget {
 class _SidebarFooter extends StatelessWidget {
   final int count;
   final int total;
-  final bool loading;
+  /// 右下角的状态文字，null 不显示
+  final String? status;
   final VoidCallback? onCreateTable;
 
-  const _SidebarFooter({required this.count, required this.total, required this.loading, required this.onCreateTable});
+  const _SidebarFooter({required this.count, required this.total, required this.status, required this.onCreateTable});
 
   @override
   Widget build(BuildContext context) {
@@ -494,7 +591,7 @@ class _SidebarFooter extends StatelessWidget {
           ),
           const Spacer(),
           // 同 result_grid：无限动画会把 pumpAndSettle 卡死
-          if (loading) Text('加载中…', style: TextStyle(fontSize: 11, color: mac.secondaryText)),
+          if (status != null) Text(status!, style: TextStyle(fontSize: 11, color: mac.secondaryText)),
         ],
       ),
     );
@@ -559,6 +656,107 @@ class _NameDialogState extends State<_NameDialog> {
       actions: [
         OutlinedButton(onPressed: () => Navigator.of(context).pop(), child: const Text('取消')),
         FilledButton(onPressed: _submit, child: Text(widget.confirm)),
+      ],
+    );
+  }
+}
+
+/// 新建库：库名、字符集、排序规则。默认值用服务器的，排序规则跟着字符集换
+class _CreateDatabaseDialog extends StatefulWidget {
+  final DatabaseOptions options;
+
+  const _CreateDatabaseDialog({required this.options});
+
+  @override
+  State<_CreateDatabaseDialog> createState() => _CreateDatabaseDialogState();
+}
+
+class _CreateDatabaseDialogState extends State<_CreateDatabaseDialog> {
+  final _name = TextEditingController();
+  late String _charset = widget.options.defaultCharset;
+  late String _collation = widget.options.defaultCollation;
+
+  @override
+  void dispose() {
+    _name.dispose();
+    super.dispose();
+  }
+
+  CharsetInfo? get _charsetInfo {
+    for (final info in widget.options.charsets) {
+      if (info.name == _charset) return info;
+    }
+    return null;
+  }
+
+  /// 换字符集时排序规则换成它的默认值；换回服务器默认字符集时用服务器的默认排序规则
+  void _changeCharset(String charset) {
+    setState(() {
+      _charset = charset;
+      if (charset == widget.options.defaultCharset) {
+        _collation = widget.options.defaultCollation;
+      } else {
+        _collation = _charsetInfo!.defaultCollation;
+      }
+    });
+  }
+
+  /// 库名原样交给 core，不在这里修剪
+  void _submit() => Navigator.of(context).pop((name: _name.text, charset: _charset, collation: _collation));
+
+  @override
+  Widget build(BuildContext context) {
+    final collations = _charsetInfo?.collations ?? const <String>[];
+    return AlertDialog(
+      title: const Text('新建数据库'),
+      content: SizedBox(
+        width: 420,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            FormRow(
+              label: '库名',
+              labelWidth: 80,
+              child: TextField(
+                key: const ValueKey('database-name-field'),
+                controller: _name,
+                autofocus: true,
+                style: const TextStyle(fontSize: 13),
+                onSubmitted: (_) => _submit(),
+              ),
+            ),
+            FormRow(
+              label: '字符集',
+              labelWidth: 80,
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: MacPopupButton<String>(
+                  key: const ValueKey('database-charset'),
+                  value: _charset,
+                  items: {for (final info in widget.options.charsets) info.name: info.name},
+                  onChanged: _changeCharset,
+                ),
+              ),
+            ),
+            FormRow(
+              label: '排序规则',
+              labelWidth: 80,
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: MacPopupButton<String>(
+                  key: const ValueKey('database-collation'),
+                  value: _collation,
+                  items: {for (final collation in collations) collation: collation},
+                  onChanged: (collation) => setState(() => _collation = collation),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        OutlinedButton(onPressed: () => Navigator.of(context).pop(), child: const Text('取消')),
+        FilledButton(onPressed: _submit, child: const Text('预览')),
       ],
     );
   }

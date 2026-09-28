@@ -483,7 +483,7 @@ pub(crate) async fn read_result(
     })
 }
 
-fn build_columns(columns: &[Column]) -> Vec<ColumnMeta> {
+pub(crate) fn build_columns(columns: &[Column]) -> Vec<ColumnMeta> {
     let mut metas = Vec::with_capacity(columns.len());
     for column in columns {
         metas.push(ColumnMeta {
@@ -557,7 +557,7 @@ fn column_kind(column: &Column) -> ColumnKind {
     }
 }
 
-fn build_row(row: mysql_async::Row, columns: &[ColumnMeta]) -> Vec<CellValue> {
+pub(crate) fn build_row(row: mysql_async::Row, columns: &[ColumnMeta]) -> Vec<CellValue> {
     let values = row.unwrap();
 
     let mut cells = Vec::with_capacity(values.len());

@@ -664,6 +664,35 @@ async fn refresh_row_rereads_by_key_and_reports_a_vanished_row() {
 }
 
 #[tokio::test]
+async fn export_table_streams_every_row_without_the_row_limit() {
+    let Some(config) = config_from_env() else {
+        return;
+    };
+    let database = config.database.clone().unwrap();
+    let total = count_where(&config, "SELECT COUNT(*) FROM edit_target").await;
+
+    let id = cdata_core::session::open_session(&config).await.unwrap();
+    let path = std::env::temp_dir().join(format!("cdata-export-table-{}.csv", std::process::id()));
+    let options = cdata_core::export::ExportOptions {
+        format: cdata_core::export::ExportFormat::Csv,
+        encoding: cdata_core::export::ExportEncoding::Utf8,
+        delimiter: ",".to_string(),
+        header: true,
+        null_text: "NULL".to_string(),
+        table_name: String::new(),
+    };
+    let written = cdata_core::session::export_table(id, &database, "edit_target", path.to_str().unwrap(), &options)
+        .await
+        .expect("导出失败");
+    let text = std::fs::read_to_string(&path).unwrap();
+    std::fs::remove_file(&path).ok();
+
+    assert_eq!(written as i64, total, "整表导出不受行数上限影响，行数要和 COUNT(*) 一致");
+    assert_eq!(text.matches("\r\n").count() as i64, total + 1, "表头一行 + 每行一行（edit_target 里没有带换行的值）");
+    cdata_core::session::close_session(id).await.ok();
+}
+
+#[tokio::test]
 async fn batch_delete_rolls_back_when_any_row_is_stale() {
     let Some(config) = config_from_env() else {
         return;

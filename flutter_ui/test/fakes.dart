@@ -517,6 +517,56 @@ class FakeSchemaSource implements SchemaSource {
 
   @override
   Future<String> insertTemplate(String database, String table) async => 'INSERT INTO `$table` (`id`)\nVALUES\n\t(?);';
+
+  /// 整表导出的调用记录：(表, 路径, 选项)
+  final List<(String, String, ExportOptions)> tableExports = [];
+  Object? exportError;
+
+  @override
+  Future<int> exportTable(String database, String table, String path, ExportOptions options) async {
+    final error = exportError;
+    if (error != null) throw error;
+    tableExports.add((table, path, options));
+    return 5000;
+  }
+
+  DatabaseOptions databaseOptionsValue = const DatabaseOptions(
+    charsets: [
+      CharsetInfo(name: 'latin1', defaultCollation: 'latin1_swedish_ci', collations: ['latin1_bin', 'latin1_swedish_ci']),
+      CharsetInfo(
+        name: 'utf8mb4',
+        defaultCollation: 'utf8mb4_0900_ai_ci',
+        collations: ['utf8mb4_0900_ai_ci', 'utf8mb4_bin', 'utf8mb4_general_ci'],
+      ),
+    ],
+    defaultCharset: 'utf8mb4',
+    defaultCollation: 'utf8mb4_general_ci',
+  );
+
+  @override
+  Future<DatabaseOptions> databaseOptions() async => databaseOptionsValue;
+
+  /// 新建库的预览和执行记录：(库名, 字符集, 排序规则)
+  final List<(String, String, String)> databasePreviews = [];
+  final List<(String, String, String)> databasesCreated = [];
+
+  @override
+  Future<AlterPlan> previewCreateDatabase(String name, String charset, String collation) async {
+    databasePreviews.add((name, charset, collation));
+    final error = previewError;
+    if (error != null) throw error;
+    return AlterPlan(statements: ['CREATE DATABASE `$name` CHARACTER SET $charset COLLATE $collation'], dangers: const [], notes: const []);
+  }
+
+  /// 假装库真的建了：库列表里多一个，侧栏重读时能看到
+  @override
+  Future<void> applyCreateDatabase(String name, String charset, String collation, List<String> statements) async {
+    final error = applyError;
+    if (error != null) throw error;
+    databasesCreated.add((name, charset, collation));
+    dbs.add(name);
+    tablesByDb[name] = [];
+  }
 }
 
 TargetColumn targetColumn(

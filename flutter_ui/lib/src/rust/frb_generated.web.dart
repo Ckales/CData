@@ -133,6 +133,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ChangePlan dco_decode_change_plan(dynamic raw);
 
   @protected
+  CharsetInfo dco_decode_charset_info(dynamic raw);
+
+  @protected
   CheckDef dco_decode_check_def(dynamic raw);
 
   @protected
@@ -170,6 +173,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   CsvPreview dco_decode_csv_preview(dynamic raw);
+
+  @protected
+  DatabaseOptions dco_decode_database_options(dynamic raw);
 
   @protected
   DefaultValue dco_decode_default_value(dynamic raw);
@@ -284,6 +290,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<CellValue> dco_decode_list_cell_value(dynamic raw);
+
+  @protected
+  List<CharsetInfo> dco_decode_list_charset_info(dynamic raw);
 
   @protected
   List<CheckDef> dco_decode_list_check_def(dynamic raw);
@@ -699,6 +708,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ChangePlan sse_decode_change_plan(SseDeserializer deserializer);
 
   @protected
+  CharsetInfo sse_decode_charset_info(SseDeserializer deserializer);
+
+  @protected
   CheckDef sse_decode_check_def(SseDeserializer deserializer);
 
   @protected
@@ -736,6 +748,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   CsvPreview sse_decode_csv_preview(SseDeserializer deserializer);
+
+  @protected
+  DatabaseOptions sse_decode_database_options(SseDeserializer deserializer);
 
   @protected
   DefaultValue sse_decode_default_value(SseDeserializer deserializer);
@@ -850,6 +865,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<CellValue> sse_decode_list_cell_value(SseDeserializer deserializer);
+
+  @protected
+  List<CharsetInfo> sse_decode_list_charset_info(SseDeserializer deserializer);
 
   @protected
   List<CheckDef> sse_decode_list_check_def(SseDeserializer deserializer);
@@ -1347,6 +1365,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_change_plan(ChangePlan self, SseSerializer serializer);
 
   @protected
+  void sse_encode_charset_info(CharsetInfo self, SseSerializer serializer);
+
+  @protected
   void sse_encode_check_def(CheckDef self, SseSerializer serializer);
 
   @protected
@@ -1396,6 +1417,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_csv_preview(CsvPreview self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_database_options(
+    DatabaseOptions self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_default_value(DefaultValue self, SseSerializer serializer);
@@ -1526,6 +1553,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_list_cell_value(
     List<CellValue> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_charset_info(
+    List<CharsetInfo> self,
     SseSerializer serializer,
   );
 

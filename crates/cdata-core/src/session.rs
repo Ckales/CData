@@ -1423,3 +1423,138 @@ pub async fn insert_template(session_id: u64, database: &str, table: &str) -> Re
     }
     Ok(crate::table_ops::insert_template(table, &columns))
 }
+
+/// 整张表导出成文件。直接从库里逐行读、逐行写，不进会话缓存，也不受行数上限限制。
+/// 写文件出错时连接上还有没读完的行，这条连接直接断开，不还回池里
+pub async fn export_table(
+    session_id: u64,
+    database: &str,
+    table: &str,
+    path: &str,
+    options: &crate::export::ExportOptions,
+) -> Result<u64> {
+    let pool = pool_of(session_id)?;
+    let mut conn = pool.get_conn().await?;
+    let sql = format!("SELECT * FROM {}.{}", crate::sql::quote_ident(database), crate::sql::quote_ident(table));
+    // 用 prepared statement 跑，和结果网格一样拿到真实数值类型
+    let mut result = conn.exec_iter(sql, ()).await?;
+    let columns = match result.columns() {
+        Some(columns) => crate::db::build_columns(&columns),
+        None => return Err(Error::BadInput(format!("{table} 没有返回列"))),
+    };
+    let mut column_indexes = Vec::with_capacity(columns.len());
+    for index in 0..columns.len() {
+        column_indexes.push(index);
+    }
+
+    // ponytail: 在异步任务里同步写文件，导出期间占着一个运行时线程；要并发导出多张表再挪到 spawn_blocking
+    let mut writer = match crate::export::ExportWriter::create(std::path::Path::new(path), &columns, &column_indexes, options) {
+        Ok(writer) => writer,
+        Err(err) => {
+            drop(result);
+            let _ = conn.disconnect().await;
+            return Err(Error::BadInput(err));
+        }
+    };
+    loop {
+        let row = match result.next().await {
+            Ok(Some(row)) => row,
+            Ok(None) => break,
+            Err(err) => return Err(Error::from(err)),
+        };
+        if let Err(err) = writer.write_row(&crate::db::build_row(row, &columns)) {
+            drop(result);
+            let _ = conn.disconnect().await;
+            return Err(Error::BadInput(err));
+        }
+    }
+    drop(result);
+    writer.finish().map_err(Error::BadInput)
+}
+
+/// 新建库对话框的选项：服务器上的字符集、排序规则和默认值，一次取齐
+pub async fn database_options(session_id: u64) -> Result<crate::table_ops::DatabaseOptions> {
+    let pool = pool_of(session_id)?;
+    let mut conn = pool.get_conn().await?;
+    // MariaDB 有些排序规则不属于某个字符集，CHARACTER_SET_NAME 是 NULL，跳过
+    let rows: Vec<(Option<String>, String, String)> = conn
+        .query(
+            "SELECT CHARACTER_SET_NAME, COLLATION_NAME, IS_DEFAULT FROM information_schema.COLLATIONS \
+             ORDER BY CHARACTER_SET_NAME, COLLATION_NAME",
+        )
+        .await?;
+    let mut charsets: Vec<crate::table_ops::CharsetInfo> = Vec::new();
+    for (charset, collation, is_default) in rows {
+        let Some(charset) = charset else { continue };
+        if charsets.last().map(|info| info.name != charset).unwrap_or(true) {
+            charsets.push(crate::table_ops::CharsetInfo {
+                name: charset,
+                default_collation: String::new(),
+                collations: Vec::new(),
+            });
+        }
+        let info = charsets.last_mut().expect("刚放进去");
+        if is_default == "Yes" {
+            info.default_collation = collation.clone();
+        }
+        info.collations.push(collation);
+    }
+
+    let defaults: Option<(String, String)> = conn.query_first("SELECT @@character_set_server, @@collation_server").await?;
+    let (default_charset, default_collation) =
+        defaults.ok_or_else(|| Error::BadInput("读不到服务器的默认字符集".to_string()))?;
+    Ok(crate::table_ops::DatabaseOptions { charsets, default_charset, default_collation })
+}
+
+/// 预览新建库。排序规则必须属于这个字符集，而且是服务器上有的
+pub async fn preview_create_database(
+    session_id: u64,
+    name: &str,
+    charset: &str,
+    collation: &str,
+) -> Result<crate::alter::AlterPlan> {
+    let pool = pool_of(session_id)?;
+    let mut conn = pool.get_conn().await?;
+    plan_create_database_on(&mut conn, name, charset, collation).await
+}
+
+/// 执行预览过的新建库。重新核对、重新生成，和预览时的语句不一致就不执行
+pub async fn apply_create_database(
+    session_id: u64,
+    name: &str,
+    charset: &str,
+    collation: &str,
+    previewed: &[String],
+) -> Result<()> {
+    let pool = pool_of(session_id)?;
+    let mut conn = pool.get_conn().await?;
+    let plan = plan_create_database_on(&mut conn, name, charset, collation).await?;
+    if plan.statements != previewed {
+        return Err(Error::BadInput("要执行的语句和预览时不一样了，请重新操作".to_string()));
+    }
+    run_planned(&mut conn, &plan.statements).await
+}
+
+async fn plan_create_database_on(
+    conn: &mut mysql_async::Conn,
+    name: &str,
+    charset: &str,
+    collation: &str,
+) -> Result<crate::alter::AlterPlan> {
+    let found: Option<String> = conn
+        .exec_first(
+            "SELECT COLLATION_NAME FROM information_schema.COLLATIONS WHERE COLLATION_NAME = ? AND CHARACTER_SET_NAME = ?",
+            (collation, charset),
+        )
+        .await?;
+    if found.is_none() {
+        return Err(Error::BadInput(format!("服务器上没有属于字符集 {charset} 的排序规则 {collation}")));
+    }
+    let existing: Option<String> = conn
+        .exec_first("SELECT SCHEMA_NAME FROM information_schema.SCHEMATA WHERE SCHEMA_NAME = ?", (name,))
+        .await?;
+    if existing.is_some() {
+        return Err(Error::BadInput(format!("已经有叫 {name} 的库，换个名字")));
+    }
+    crate::table_ops::plan_create_database(name, charset, collation).map_err(Error::BadInput)
+}

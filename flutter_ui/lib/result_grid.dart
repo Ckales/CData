@@ -7,7 +7,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'data_source.dart';
-import 'package:file_selector/file_selector.dart' show XTypeGroup, getSaveLocation;
 
 import 'cell_editors.dart';
 import 'export_dialog.dart';
@@ -17,15 +16,6 @@ import 'src/rust/api/db.dart';
 import 'src/rust/api/layouts.dart';
 import 'src/rust/api/value.dart';
 import 'theme.dart';
-
-Future<String?> _systemSavePath(String suggestedName) async {
-  final extension = suggestedName.split('.').last;
-  final location = await getSaveLocation(
-    suggestedName: suggestedName,
-    acceptedTypeGroups: [XTypeGroup(label: extension.toUpperCase(), extensions: [extension])],
-  );
-  return location?.path;
-}
 
 /// 行号列的宽度。表头、数据行、总宽三处共用，漏掉任何一处都会让 Row 比容器宽
 const double _rowNumberWidth = 48;
@@ -989,7 +979,7 @@ class _ResultGridState extends State<ResultGrid> {
 
     final choice = await showExportDialog(
       context,
-      totalRows: _totalRows,
+      allRowsLabel: '全部 $_totalRows 行',
       selectionLabel: selectionLabel,
       suggestedTable: suggestedTable,
     );
@@ -997,7 +987,7 @@ class _ResultGridState extends State<ResultGrid> {
 
     final extension = choice.options.format == ExportFormat.csv ? 'csv' : 'sql';
     final baseName = suggestedTable.isEmpty ? 'result' : suggestedTable;
-    final pickSavePath = widget.pickSavePath ?? _systemSavePath;
+    final pickSavePath = widget.pickSavePath ?? pickExportPath;
     final path = await pickSavePath('$baseName.$extension');
     if (path == null || !mounted) return;
 

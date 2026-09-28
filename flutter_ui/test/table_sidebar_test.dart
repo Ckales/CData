@@ -1,5 +1,6 @@
 // 侧栏的 widget 测试。内存数据，不起 app、不连库。
 
+import 'package:cdata_flutter/src/rust/api/db.dart' show ExportFormat;
 import 'package:cdata_flutter/src/rust/api/schema.dart';
 import 'package:cdata_flutter/table_sidebar.dart';
 import 'package:flutter/gestures.dart' show kSecondaryButton;
@@ -20,6 +21,7 @@ Future<void> pumpSidebar(
   Future<String?> Function(String database)? onCreateTable,
   void Function(String table)? onOpenInNewTab,
   void Function(String table, TableAction action)? onTableAction,
+  Future<String?> Function(String suggestedName)? pickSavePath,
 }) async {
   await tester.pumpWidget(
     MaterialApp(
@@ -34,6 +36,7 @@ Future<void> pumpSidebar(
           onCreateTable: onCreateTable,
           onOpenInNewTab: onOpenInNewTab,
           onTableAction: onTableAction,
+          pickSavePath: pickSavePath,
         ),
       ),
     ),
@@ -303,6 +306,84 @@ void main() {
       await tester.pumpAndSettle();
       expect(source.actionPreviews.single.$2, const TableAction.truncate());
       expect(find.text('确认要执行的 DDL'), findsOneWidget);
+    });
+
+    testWidgets('导出整张表：选格式和保存位置后交给 core，完成后说写了几行', (tester) async {
+      final source = FakeSchemaSource.simple();
+      String? suggested;
+      await pumpSidebar(
+        tester,
+        source,
+        pickSavePath: (name) async {
+          suggested = name;
+          return '/tmp/orders.sql';
+        },
+      );
+
+      await menu(tester, 'orders', '导出…');
+      expect(find.text('整张表（不受行数上限限制）'), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('export-format')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('SQL INSERT').last);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('导出…'));
+      await tester.pumpAndSettle();
+
+      expect(suggested, 'orders.sql');
+      expect(source.tableExports.single.$1, 'orders');
+      expect(source.tableExports.single.$2, '/tmp/orders.sql');
+      expect(source.tableExports.single.$3.format, ExportFormat.sqlInsert);
+      expect(find.textContaining('5000 行'), findsOneWidget);
+    });
+
+    testWidgets('导出失败显示原因，取消保存就不导出', (tester) async {
+      final source = FakeSchemaSource.simple()..exportError = Exception('磁盘满了');
+      String? path;
+      await pumpSidebar(tester, source, pickSavePath: (_) async => path);
+
+      await menu(tester, 'orders', '导出…');
+      await tester.tap(find.text('导出…'));
+      await tester.pumpAndSettle();
+      expect(source.tableExports, isEmpty, reason: '保存位置取消了');
+
+      path = '/tmp/orders.csv';
+      await menu(tester, 'orders', '导出…');
+      await tester.tap(find.text('导出…'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('磁盘满了'), findsOneWidget);
+    });
+
+    testWidgets('新建库：默认用服务器的字符集和排序规则，换字符集排序规则跟着换，建好后切过去', (tester) async {
+      bigWindow(tester);
+      final source = FakeSchemaSource.simple();
+      String? switchedTo;
+      await pumpSidebar(tester, source, onDatabaseChanged: (database) => switchedTo = database);
+
+      await menu(tester, 'orders', '新建数据库…');
+      expect(find.text('utf8mb4_general_ci'), findsOneWidget, reason: '服务器默认排序规则');
+      await tester.enterText(find.byKey(const ValueKey('database-name-field')), 'blog');
+
+      await tester.tap(find.byKey(const ValueKey('database-charset')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('latin1').last);
+      await tester.pumpAndSettle();
+      expect(find.text('latin1_swedish_ci'), findsOneWidget, reason: '换成这个字符集自己的默认排序规则');
+
+      await tester.tap(find.text('预览'));
+      await tester.pumpAndSettle();
+      expect(find.text('CREATE DATABASE `blog` CHARACTER SET latin1 COLLATE latin1_swedish_ci'), findsOneWidget);
+      await tester.tap(find.text('执行'));
+      await tester.pumpAndSettle();
+
+      expect(source.databasesCreated.single, ('blog', 'latin1', 'latin1_swedish_ci'));
+      expect(switchedTo, 'blog');
+    });
+
+    testWidgets('空库的空白处右键也能新建库', (tester) async {
+      await pumpSidebar(tester, FakeSchemaSource.simple(), database: 'analytics');
+      await tester.tap(find.byKey(const ValueKey('sidebar-blank')), buttons: kSecondaryButton);
+      await tester.pumpAndSettle();
+      expect(find.text('新建数据库…'), findsOneWidget);
     });
 
     testWidgets('在新标签中打开把表名交给外面', (tester) async {

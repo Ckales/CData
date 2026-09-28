@@ -39,7 +39,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.13.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -597066167;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -1896847600;
 
 // Section: executor
 
@@ -156,6 +156,53 @@ fn wire__crate__api__schema__apply_alter_impl(
                             api_table,
                             api_original,
                             api_draft,
+                            api_statements,
+                        )
+                        .await?;
+                        std::result::Result::Ok(output_ok)
+                    })()
+                    .await,
+                )
+            }
+        },
+    )
+}
+fn wire__crate__api__schema__apply_create_database_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "apply_create_database",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_session_id = <u64>::sse_decode(&mut deserializer);
+            let api_name = <String>::sse_decode(&mut deserializer);
+            let api_charset = <String>::sse_decode(&mut deserializer);
+            let api_collation = <String>::sse_decode(&mut deserializer);
+            let api_statements = <Vec<String>>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| async move {
+                transform_result_sse::<_, String>(
+                    (move || async move {
+                        let output_ok = crate::api::schema::apply_create_database(
+                            api_session_id,
+                            api_name,
+                            api_charset,
+                            api_collation,
                             api_statements,
                         )
                         .await?;
@@ -715,6 +762,43 @@ fn wire__crate__api__schema__create_table_impl(
         },
     )
 }
+fn wire__crate__api__schema__database_options_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "database_options",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_session_id = <u64>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| async move {
+                transform_result_sse::<_, String>(
+                    (move || async move {
+                        let output_ok =
+                            crate::api::schema::database_options(api_session_id).await?;
+                        std::result::Result::Ok(output_ok)
+                    })()
+                    .await,
+                )
+            }
+        },
+    )
+}
 fn wire__crate__api__options__default_connection_options_impl(
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
     rust_vec_len_: i32,
@@ -1155,6 +1239,53 @@ fn wire__crate__api__db__export_rows_impl(
                     )?;
                     std::result::Result::Ok(output_ok)
                 })())
+            }
+        },
+    )
+}
+fn wire__crate__api__db__export_table_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "export_table",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_session_id = <u64>::sse_decode(&mut deserializer);
+            let api_database = <String>::sse_decode(&mut deserializer);
+            let api_table = <String>::sse_decode(&mut deserializer);
+            let api_path = <String>::sse_decode(&mut deserializer);
+            let api_options = <crate::api::db::ExportOptions>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| async move {
+                transform_result_sse::<_, String>(
+                    (move || async move {
+                        let output_ok = crate::api::db::export_table(
+                            api_session_id,
+                            api_database,
+                            api_table,
+                            api_path,
+                            api_options,
+                        )
+                        .await?;
+                        std::result::Result::Ok(output_ok)
+                    })()
+                    .await,
+                )
             }
         },
     )
@@ -2053,6 +2184,51 @@ fn wire__crate__api__schema__preview_alter_impl(
                             api_table,
                             api_original,
                             api_draft,
+                        )
+                        .await?;
+                        std::result::Result::Ok(output_ok)
+                    })()
+                    .await,
+                )
+            }
+        },
+    )
+}
+fn wire__crate__api__schema__preview_create_database_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "preview_create_database",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_session_id = <u64>::sse_decode(&mut deserializer);
+            let api_name = <String>::sse_decode(&mut deserializer);
+            let api_charset = <String>::sse_decode(&mut deserializer);
+            let api_collation = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| async move {
+                transform_result_sse::<_, String>(
+                    (move || async move {
+                        let output_ok = crate::api::schema::preview_create_database(
+                            api_session_id,
+                            api_name,
+                            api_charset,
+                            api_collation,
                         )
                         .await?;
                         std::result::Result::Ok(output_ok)
@@ -3050,6 +3226,12 @@ const _: fn() = || {
         let _: Vec<String> = ChangePlan.notes;
     }
     {
+        let CharsetInfo = None::<crate::api::schema::CharsetInfo>.unwrap();
+        let _: String = CharsetInfo.name;
+        let _: String = CharsetInfo.default_collation;
+        let _: Vec<String> = CharsetInfo.collations;
+    }
+    {
         let CheckDef = None::<crate::api::schema::CheckDef>.unwrap();
         let _: String = CheckDef.name;
         let _: String = CheckDef.expression;
@@ -3136,6 +3318,12 @@ const _: fn() = || {
         let _: u64 = CsvPreview.column_count;
         let _: Vec<crate::api::csv_import::PreviewRow> = CsvPreview.rows;
         let _: Option<String> = CsvPreview.error;
+    }
+    {
+        let DatabaseOptions = None::<crate::api::schema::DatabaseOptions>.unwrap();
+        let _: Vec<crate::api::schema::CharsetInfo> = DatabaseOptions.charsets;
+        let _: String = DatabaseOptions.default_charset;
+        let _: String = DatabaseOptions.default_collation;
     }
     match None::<crate::api::schema::DefaultValue>.unwrap() {
         crate::api::schema::DefaultValue::NoDefault => {}
@@ -3732,6 +3920,20 @@ impl SseDecode for crate::api::users::ChangePlan {
     }
 }
 
+impl SseDecode for crate::api::schema::CharsetInfo {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_name = <String>::sse_decode(deserializer);
+        let mut var_defaultCollation = <String>::sse_decode(deserializer);
+        let mut var_collations = <Vec<String>>::sse_decode(deserializer);
+        return crate::api::schema::CharsetInfo {
+            name: var_name,
+            default_collation: var_defaultCollation,
+            collations: var_collations,
+        };
+    }
+}
+
 impl SseDecode for crate::api::schema::CheckDef {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -3959,6 +4161,20 @@ impl SseDecode for crate::api::csv_import::CsvPreview {
             column_count: var_columnCount,
             rows: var_rows,
             error: var_error,
+        };
+    }
+}
+
+impl SseDecode for crate::api::schema::DatabaseOptions {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_charsets = <Vec<crate::api::schema::CharsetInfo>>::sse_decode(deserializer);
+        let mut var_defaultCharset = <String>::sse_decode(deserializer);
+        let mut var_defaultCollation = <String>::sse_decode(deserializer);
+        return crate::api::schema::DatabaseOptions {
+            charsets: var_charsets,
+            default_charset: var_defaultCharset,
+            default_collation: var_defaultCollation,
         };
     }
 }
@@ -4586,6 +4802,18 @@ impl SseDecode for Vec<crate::api::value::CellValue> {
         let mut ans_ = Vec::with_capacity(len_ as usize);
         for idx_ in 0..len_ {
             ans_.push(<crate::api::value::CellValue>::sse_decode(deserializer));
+        }
+        return ans_;
+    }
+}
+
+impl SseDecode for Vec<crate::api::schema::CharsetInfo> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<crate::api::schema::CharsetInfo>::sse_decode(deserializer));
         }
         return ans_;
     }
@@ -5984,91 +6212,102 @@ fn pde_ffi_dispatcher_primary_impl(
         1 => wire__crate__api__users__account_grants_impl(port, ptr, rust_vec_len, data_len),
         2 => wire__crate__api__editor__add_history_impl(port, ptr, rust_vec_len, data_len),
         3 => wire__crate__api__schema__apply_alter_impl(port, ptr, rust_vec_len, data_len),
-        4 => wire__crate__api__db__apply_edit_impl(port, ptr, rust_vec_len, data_len),
-        5 => wire__crate__api__server__apply_set_global_impl(port, ptr, rust_vec_len, data_len),
-        6 => wire__crate__api__schema__apply_table_action_impl(port, ptr, rust_vec_len, data_len),
-        7 => wire__crate__api__users__apply_user_change_impl(port, ptr, rust_vec_len, data_len),
-        8 => wire__crate__api__schema__browse_sql_impl(port, ptr, rust_vec_len, data_len),
-        9 => wire__crate__api__csv_import__cancel_import_impl(port, ptr, rust_vec_len, data_len),
-        11 => wire__crate__api__csv_import__close_import_impl(port, ptr, rust_vec_len, data_len),
-        12 => wire__crate__api__db__close_session_impl(port, ptr, rust_vec_len, data_len),
-        13 => wire__crate__api__db__column_choices_impl(port, ptr, rust_vec_len, data_len),
-        15 => wire__crate__api__db__copy_range_impl(port, ptr, rust_vec_len, data_len),
-        16 => wire__crate__api__schema__count_rows_impl(port, ptr, rust_vec_len, data_len),
-        17 => wire__crate__api__schema__create_table_impl(port, ptr, rust_vec_len, data_len),
-        20 => {
+        4 => {
+            wire__crate__api__schema__apply_create_database_impl(port, ptr, rust_vec_len, data_len)
+        }
+        5 => wire__crate__api__db__apply_edit_impl(port, ptr, rust_vec_len, data_len),
+        6 => wire__crate__api__server__apply_set_global_impl(port, ptr, rust_vec_len, data_len),
+        7 => wire__crate__api__schema__apply_table_action_impl(port, ptr, rust_vec_len, data_len),
+        8 => wire__crate__api__users__apply_user_change_impl(port, ptr, rust_vec_len, data_len),
+        9 => wire__crate__api__schema__browse_sql_impl(port, ptr, rust_vec_len, data_len),
+        10 => wire__crate__api__csv_import__cancel_import_impl(port, ptr, rust_vec_len, data_len),
+        12 => wire__crate__api__csv_import__close_import_impl(port, ptr, rust_vec_len, data_len),
+        13 => wire__crate__api__db__close_session_impl(port, ptr, rust_vec_len, data_len),
+        14 => wire__crate__api__db__column_choices_impl(port, ptr, rust_vec_len, data_len),
+        16 => wire__crate__api__db__copy_range_impl(port, ptr, rust_vec_len, data_len),
+        17 => wire__crate__api__schema__count_rows_impl(port, ptr, rust_vec_len, data_len),
+        18 => wire__crate__api__schema__create_table_impl(port, ptr, rust_vec_len, data_len),
+        19 => wire__crate__api__schema__database_options_impl(port, ptr, rust_vec_len, data_len),
+        22 => {
             wire__crate__api__connections__delete_connection_impl(port, ptr, rust_vec_len, data_len)
         }
-        21 => wire__crate__api__editor__delete_favorite_impl(port, ptr, rust_vec_len, data_len),
-        22 => wire__crate__api__db__delete_rows_impl(port, ptr, rust_vec_len, data_len),
-        23 => wire__crate__api__value__display_text_impl(port, ptr, rust_vec_len, data_len),
-        24 => wire__crate__api__editor__drop_child_results_impl(port, ptr, rust_vec_len, data_len),
-        25 => wire__crate__api__db__execute_impl(port, ptr, rust_vec_len, data_len),
-        26 => wire__crate__api__db__execute_filtered_view_impl(port, ptr, rust_vec_len, data_len),
-        27 => wire__crate__api__editor__execute_script_impl(port, ptr, rust_vec_len, data_len),
-        28 => wire__crate__api__editor__explain_impl(port, ptr, rust_vec_len, data_len),
-        29 => wire__crate__api__db__export_rows_impl(port, ptr, rust_vec_len, data_len),
-        30 => wire__crate__api__db__fetch_window_impl(port, ptr, rust_vec_len, data_len),
-        31 => wire__crate__api__db__fetch_window_text_impl(port, ptr, rust_vec_len, data_len),
-        32 => wire__crate__api__value__format_json_impl(port, ptr, rust_vec_len, data_len),
-        33 => wire__crate__api__value__hex_dump_impl(port, ptr, rust_vec_len, data_len),
-        34 => wire__crate__api__csv_import__import_status_impl(port, ptr, rust_vec_len, data_len),
-        35 => wire__crate__api__init_app_impl(port, ptr, rust_vec_len, data_len),
-        36 => wire__crate__api__db__insert_row_impl(port, ptr, rust_vec_len, data_len),
-        37 => wire__crate__api__schema__insert_template_impl(port, ptr, rust_vec_len, data_len),
-        38 => wire__crate__api__server__kill_process_impl(port, ptr, rust_vec_len, data_len),
-        39 => {
+        23 => wire__crate__api__editor__delete_favorite_impl(port, ptr, rust_vec_len, data_len),
+        24 => wire__crate__api__db__delete_rows_impl(port, ptr, rust_vec_len, data_len),
+        25 => wire__crate__api__value__display_text_impl(port, ptr, rust_vec_len, data_len),
+        26 => wire__crate__api__editor__drop_child_results_impl(port, ptr, rust_vec_len, data_len),
+        27 => wire__crate__api__db__execute_impl(port, ptr, rust_vec_len, data_len),
+        28 => wire__crate__api__db__execute_filtered_view_impl(port, ptr, rust_vec_len, data_len),
+        29 => wire__crate__api__editor__execute_script_impl(port, ptr, rust_vec_len, data_len),
+        30 => wire__crate__api__editor__explain_impl(port, ptr, rust_vec_len, data_len),
+        31 => wire__crate__api__db__export_rows_impl(port, ptr, rust_vec_len, data_len),
+        32 => wire__crate__api__db__export_table_impl(port, ptr, rust_vec_len, data_len),
+        33 => wire__crate__api__db__fetch_window_impl(port, ptr, rust_vec_len, data_len),
+        34 => wire__crate__api__db__fetch_window_text_impl(port, ptr, rust_vec_len, data_len),
+        35 => wire__crate__api__value__format_json_impl(port, ptr, rust_vec_len, data_len),
+        36 => wire__crate__api__value__hex_dump_impl(port, ptr, rust_vec_len, data_len),
+        37 => wire__crate__api__csv_import__import_status_impl(port, ptr, rust_vec_len, data_len),
+        38 => wire__crate__api__init_app_impl(port, ptr, rust_vec_len, data_len),
+        39 => wire__crate__api__db__insert_row_impl(port, ptr, rust_vec_len, data_len),
+        40 => wire__crate__api__schema__insert_template_impl(port, ptr, rust_vec_len, data_len),
+        41 => wire__crate__api__server__kill_process_impl(port, ptr, rust_vec_len, data_len),
+        42 => {
             wire__crate__api__connections__list_connections_impl(port, ptr, rust_vec_len, data_len)
         }
-        40 => wire__crate__api__schema__list_databases_impl(port, ptr, rust_vec_len, data_len),
-        41 => wire__crate__api__editor__list_favorites_impl(port, ptr, rust_vec_len, data_len),
-        42 => wire__crate__api__editor__list_history_impl(port, ptr, rust_vec_len, data_len),
-        43 => wire__crate__api__schema__list_tables_impl(port, ptr, rust_vec_len, data_len),
-        44 => wire__crate__api__editor__load_catalog_impl(port, ptr, rust_vec_len, data_len),
-        45 => wire__crate__api__layouts__load_layout_impl(port, ptr, rust_vec_len, data_len),
-        46 => wire__crate__api__connections__load_password_impl(port, ptr, rust_vec_len, data_len),
-        47 => {
+        43 => wire__crate__api__schema__list_databases_impl(port, ptr, rust_vec_len, data_len),
+        44 => wire__crate__api__editor__list_favorites_impl(port, ptr, rust_vec_len, data_len),
+        45 => wire__crate__api__editor__list_history_impl(port, ptr, rust_vec_len, data_len),
+        46 => wire__crate__api__schema__list_tables_impl(port, ptr, rust_vec_len, data_len),
+        47 => wire__crate__api__editor__load_catalog_impl(port, ptr, rust_vec_len, data_len),
+        48 => wire__crate__api__layouts__load_layout_impl(port, ptr, rust_vec_len, data_len),
+        49 => wire__crate__api__connections__load_password_impl(port, ptr, rust_vec_len, data_len),
+        50 => {
             wire__crate__api__preferences__load_preferences_impl(port, ptr, rust_vec_len, data_len)
         }
-        48 => wire__crate__api__users__load_user_admin_impl(port, ptr, rust_vec_len, data_len),
-        50 => wire__crate__api__db__open_session_impl(port, ptr, rust_vec_len, data_len),
-        51 => wire__crate__api__db__parse_clipboard_impl(port, ptr, rust_vec_len, data_len),
-        52 => wire__crate__api__db__paste_cells_impl(port, ptr, rust_vec_len, data_len),
-        53 => wire__crate__api__csv_import__prepare_import_impl(port, ptr, rust_vec_len, data_len),
-        54 => wire__crate__api__schema__preview_alter_impl(port, ptr, rust_vec_len, data_len),
-        55 => {
+        51 => wire__crate__api__users__load_user_admin_impl(port, ptr, rust_vec_len, data_len),
+        53 => wire__crate__api__db__open_session_impl(port, ptr, rust_vec_len, data_len),
+        54 => wire__crate__api__db__parse_clipboard_impl(port, ptr, rust_vec_len, data_len),
+        55 => wire__crate__api__db__paste_cells_impl(port, ptr, rust_vec_len, data_len),
+        56 => wire__crate__api__csv_import__prepare_import_impl(port, ptr, rust_vec_len, data_len),
+        57 => wire__crate__api__schema__preview_alter_impl(port, ptr, rust_vec_len, data_len),
+        58 => wire__crate__api__schema__preview_create_database_impl(
+            port,
+            ptr,
+            rust_vec_len,
+            data_len,
+        ),
+        59 => {
             wire__crate__api__schema__preview_create_table_impl(port, ptr, rust_vec_len, data_len)
         }
-        56 => wire__crate__api__csv_import__preview_csv_impl(port, ptr, rust_vec_len, data_len),
-        57 => wire__crate__api__server__preview_set_global_impl(port, ptr, rust_vec_len, data_len),
-        58 => {
+        60 => wire__crate__api__csv_import__preview_csv_impl(port, ptr, rust_vec_len, data_len),
+        61 => wire__crate__api__server__preview_set_global_impl(port, ptr, rust_vec_len, data_len),
+        62 => {
             wire__crate__api__schema__preview_table_action_impl(port, ptr, rust_vec_len, data_len)
         }
-        59 => wire__crate__api__users__preview_user_change_impl(port, ptr, rust_vec_len, data_len),
-        60 => wire__crate__api__db__refresh_row_impl(port, ptr, rust_vec_len, data_len),
-        61 => wire__crate__api__schema__run_maintenance_impl(port, ptr, rust_vec_len, data_len),
-        62 => {
+        63 => wire__crate__api__users__preview_user_change_impl(port, ptr, rust_vec_len, data_len),
+        64 => wire__crate__api__db__refresh_row_impl(port, ptr, rust_vec_len, data_len),
+        65 => wire__crate__api__schema__run_maintenance_impl(port, ptr, rust_vec_len, data_len),
+        66 => {
             wire__crate__api__connections__save_connection_impl(port, ptr, rust_vec_len, data_len)
         }
-        63 => wire__crate__api__editor__save_favorite_impl(port, ptr, rust_vec_len, data_len),
-        64 => {
+        67 => wire__crate__api__editor__save_favorite_impl(port, ptr, rust_vec_len, data_len),
+        68 => {
             wire__crate__api__csv_import__save_import_errors_impl(port, ptr, rust_vec_len, data_len)
         }
-        65 => wire__crate__api__layouts__save_layout_impl(port, ptr, rust_vec_len, data_len),
-        66 => {
+        69 => wire__crate__api__layouts__save_layout_impl(port, ptr, rust_vec_len, data_len),
+        70 => {
             wire__crate__api__preferences__save_preferences_impl(port, ptr, rust_vec_len, data_len)
         }
-        67 => {
+        71 => {
             wire__crate__api__connections__save_ssh_secret_impl(port, ptr, rust_vec_len, data_len)
         }
-        68 => wire__crate__api__server__server_processes_impl(port, ptr, rust_vec_len, data_len),
-        69 => wire__crate__api__server__server_status_impl(port, ptr, rust_vec_len, data_len),
-        70 => wire__crate__api__server__server_variables_impl(port, ptr, rust_vec_len, data_len),
-        71 => wire__crate__api__server__slow_log_config_impl(port, ptr, rust_vec_len, data_len),
-        72 => wire__crate__api__server__slow_log_entries_impl(port, ptr, rust_vec_len, data_len),
-        74 => wire__crate__api__csv_import__start_import_impl(port, ptr, rust_vec_len, data_len),
-        77 => wire__crate__api__schema__table_structure_impl(port, ptr, rust_vec_len, data_len),
-        79 => wire__crate__api__options__trust_host_key_impl(port, ptr, rust_vec_len, data_len),
+        72 => wire__crate__api__server__server_processes_impl(port, ptr, rust_vec_len, data_len),
+        73 => wire__crate__api__server__server_status_impl(port, ptr, rust_vec_len, data_len),
+        74 => wire__crate__api__server__server_variables_impl(port, ptr, rust_vec_len, data_len),
+        75 => wire__crate__api__server__slow_log_config_impl(port, ptr, rust_vec_len, data_len),
+        76 => wire__crate__api__server__slow_log_entries_impl(port, ptr, rust_vec_len, data_len),
+        78 => wire__crate__api__csv_import__start_import_impl(port, ptr, rust_vec_len, data_len),
+        81 => wire__crate__api__schema__table_structure_impl(port, ptr, rust_vec_len, data_len),
+        83 => wire__crate__api__options__trust_host_key_impl(port, ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -6081,17 +6320,17 @@ fn pde_ffi_dispatcher_sync_impl(
 ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
     // Codec=Pde (Serialization + dispatch), see doc to use other codecs
     match func_id {
-        10 => wire__crate__api__value__check_time_text_impl(ptr, rust_vec_len, data_len),
-        14 => wire__crate__api__editor__complete_sql_impl(ptr, rust_vec_len, data_len),
-        18 => {
+        11 => wire__crate__api__value__check_time_text_impl(ptr, rust_vec_len, data_len),
+        15 => wire__crate__api__editor__complete_sql_impl(ptr, rust_vec_len, data_len),
+        20 => {
             wire__crate__api__options__default_connection_options_impl(ptr, rust_vec_len, data_len)
         }
-        19 => wire__crate__api__preferences__default_preferences_impl(ptr, rust_vec_len, data_len),
-        49 => wire__crate__api__schema__new_table_draft_impl(ptr, rust_vec_len, data_len),
-        73 => wire__crate__api__editor__split_statements_impl(ptr, rust_vec_len, data_len),
-        75 => wire__crate__api__csv_import__suggest_mapping_impl(ptr, rust_vec_len, data_len),
-        76 => wire__crate__api__schema__table_draft_impl(ptr, rust_vec_len, data_len),
-        78 => wire__crate__api__editor__tokenize_sql_impl(ptr, rust_vec_len, data_len),
+        21 => wire__crate__api__preferences__default_preferences_impl(ptr, rust_vec_len, data_len),
+        52 => wire__crate__api__schema__new_table_draft_impl(ptr, rust_vec_len, data_len),
+        77 => wire__crate__api__editor__split_statements_impl(ptr, rust_vec_len, data_len),
+        79 => wire__crate__api__csv_import__suggest_mapping_impl(ptr, rust_vec_len, data_len),
+        80 => wire__crate__api__schema__table_draft_impl(ptr, rust_vec_len, data_len),
+        82 => wire__crate__api__editor__tokenize_sql_impl(ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -6221,6 +6460,28 @@ impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<crate::api::users::ChangePlan>
     for crate::api::users::ChangePlan
 {
     fn into_into_dart(self) -> FrbWrapper<crate::api::users::ChangePlan> {
+        self.into()
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::schema::CharsetInfo> {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.0.name.into_into_dart().into_dart(),
+            self.0.default_collation.into_into_dart().into_dart(),
+            self.0.collations.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for FrbWrapper<crate::api::schema::CharsetInfo>
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<crate::api::schema::CharsetInfo>>
+    for crate::api::schema::CharsetInfo
+{
+    fn into_into_dart(self) -> FrbWrapper<crate::api::schema::CharsetInfo> {
         self.into()
     }
 }
@@ -6536,6 +6797,28 @@ impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<crate::api::csv_import::CsvPre
     for crate::api::csv_import::CsvPreview
 {
     fn into_into_dart(self) -> FrbWrapper<crate::api::csv_import::CsvPreview> {
+        self.into()
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::schema::DatabaseOptions> {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.0.charsets.into_into_dart().into_dart(),
+            self.0.default_charset.into_into_dart().into_dart(),
+            self.0.default_collation.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for FrbWrapper<crate::api::schema::DatabaseOptions>
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<crate::api::schema::DatabaseOptions>>
+    for crate::api::schema::DatabaseOptions
+{
+    fn into_into_dart(self) -> FrbWrapper<crate::api::schema::DatabaseOptions> {
         self.into()
     }
 }
@@ -8422,6 +8705,15 @@ impl SseEncode for crate::api::users::ChangePlan {
     }
 }
 
+impl SseEncode for crate::api::schema::CharsetInfo {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.name, serializer);
+        <String>::sse_encode(self.default_collation, serializer);
+        <Vec<String>>::sse_encode(self.collations, serializer);
+    }
+}
+
 impl SseEncode for crate::api::schema::CheckDef {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -8581,6 +8873,15 @@ impl SseEncode for crate::api::csv_import::CsvPreview {
         <u64>::sse_encode(self.column_count, serializer);
         <Vec<crate::api::csv_import::PreviewRow>>::sse_encode(self.rows, serializer);
         <Option<String>>::sse_encode(self.error, serializer);
+    }
+}
+
+impl SseEncode for crate::api::schema::DatabaseOptions {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <Vec<crate::api::schema::CharsetInfo>>::sse_encode(self.charsets, serializer);
+        <String>::sse_encode(self.default_charset, serializer);
+        <String>::sse_encode(self.default_collation, serializer);
     }
 }
 
@@ -9090,6 +9391,16 @@ impl SseEncode for Vec<crate::api::value::CellValue> {
         <i32>::sse_encode(self.len() as _, serializer);
         for item in self {
             <crate::api::value::CellValue>::sse_encode(item, serializer);
+        }
+    }
+}
+
+impl SseEncode for Vec<crate::api::schema::CharsetInfo> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::api::schema::CharsetInfo>::sse_encode(item, serializer);
         }
     }
 }

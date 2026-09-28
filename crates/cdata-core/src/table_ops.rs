@@ -1,4 +1,4 @@
-//! 侧栏右键对整张表的操作：改名、复制、删除、清空、维护语句、INSERT 模板。
+//! 侧栏右键的操作：表的改名、复制、删除、清空、维护语句、INSERT 模板，以及新建库。
 //!
 //! 这里只生成语句，不碰连接。写库的几种都走和改表一样的「预览 → 确认 → 核对后执行」，
 //! 预览结果复用 AlterPlan，界面用同一个确认框。
@@ -150,6 +150,40 @@ pub fn insert_template(table: &str, columns: &[ColumnDef]) -> String {
     format!("INSERT INTO {} ({})\nVALUES\n\t({placeholders});", quote_ident(table), names.join(", "))
 }
 
+/// 一个字符集和它的排序规则
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CharsetInfo {
+    pub name: String,
+    pub default_collation: String,
+    pub collations: Vec<String>,
+}
+
+/// 新建库对话框一次要的全部选项：可选的字符集和服务器的默认值
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DatabaseOptions {
+    pub charsets: Vec<CharsetInfo>,
+    pub default_charset: String,
+    pub default_collation: String,
+}
+
+/// CREATE DATABASE。字符集和排序规则不加引号直接写进语句，所以只收字母数字下划线；
+/// 是不是服务器上真实存在的组合由调用方先查过
+pub fn plan_create_database(name: &str, charset: &str, collation: &str) -> Result<AlterPlan, String> {
+    if name.is_empty() {
+        return Err("库名不能为空".to_string());
+    }
+    for word in [charset, collation] {
+        if word.is_empty() || !word.chars().all(|ch| ch.is_ascii_alphanumeric() || ch == '_') {
+            return Err(format!("字符集或排序规则 {word:?} 不合法"));
+        }
+    }
+    Ok(AlterPlan {
+        statements: vec![format!("CREATE DATABASE {} CHARACTER SET {charset} COLLATE {collation}", quote_ident(name))],
+        dangers: Vec::new(),
+        notes: Vec::new(),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -227,6 +261,15 @@ mod tests {
     fn insert_template_lists_writable_columns_with_placeholders() {
         let columns = [column("id", "auto_increment"), column("total", "VIRTUAL GENERATED"), column("note", "")];
         assert_eq!(insert_template("orders", &columns), "INSERT INTO `orders` (`id`, `note`)\nVALUES\n\t(?, ?);");
+    }
+
+    #[test]
+    fn create_database_quotes_name_and_refuses_odd_charset_words() {
+        let plan = plan_create_database("my`db", "utf8mb4", "utf8mb4_0900_ai_ci").unwrap();
+        assert_eq!(plan.statements, ["CREATE DATABASE `my``db` CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci"]);
+        assert!(plan_create_database("", "utf8mb4", "utf8mb4_bin").is_err());
+        assert!(plan_create_database("x", "utf8mb4; DROP", "utf8mb4_bin").is_err());
+        assert!(plan_create_database("x", "utf8mb4", "").is_err());
     }
 
     #[test]

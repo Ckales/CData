@@ -49,7 +49,7 @@ pub struct ExportSummary {
 }
 
 /// INSERT 每条语句带多少行
-const ROWS_PER_INSERT: usize = 100;
+const ROWS_PER_INSERT: u64 = 100;
 
 /// 写文件。columns 按导出顺序给列下标
 pub fn write_file(
@@ -59,28 +59,11 @@ pub fn write_file(
     column_indexes: &[usize],
     options: &ExportOptions,
 ) -> Result<u64, String> {
-    for &index in column_indexes {
-        if index >= columns.len() {
-            return Err(format!("列下标 {index} 越界"));
-        }
+    let mut writer = ExportWriter::create(path, columns, column_indexes, options)?;
+    for row in rows {
+        writer.write_row(row)?;
     }
-    if column_indexes.is_empty() {
-        return Err("没有选要导出的列".to_string());
-    }
-
-    let temp = temp_path(path);
-    let result = write_to(&temp, columns, rows, column_indexes, options);
-    match result {
-        Ok(()) => {
-            fs::rename(&temp, path).map_err(|e| format!("保存文件失败：{e}"))?;
-            Ok(rows.len() as u64)
-        }
-        Err(err) => {
-            // 半截的临时文件留着只会误导人
-            let _ = fs::remove_file(&temp);
-            Err(err)
-        }
-    }
+    writer.finish()
 }
 
 pub(crate) fn temp_path(path: &Path) -> PathBuf {
@@ -89,26 +72,192 @@ pub(crate) fn temp_path(path: &Path) -> PathBuf {
     path.with_file_name(name)
 }
 
-fn write_to(
-    path: &Path,
-    columns: &[ColumnMeta],
-    rows: &[Vec<CellValue>],
-    column_indexes: &[usize],
-    options: &ExportOptions,
-) -> Result<(), String> {
-    let file = File::create(path).map_err(|e| format!("创建文件失败：{e}"))?;
-    let mut out = Encoder { writer: BufWriter::new(file), encoding: options.encoding };
+/// 逐行写导出文件。结果网格一次给一段缓存的行，整表导出边从库里读边写，两边走同一套格式规则。
+///
+/// 写的是临时文件，finish 成功后才改名成目标文件。没 finish 就丢掉（中途出错）会删掉临时文件，
+/// 不会留下一个看起来完整、其实缺了一半的文件
+pub struct ExportWriter {
+    /// finish 或 drop 时先取出来关掉文件再删改名：Windows 上删不掉打开着的文件
+    out: Option<Encoder>,
+    path: PathBuf,
+    temp: PathBuf,
+    column_indexes: Vec<usize>,
+    format: RowFormat,
+    rows: u64,
+}
 
-    if options.encoding == ExportEncoding::Utf8Bom {
-        out.raw(&[0xEF, 0xBB, 0xBF])?;
+enum RowFormat {
+    Csv { delimiter: char, separator: String, null_text: String },
+    /// head 是 `INSERT INTO … VALUES\n`，每 ROWS_PER_INSERT 行重复一次
+    Sql { head: String },
+}
+
+impl ExportWriter {
+    /// 先校验选项再建文件，选项不对时不留下任何文件；然后写 BOM 和文件头
+    pub fn create(
+        path: &Path,
+        columns: &[ColumnMeta],
+        column_indexes: &[usize],
+        options: &ExportOptions,
+    ) -> Result<Self, String> {
+        for &index in column_indexes {
+            if index >= columns.len() {
+                return Err(format!("列下标 {index} 越界"));
+            }
+        }
+        if column_indexes.is_empty() {
+            return Err("没有选要导出的列".to_string());
+        }
+        let format = match options.format {
+            ExportFormat::Csv => {
+                let mut delimiter_chars = options.delimiter.chars();
+                let delimiter = match (delimiter_chars.next(), delimiter_chars.next()) {
+                    (Some(ch), None) => ch,
+                    _ => return Err(format!("分隔符必须是单个字符，现在是 {:?}", options.delimiter)),
+                };
+                RowFormat::Csv { delimiter, separator: delimiter.to_string(), null_text: options.null_text.clone() }
+            }
+            ExportFormat::SqlInsert => RowFormat::Sql { head: insert_head(columns, column_indexes, options)? },
+        };
+
+        let temp = temp_path(path);
+        let file = File::create(&temp).map_err(|e| format!("创建文件失败：{e}"))?;
+        let mut writer = ExportWriter {
+            out: Some(Encoder { writer: BufWriter::new(file), encoding: options.encoding }),
+            path: path.to_path_buf(),
+            temp,
+            column_indexes: column_indexes.to_vec(),
+            format,
+            rows: 0,
+        };
+        writer.write_header(columns, options)?;
+        Ok(writer)
     }
 
-    match options.format {
-        ExportFormat::Csv => write_csv(&mut out, columns, rows, column_indexes, options)?,
-        ExportFormat::SqlInsert => write_sql(&mut out, columns, rows, column_indexes, options)?,
+    fn out(&mut self) -> &mut Encoder {
+        self.out.as_mut().expect("ExportWriter 在 finish 之后不能再写")
     }
 
-    out.writer.flush().map_err(|e| format!("写文件失败：{e}"))
+    fn write_header(&mut self, columns: &[ColumnMeta], options: &ExportOptions) -> Result<(), String> {
+        if options.encoding == ExportEncoding::Utf8Bom {
+            self.out().raw(&[0xEF, 0xBB, 0xBF])?;
+        }
+        match &self.format {
+            RowFormat::Csv { delimiter, separator, null_text } => {
+                if !options.header {
+                    return Ok(());
+                }
+                let mut fields = Vec::with_capacity(self.column_indexes.len());
+                for &index in &self.column_indexes {
+                    fields.push(csv_quote(&columns[index].name, *delimiter, null_text));
+                }
+                let line = format!("{}\r\n", fields.join(separator));
+                self.out().text(&line, "表头")
+            }
+            RowFormat::Sql { .. } => {
+                let charset = match options.encoding {
+                    ExportEncoding::Gbk => "gbk",
+                    ExportEncoding::Utf8 | ExportEncoding::Utf8Bom => "utf8mb4",
+                };
+                // 字符串里的反斜杠按转义符写。临时去掉 NO_BACKSLASH_ESCAPES，导入时不管服务器怎么配都一样
+                let header = format!(
+                    "-- CData 导出\nSET NAMES {charset};\n\
+                     SET @CDATA_OLD_SQL_MODE = @@SESSION.sql_mode;\n\
+                     SET SESSION sql_mode = REPLACE(@@SESSION.sql_mode, 'NO_BACKSLASH_ESCAPES', '');\n\n"
+                );
+                self.out().text(&header, "文件头")
+            }
+        }
+    }
+
+    /// 写一行。row 是结果集的整行，按 create 时给的列下标取
+    pub fn write_row(&mut self, row: &[CellValue]) -> Result<(), String> {
+        let location = format!("第 {} 行", self.rows + 1);
+        let line = match &self.format {
+            RowFormat::Csv { delimiter, separator, null_text } => {
+                let mut fields = Vec::with_capacity(self.column_indexes.len());
+                for &index in &self.column_indexes {
+                    let field = match &row[index] {
+                        CellValue::Null => null_text.clone(),
+                        CellValue::Int(n) => n.to_string(),
+                        CellValue::UInt(n) => n.to_string(),
+                        CellValue::Double(n) => n.to_string(),
+                        CellValue::Text(text) => csv_quote(text, *delimiter, null_text),
+                        CellValue::Bytes(bytes) | CellValue::InvalidText(bytes) => hex(bytes, "0x"),
+                    };
+                    fields.push(field);
+                }
+                format!("{}\r\n", fields.join(separator))
+            }
+            RowFormat::Sql { head } => {
+                let mut values = Vec::with_capacity(self.column_indexes.len());
+                for &index in &self.column_indexes {
+                    values.push(sql_literal(&row[index]));
+                }
+                // 不知道后面还有没有行，所以分隔符写在行前：每批第一行前写 INSERT 头，其余行前写逗号
+                if self.rows % ROWS_PER_INSERT == 0 {
+                    let head = head.clone();
+                    if self.rows > 0 {
+                        self.out().raw(b";\n")?;
+                    }
+                    self.out().text(&head, "表名或列名")?;
+                    format!("  ({})", values.join(", "))
+                } else {
+                    format!(",\n  ({})", values.join(", "))
+                }
+            }
+        };
+        self.out().text(&line, &location)?;
+        self.rows += 1;
+        Ok(())
+    }
+
+    /// 写文件尾、落盘、改名成目标文件，返回写了多少行
+    pub fn finish(mut self) -> Result<u64, String> {
+        let rows = self.rows;
+        if let RowFormat::Sql { .. } = self.format {
+            let mut tail = String::new();
+            if rows > 0 {
+                tail.push_str(";\n");
+            }
+            tail.push_str(&format!("\n-- 共 {rows} 行\nSET SESSION sql_mode = @CDATA_OLD_SQL_MODE;\n"));
+            self.out().text(&tail, "文件尾")?;
+        }
+        let mut out = self.out.take().expect("ExportWriter 只能 finish 一次");
+        out.writer.flush().map_err(|e| format!("写文件失败：{e}"))?;
+        drop(out);
+        fs::rename(&self.temp, &self.path).map_err(|e| format!("保存文件失败：{e}"))?;
+        Ok(rows)
+    }
+}
+
+impl Drop for ExportWriter {
+    /// 没 finish 成功就丢掉的，删掉半截的临时文件。改名成功后临时文件已经不在了，删除失败无所谓
+    fn drop(&mut self) {
+        drop(self.out.take());
+        let _ = fs::remove_file(&self.temp);
+    }
+}
+
+/// INSERT 的头：目标表名和列名
+fn insert_head(columns: &[ColumnMeta], column_indexes: &[usize], options: &ExportOptions) -> Result<String, String> {
+    let table = if options.table_name.is_empty() {
+        match crate::edit::single_source_table(columns) {
+            Ok((_, table)) => table,
+            Err(reason) => return Err(format!("{reason}。请填写要导出到的表名")),
+        }
+    } else {
+        options.table_name.clone()
+    };
+
+    // 列来自这张表就用原始列名，别名写进 INSERT 会找不到列；导出到别的表就用结果集里的列名
+    let mut names = Vec::with_capacity(column_indexes.len());
+    for &index in column_indexes {
+        let column = &columns[index];
+        let name = if column.org_table == table { &column.org_name } else { &column.name };
+        names.push(quote_ident(name));
+    }
+    Ok(format!("INSERT INTO {} ({}) VALUES\n", quote_ident(&table), names.join(", ")))
 }
 
 /// 按目标编码写文本。GBK 表示不了的字符报错并带上位置，不替换成 ?
@@ -136,49 +285,6 @@ impl Encoder {
     }
 }
 
-fn write_csv(
-    out: &mut Encoder,
-    columns: &[ColumnMeta],
-    rows: &[Vec<CellValue>],
-    column_indexes: &[usize],
-    options: &ExportOptions,
-) -> Result<(), String> {
-    let mut delimiter_chars = options.delimiter.chars();
-    let delimiter = match (delimiter_chars.next(), delimiter_chars.next()) {
-        (Some(ch), None) => ch,
-        _ => return Err(format!("分隔符必须是单个字符，现在是 {:?}", options.delimiter)),
-    };
-    let separator = delimiter.to_string();
-
-    if options.header {
-        let mut fields = Vec::with_capacity(column_indexes.len());
-        for &index in column_indexes {
-            fields.push(csv_quote(&columns[index].name, delimiter, &options.null_text));
-        }
-        out.text(&fields.join(&separator), "表头")?;
-        out.raw(b"\r\n")?;
-    }
-
-    for (row_number, row) in rows.iter().enumerate() {
-        let mut fields = Vec::with_capacity(column_indexes.len());
-        for &index in column_indexes {
-            let field = match &row[index] {
-                CellValue::Null => options.null_text.clone(),
-                CellValue::Int(n) => n.to_string(),
-                CellValue::UInt(n) => n.to_string(),
-                CellValue::Double(n) => n.to_string(),
-                CellValue::Text(text) => csv_quote(text, delimiter, &options.null_text),
-                CellValue::Bytes(bytes) | CellValue::InvalidText(bytes) => hex(bytes, "0x"),
-            };
-            fields.push(field);
-        }
-        let location = format!("第 {} 行", row_number + 1);
-        out.text(&fields.join(&separator), &location)?;
-        out.raw(b"\r\n")?;
-    }
-    Ok(())
-}
-
 /// RFC 4180 的引号规则，外加一条：和 NULL 的写法撞车的文本也加引号（空串就写成 ""）
 pub(crate) fn csv_quote(text: &str, delimiter: char, null_text: &str) -> String {
     let needs_quotes = text == null_text
@@ -189,63 +295,6 @@ pub(crate) fn csv_quote(text: &str, delimiter: char, null_text: &str) -> String 
     } else {
         text.to_string()
     }
-}
-
-fn write_sql(
-    out: &mut Encoder,
-    columns: &[ColumnMeta],
-    rows: &[Vec<CellValue>],
-    column_indexes: &[usize],
-    options: &ExportOptions,
-) -> Result<(), String> {
-    let table = if options.table_name.is_empty() {
-        match crate::edit::single_source_table(columns) {
-            Ok((_, table)) => table,
-            Err(reason) => return Err(format!("{reason}。请填写要导出到的表名")),
-        }
-    } else {
-        options.table_name.clone()
-    };
-
-    // 列来自这张表就用原始列名，别名写进 INSERT 会找不到列；导出到别的表就用结果集里的列名
-    let mut names = Vec::with_capacity(column_indexes.len());
-    for &index in column_indexes {
-        let column = &columns[index];
-        let name = if column.org_table == table { &column.org_name } else { &column.name };
-        names.push(quote_ident(name));
-    }
-    let head = format!("INSERT INTO {} ({}) VALUES\n", quote_ident(&table), names.join(", "));
-
-    let charset = match options.encoding {
-        ExportEncoding::Gbk => "gbk",
-        ExportEncoding::Utf8 | ExportEncoding::Utf8Bom => "utf8mb4",
-    };
-    // 字符串里的反斜杠按转义符写。临时去掉 NO_BACKSLASH_ESCAPES，导入时不管服务器怎么配都一样
-    out.text(
-        &format!(
-            "-- CData 导出，{} 行\nSET NAMES {charset};\n\
-             SET @CDATA_OLD_SQL_MODE = @@SESSION.sql_mode;\n\
-             SET SESSION sql_mode = REPLACE(@@SESSION.sql_mode, 'NO_BACKSLASH_ESCAPES', '');\n\n",
-            rows.len()
-        ),
-        "文件头",
-    )?;
-
-    for (chunk_index, chunk) in rows.chunks(ROWS_PER_INSERT).enumerate() {
-        out.text(&head, "表名或列名")?;
-        for (offset, row) in chunk.iter().enumerate() {
-            let mut values = Vec::with_capacity(column_indexes.len());
-            for &index in column_indexes {
-                values.push(sql_literal(&row[index]));
-            }
-            let last = offset + 1 == chunk.len();
-            let line = format!("  ({}){}\n", values.join(", "), if last { ";" } else { "," });
-            let location = format!("第 {} 行", chunk_index * ROWS_PER_INSERT + offset + 1);
-            out.text(&line, &location)?;
-        }
-    }
-
-    out.text("\nSET SESSION sql_mode = @CDATA_OLD_SQL_MODE;\n", "文件尾")
 }
 
 /// 值写成 SQL 字面量。文本一律加引号，由 MySQL 按列类型转（DECIMAL 这样不丢精度）
@@ -433,6 +482,29 @@ mod tests {
         let mut opts = options(ExportFormat::Csv);
         opts.delimiter = ";;".to_string();
         assert!(export_to_string(&opts, &[0]).unwrap_err().contains("单个字符"));
+    }
+
+    #[test]
+    fn sql_with_no_rows_is_still_a_valid_script() {
+        let path = std::env::temp_dir().join(format!("cdata-export-empty-{}.sql", std::process::id()));
+        let rows_written = write_file(&path, &[column("id", "id")], &[], &[0], &options(ExportFormat::SqlInsert)).unwrap();
+        let text = fs::read_to_string(&path).unwrap();
+        fs::remove_file(&path).ok();
+        assert_eq!(rows_written, 0);
+        assert!(!text.contains("INSERT"), "空表不能写出没有 VALUES 的 INSERT：{text}");
+        assert!(!text.contains(";\n;"), "{text}");
+        assert!(text.contains("-- 共 0 行"), "{text}");
+    }
+
+    #[test]
+    fn dropping_an_unfinished_writer_leaves_no_file() {
+        let path = std::env::temp_dir().join(format!("cdata-export-abandon-{}.csv", std::process::id()));
+        let mut writer =
+            ExportWriter::create(&path, &[column("id", "id")], &[0], &options(ExportFormat::Csv)).unwrap();
+        writer.write_row(&[CellValue::Int(1)]).unwrap();
+        drop(writer);
+        assert!(!path.exists());
+        assert!(!temp_path(&path).exists(), "半截的临时文件要删掉");
     }
 
     #[test]

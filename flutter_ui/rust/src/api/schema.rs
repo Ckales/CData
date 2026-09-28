@@ -9,7 +9,7 @@ pub use cdata_core::alter::{
 pub use cdata_core::structure::{
     CheckDef, ColumnDef, DefaultValue, ForeignKeyDef, IndexDef, IndexPart, TableStructure,
 };
-pub use cdata_core::table_ops::{Maintenance, MaintenanceMessage, TableAction};
+pub use cdata_core::table_ops::{CharsetInfo, DatabaseOptions, Maintenance, MaintenanceMessage, TableAction};
 
 use crate::api::db::{on_runtime, Result};
 
@@ -330,4 +330,50 @@ pub async fn run_maintenance(
 /// 这张表的 INSERT 模板
 pub async fn insert_template(session_id: u64, database: String, table: String) -> Result<String> {
     on_runtime(async move { cdata_core::session::insert_template(session_id, &database, &table).await }).await
+}
+
+#[frb(mirror(CharsetInfo))]
+pub struct _CharsetInfo {
+    pub name: String,
+    pub default_collation: String,
+    pub collations: Vec<String>,
+}
+
+#[frb(mirror(DatabaseOptions))]
+pub struct _DatabaseOptions {
+    pub charsets: Vec<CharsetInfo>,
+    pub default_charset: String,
+    pub default_collation: String,
+}
+
+/// 新建库对话框的选项：字符集、排序规则、服务器默认值，一次取齐
+pub async fn database_options(session_id: u64) -> Result<DatabaseOptions> {
+    on_runtime(async move { cdata_core::session::database_options(session_id).await }).await
+}
+
+/// 预览新建库。排序规则必须属于这个字符集，同名库已存在就报错
+pub async fn preview_create_database(
+    session_id: u64,
+    name: String,
+    charset: String,
+    collation: String,
+) -> Result<AlterPlan> {
+    on_runtime(async move {
+        cdata_core::session::preview_create_database(session_id, &name, &charset, &collation).await
+    })
+    .await
+}
+
+/// 执行预览过的新建库。statements 是预览时拿到的语句，重新生成的不一致就不执行
+pub async fn apply_create_database(
+    session_id: u64,
+    name: String,
+    charset: String,
+    collation: String,
+    statements: Vec<String>,
+) -> Result<()> {
+    on_runtime(async move {
+        cdata_core::session::apply_create_database(session_id, &name, &charset, &collation, &statements).await
+    })
+    .await
 }

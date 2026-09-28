@@ -83,6 +83,21 @@ Future<void> applyEdit({
   newValue: newValue,
 );
 
+/// 整张表导出成文件：从库里逐行读、逐行写，不受行数上限限制。返回写了多少行
+Future<BigInt> exportTable({
+  required BigInt sessionId,
+  required String database,
+  required String table,
+  required String path,
+  required ExportOptions options,
+}) => RustLib.instance.api.crateApiDbExportTable(
+  sessionId: sessionId,
+  database: database,
+  table: table,
+  path: path,
+  options: options,
+);
+
 /// 按主键从库里重读一行放回缓存。库里找不到这一行就报错，缓存不动
 Future<void> refreshRow({
   required BigInt sessionId,

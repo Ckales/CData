@@ -5,7 +5,7 @@ import 'src/rust/api/csv_import.dart' as csv_import show suggestMapping;
 import 'src/rust/api/db.dart';
 // 顶层函数和下面 GridSource 的同名方法重名，方法体里直接调会解析成方法自己
 import 'src/rust/api/db.dart' as db
-    show refreshRow, insertRow, deleteRows, copyRange, parseClipboard, pasteCells, columnChoices, exportRows;
+    show refreshRow, insertRow, deleteRows, copyRange, exportTable, parseClipboard, pasteCells, columnChoices, exportRows;
 import 'src/rust/api/layouts.dart';
 import 'src/rust/api/layouts.dart' as layouts show loadLayout, saveLayout;
 import 'src/rust/api/schema.dart';
@@ -21,7 +21,10 @@ import 'src/rust/api/schema.dart' as schema
         applyTableAction,
         countRows,
         runMaintenance,
-        insertTemplate;
+        insertTemplate,
+        databaseOptions,
+        previewCreateDatabase,
+        applyCreateDatabase;
 import 'src/rust/api/value.dart';
 import 'src/rust/api/value.dart' as value show formatJson, hexDump;
 import 'dart:typed_data' show Uint8List;
@@ -138,6 +141,18 @@ abstract class SchemaSource {
 
   /// INSERT 模板，列名写全、值用 ? 占位
   Future<String> insertTemplate(String database, String table);
+
+  /// 整张表导出成文件，从库里逐行读写，不受行数上限限制。返回写了多少行
+  Future<int> exportTable(String database, String table, String path, ExportOptions options);
+
+  /// 新建库对话框的选项：字符集、排序规则、服务器默认值
+  Future<DatabaseOptions> databaseOptions();
+
+  /// 预览新建库
+  Future<AlterPlan> previewCreateDatabase(String name, String charset, String collation);
+
+  /// 执行预览过的新建库。statements 是预览时拿到的语句，core 重新生成的不一致就拒绝
+  Future<void> applyCreateDatabase(String name, String charset, String collation, List<String> statements);
 }
 
 class RustGridSource implements GridSource {
@@ -363,6 +378,37 @@ class RustSchemaSource implements SchemaSource {
   @override
   Future<String> insertTemplate(String database, String table) {
     return schema.insertTemplate(sessionId: sessionId, database: database, table: table);
+  }
+
+  @override
+  Future<int> exportTable(String database, String table, String path, ExportOptions options) async {
+    final written = await db.exportTable(
+      sessionId: sessionId,
+      database: database,
+      table: table,
+      path: path,
+      options: options,
+    );
+    return written.toInt();
+  }
+
+  @override
+  Future<DatabaseOptions> databaseOptions() => schema.databaseOptions(sessionId: sessionId);
+
+  @override
+  Future<AlterPlan> previewCreateDatabase(String name, String charset, String collation) {
+    return schema.previewCreateDatabase(sessionId: sessionId, name: name, charset: charset, collation: collation);
+  }
+
+  @override
+  Future<void> applyCreateDatabase(String name, String charset, String collation, List<String> statements) {
+    return schema.applyCreateDatabase(
+      sessionId: sessionId,
+      name: name,
+      charset: charset,
+      collation: collation,
+      statements: statements,
+    );
   }
 }
 

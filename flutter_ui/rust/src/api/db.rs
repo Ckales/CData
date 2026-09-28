@@ -248,6 +248,18 @@ pub async fn apply_edit(
     .await
 }
 
+/// 整张表导出成文件：从库里逐行读、逐行写，不受行数上限限制。返回写了多少行
+pub async fn export_table(
+    session_id: u64,
+    database: String,
+    table: String,
+    path: String,
+    options: ExportOptions,
+) -> Result<u64> {
+    on_runtime(async move { cdata_core::session::export_table(session_id, &database, &table, &path, &options).await })
+        .await
+}
+
 /// 按主键从库里重读一行放回缓存。库里找不到这一行就报错，缓存不动
 pub async fn refresh_row(session_id: u64, row_index: u64) -> Result<()> {
     on_runtime(async move { cdata_core::session::refresh_row(session_id, row_index).await }).await

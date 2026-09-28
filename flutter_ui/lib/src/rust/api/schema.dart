@@ -168,6 +168,38 @@ Future<String> insertTemplate({
   table: table,
 );
 
+/// 新建库对话框的选项：字符集、排序规则、服务器默认值，一次取齐
+Future<DatabaseOptions> databaseOptions({required BigInt sessionId}) =>
+    RustLib.instance.api.crateApiSchemaDatabaseOptions(sessionId: sessionId);
+
+/// 预览新建库。排序规则必须属于这个字符集，同名库已存在就报错
+Future<AlterPlan> previewCreateDatabase({
+  required BigInt sessionId,
+  required String name,
+  required String charset,
+  required String collation,
+}) => RustLib.instance.api.crateApiSchemaPreviewCreateDatabase(
+  sessionId: sessionId,
+  name: name,
+  charset: charset,
+  collation: collation,
+);
+
+/// 执行预览过的新建库。statements 是预览时拿到的语句，重新生成的不一致就不执行
+Future<void> applyCreateDatabase({
+  required BigInt sessionId,
+  required String name,
+  required String charset,
+  required String collation,
+  required List<String> statements,
+}) => RustLib.instance.api.crateApiSchemaApplyCreateDatabase(
+  sessionId: sessionId,
+  name: name,
+  charset: charset,
+  collation: collation,
+  statements: statements,
+);
+
 class AlterPlan {
   final List<String> statements;
   final List<String> dangers;
@@ -190,6 +222,31 @@ class AlterPlan {
           statements == other.statements &&
           dangers == other.dangers &&
           notes == other.notes;
+}
+
+class CharsetInfo {
+  final String name;
+  final String defaultCollation;
+  final List<String> collations;
+
+  const CharsetInfo({
+    required this.name,
+    required this.defaultCollation,
+    required this.collations,
+  });
+
+  @override
+  int get hashCode =>
+      name.hashCode ^ defaultCollation.hashCode ^ collations.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is CharsetInfo &&
+          runtimeType == other.runtimeType &&
+          name == other.name &&
+          defaultCollation == other.defaultCollation &&
+          collations == other.collations;
 }
 
 class CheckDef {
@@ -343,6 +400,31 @@ class ColumnDraft {
           comment == other.comment &&
           collation == other.collation &&
           locked == other.locked;
+}
+
+class DatabaseOptions {
+  final List<CharsetInfo> charsets;
+  final String defaultCharset;
+  final String defaultCollation;
+
+  const DatabaseOptions({
+    required this.charsets,
+    required this.defaultCharset,
+    required this.defaultCollation,
+  });
+
+  @override
+  int get hashCode =>
+      charsets.hashCode ^ defaultCharset.hashCode ^ defaultCollation.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is DatabaseOptions &&
+          runtimeType == other.runtimeType &&
+          charsets == other.charsets &&
+          defaultCharset == other.defaultCharset &&
+          defaultCollation == other.defaultCollation;
 }
 
 @freezed

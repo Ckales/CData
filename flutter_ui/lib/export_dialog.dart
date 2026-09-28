@@ -1,19 +1,31 @@
+import 'package:file_selector/file_selector.dart' show XTypeGroup, getSaveLocation;
 import 'package:flutter/material.dart';
 
 import 'mac_widgets.dart';
 import 'src/rust/api/db.dart';
 
-/// 导出选项对话框。返回选项和「是否只导出选中区域」；取消返回 null
+/// 弹系统保存对话框选导出位置，按建议文件名的扩展名过滤。取消返回 null
+Future<String?> pickExportPath(String suggestedName) async {
+  final extension = suggestedName.split('.').last;
+  final location = await getSaveLocation(
+    suggestedName: suggestedName,
+    acceptedTypeGroups: [XTypeGroup(label: extension.toUpperCase(), extensions: [extension])],
+  );
+  return location?.path;
+}
+
+/// 导出选项对话框。返回选项和「是否只导出选中区域」；取消返回 null。
+/// allRowsLabel 是「全部」那一项的写法，比如「全部 120 行」「整张表」
 Future<({ExportOptions options, bool selectionOnly})?> showExportDialog(
   BuildContext context, {
-  required int totalRows,
+  required String allRowsLabel,
   required String? selectionLabel,
   required String suggestedTable,
 }) {
   return showDialog(
     context: context,
     builder: (context) => _ExportDialog(
-      totalRows: totalRows,
+      allRowsLabel: allRowsLabel,
       selectionLabel: selectionLabel,
       suggestedTable: suggestedTable,
     ),
@@ -21,14 +33,14 @@ Future<({ExportOptions options, bool selectionOnly})?> showExportDialog(
 }
 
 class _ExportDialog extends StatefulWidget {
-  final int totalRows;
+  final String allRowsLabel;
 
   /// 有选区时的描述，比如「3 行 × 2 列」；没有选区是 null
   final String? selectionLabel;
   final String suggestedTable;
 
   const _ExportDialog({
-    required this.totalRows,
+    required this.allRowsLabel,
     required this.selectionLabel,
     required this.suggestedTable,
   });
@@ -91,7 +103,7 @@ class _ExportDialogState extends State<_ExportDialog> {
                 'export-range',
                 _selectionOnly,
                 {
-                  false: '全部 ${widget.totalRows} 行',
+                  false: widget.allRowsLabel,
                   if (selectionLabel != null) true: '选中区域（$selectionLabel）',
                 },
                 (value) => _selectionOnly = value,
