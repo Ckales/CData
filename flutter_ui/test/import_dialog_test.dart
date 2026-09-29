@@ -70,6 +70,7 @@ Future<bool? Function()> openDialog(
   WidgetTester tester,
   FakeImportSource source, {
   List<String>? savedPaths,
+  String? initialPath,
 }) async {
   tester.view.physicalSize = const Size(1400, 1000);
   tester.view.devicePixelRatio = 1;
@@ -86,6 +87,7 @@ Future<bool? Function()> openDialog(
             source: source,
             database: 'shop',
             table: 'orders',
+            initialPath: initialPath,
             pickFile: () async => '/tmp/orders.csv',
             pickSavePath: (suggestedName) async {
               savedPaths?.add(suggestedName);
@@ -124,6 +126,16 @@ Future<void> pollRounds(WidgetTester tester, int rounds) async {
 }
 
 void main() {
+  testWidgets('从统一文件选择器带入的 CSV 不必再选一次', (tester) async {
+    final source = sourceOf();
+    await openDialog(tester, source, initialPath: '/tmp/selected.csv');
+
+    expect(find.text('/tmp/selected.csv'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('import-next')));
+    await tester.pumpAndSettle();
+    expect(source.previews.single.$1, '/tmp/selected.csv');
+  });
+
   testWidgets('选文件、按表头建议映射、改映射、导入完成', (tester) async {
     final source = sourceOf(statuses: [
       ImportStatus.running(importProgress(read: 1, inserted: 0, bytes: 40)),

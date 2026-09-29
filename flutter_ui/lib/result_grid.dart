@@ -284,23 +284,30 @@ class _ResultGridState extends State<ResultGrid> {
 
   /// 返回该行的单元格文本；不在当前窗口内就触发预取并返回 null
   List<DisplayCell>? _rowAt(int index) {
+    final firstVisible = _scroll.hasClients
+        ? math.min(_totalRows, math.max(0, (_scroll.offset / _rowHeight).floor()))
+        : index;
+    final visibleRows = _scroll.hasClients
+        ? math.min(_windowSize, math.max(1, (_scroll.position.viewportDimension / _rowHeight).ceil()))
+        : 1;
+    // 围绕整屏可见行选窗口。只按当前构建的某一行向前/向后挪，会在两个窗口的重叠区来回请求。
+    final desiredStart = math.min(
+      math.max(0, firstVisible - (_windowSize - visibleRows) ~/ 2),
+      math.max(0, _totalRows - _windowSize),
+    );
     final offset = index - _windowStart;
     if (offset >= 0 && offset < _windowRows.length) {
-      // 窗口后面还有没取的行，且快滚到边缘了，就提前拉下一段。
-      // hasMoreAfter 这个条件不能省：结果集比 _prefetchMargin 还短时
-      // `offset > length - margin` 恒为真，会一直往后预取到空窗口、再跳回来，
-      // 两边来回震荡，每帧都发一次请求。
+      // 可见范围快碰到窗口边缘时预取，目标仍由同一个视口算出，停住后就会收敛。
       final hasMoreAfter = _windowStart + _windowRows.length < _totalRows;
-      if (hasMoreAfter && offset > _windowRows.length - _prefetchMargin) {
-        _scheduleLoad(_windowStart + _windowSize - _prefetchMargin);
-      } else if (_windowStart > 0 && offset < _prefetchMargin) {
-        _scheduleLoad((_windowStart - _windowSize + _prefetchMargin).clamp(0, index));
+      if ((_windowStart > 0 && firstVisible < _windowStart + _prefetchMargin) ||
+          (hasMoreAfter && firstVisible + visibleRows > _windowStart + _windowRows.length - _prefetchMargin)) {
+        _scheduleLoad(desiredStart);
       }
       return _windowRows[offset];
     }
 
     // 跳到了窗口之外（比如拖动滚动条），以这一行为中心重新取
-    _scheduleLoad((index - _windowSize ~/ 2).clamp(0, _totalRows));
+    _scheduleLoad(desiredStart);
     return null;
   }
 

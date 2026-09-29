@@ -1,3 +1,4 @@
+import 'package:file_selector/file_selector.dart' show XTypeGroup, openFile;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -9,6 +10,7 @@ import 'query_tab.dart';
 import 'server_source.dart';
 import 'server_status.dart';
 import 'sql_library.dart';
+import 'sql_import_dialog.dart';
 import 'src/rust/api/db.dart';
 import 'src/rust/api/editor.dart';
 import 'src/rust/api/options.dart';
@@ -450,13 +452,43 @@ class WorkspaceViewState extends State<WorkspaceView> {
                       onCreateTable: _createTable,
                       onOpenInNewTab: (table) => setState(() => _addTab(database: tab.database, table: table)),
                       onTableAction: _afterTableAction,
-                      // 导入用侧栏的会话开自己独占的连接，不占标签的会话
-                      onImport: (table) => showImportDialog(
-                        context,
-                        source: _ws.imports,
-                        database: tab.database,
-                        table: table,
-                      ),
+                      onImport: (table) async {
+                        final file = await openFile(acceptedTypeGroups: const [
+                          XTypeGroup(label: 'CSV / SQL', extensions: ['csv', 'tsv', 'txt', 'sql']),
+                        ]);
+                        if (file == null || !mounted) return false;
+
+                        final path = file.path;
+                        final extension = path.split('.').last.toLowerCase();
+                        final bool changed;
+                        if (extension == 'sql') {
+                          changed = await showSqlImportDialog(
+                            this.context,
+                            sessionId: _ws.schemaId,
+                            database: tab.database,
+                            initialPath: path,
+                          );
+                          if (changed && mounted) await _ensureCatalog(tab, force: true);
+                        } else if (extension == 'csv' || extension == 'tsv' || extension == 'txt') {
+                          if (table == null || tab.database.isEmpty) {
+                            setState(() => _error = '导入 CSV 请先在左侧右键选择目标表');
+                            return false;
+                          }
+                          // CSV 导入用侧栏会话的独占连接，不占查询标签的会话。
+                          changed = await showImportDialog(
+                            this.context,
+                            source: _ws.imports,
+                            database: tab.database,
+                            table: table,
+                            initialPath: path,
+                          );
+                        } else {
+                          setState(() => _error = '只支持 CSV、TSV、TXT 或 SQL 文件');
+                          return false;
+                        }
+                        if (changed && mounted && tab.mode == WorkspaceMode.content) _loadTable(tab);
+                        return changed;
+                      },
                     ),
                     Expanded(
                       child: Column(

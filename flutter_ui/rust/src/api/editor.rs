@@ -6,6 +6,8 @@ pub use cdata_core::complete::{Completion, CompletionItem, CompletionKind};
 pub use cdata_core::history::{Favorite, HistoryEntry};
 pub use cdata_core::lexer::{SqlToken, SqlTokenKind};
 pub use cdata_core::session::{ScriptSummary, StatementFailure, StatementOutcome};
+pub use cdata_core::sql_import::{SqlImportFailure, SqlImportSummary};
+use cdata_core::export::ExportEncoding;
 
 use crate::api::db::QuerySummary;
 
@@ -127,6 +129,20 @@ pub struct _ScriptSummary {
     pub failure: Option<StatementFailure>,
 }
 
+#[frb(mirror(SqlImportFailure))]
+pub struct _SqlImportFailure {
+    pub statement: u64,
+    pub line: u64,
+    pub message: String,
+}
+
+#[frb(mirror(SqlImportSummary))]
+pub struct _SqlImportSummary {
+    pub executed: u64,
+    pub affected_rows: u64,
+    pub failure: Option<SqlImportFailure>,
+}
+
 /// 编辑器里有几条语句。界面据此决定走单条（能筛选排序）还是多条脚本
 #[frb(sync)]
 pub fn split_statements(sql: String) -> Result<Vec<String>> {
@@ -136,6 +152,11 @@ pub fn split_statements(sql: String) -> Result<Vec<String>> {
 /// 多条语句按顺序在同一条连接上跑，每个结果集一个子会话
 pub async fn execute_script(session_id: u64, sql: String, max_rows: u64) -> Result<ScriptSummary> {
     on_runtime(async move { cdata_core::session::execute_script(session_id, &sql, max_rows as usize).await }).await
+}
+
+/// SQL 文件由 core 解码、切分，再在独占连接上按顺序执行。
+pub async fn import_sql_file(session_id: u64, path: String, encoding: ExportEncoding) -> Result<SqlImportSummary> {
+    on_runtime(async move { cdata_core::session::import_sql_file(session_id, &path, encoding).await }).await
 }
 
 /// 执行计划，结果放进一个子会话

@@ -39,6 +39,7 @@ Future<bool> showImportDialog(
   required ImportSource source,
   required String database,
   required String table,
+  String? initialPath,
   Future<String?> Function()? pickFile,
   Future<String?> Function(String suggestedName)? pickSavePath,
 }) async {
@@ -50,6 +51,7 @@ Future<bool> showImportDialog(
       source: source,
       database: database,
       table: table,
+      initialPath: initialPath,
       pickFile: pickFile ?? _systemOpenPath,
       pickSavePath: pickSavePath ?? _systemSavePath,
     ),
@@ -63,6 +65,7 @@ class _ImportDialog extends StatefulWidget {
   final ImportSource source;
   final String database;
   final String table;
+  final String? initialPath;
   final Future<String?> Function() pickFile;
   final Future<String?> Function(String suggestedName) pickSavePath;
 
@@ -70,6 +73,7 @@ class _ImportDialog extends StatefulWidget {
     required this.source,
     required this.database,
     required this.table,
+    this.initialPath,
     required this.pickFile,
     required this.pickSavePath,
   });
@@ -107,6 +111,7 @@ class _ImportDialogState extends State<_ImportDialog> {
   @override
   void initState() {
     super.initState();
+    _path = widget.initialPath;
     _loadTarget();
   }
 

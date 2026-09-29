@@ -23,8 +23,9 @@ class TableSidebar extends StatefulWidget {
   /// 右键菜单里的「查看结构」。null 就不给这一项
   final void Function(String table)? onShowStructure;
 
-  /// 右键菜单里的「导入 CSV」。null 就不给这一项
-  final void Function(String table)? onImport;
+  /// 右键「导入…」。CSV 需要目标表；SQL 按文件中的语句执行，table 可为 null。
+  /// 返回是否执行或提交了导入，侧栏据此重读清单。
+  final Future<bool> Function(String? table)? onImport;
 
   /// 右键菜单里的「新建表…」，参数是当前库。返回建好的表名，侧栏据此重读并选中；
   /// 取消返回 null。null 就不给这一项
@@ -147,6 +148,11 @@ class _TableSidebarState extends State<TableSidebar> {
     child: Text('新建数据库…'),
   );
 
+  Future<void> _import(String? table) async {
+    final changed = await widget.onImport?.call(table) ?? false;
+    if (changed && mounted) await _reload();
+  }
+
   /// 没有表可以右键时（空库、过滤后没有匹配），在空白处右键只给「新建库…」「新建表…」
   Future<void> _showBlankMenu(Offset position) async {
     final choice = await showMenu<String>(
@@ -155,11 +161,13 @@ class _TableSidebarState extends State<TableSidebar> {
       items: [
         _createDatabaseItem,
         if (widget.onCreateTable != null && widget.database.isNotEmpty) _createTableItem,
+        if (widget.onImport != null) const PopupMenuItem(value: 'import', height: 26, child: Text('导入…')),
       ],
     );
     if (!mounted) return;
     if (choice == 'create-database') await _createDatabase();
     if (choice == 'create') await _createTable();
+    if (choice == 'import') await _import(null);
   }
 
   /// 右键菜单，出现在鼠标位置。分组照 Querious：打开、改名复制、删除、复制文本、导入统计、新建
@@ -167,7 +175,6 @@ class _TableSidebarState extends State<TableSidebar> {
     final table = info.name;
     final isView = info.isView;
     final onShowStructure = widget.onShowStructure;
-    final onImport = widget.onImport;
     final onOpenInNewTab = widget.onOpenInNewTab;
     final at = RelativeRect.fromLTRB(position.dx, position.dy, position.dx, position.dy);
     final choice = await showMenu<String>(
@@ -188,7 +195,7 @@ class _TableSidebarState extends State<TableSidebar> {
         if (!isView) const PopupMenuItem(value: 'copy-insert', height: 26, child: Text('复制 INSERT 语句')),
         const PopupMenuDivider(height: 8),
         if (onShowStructure != null) const PopupMenuItem(value: 'structure', height: 26, child: Text('查看结构')),
-        if (onImport != null && !isView) const PopupMenuItem(value: 'import', height: 26, child: Text('导入 CSV…')),
+        if (widget.onImport != null) const PopupMenuItem(value: 'import', height: 26, child: Text('导入…')),
         const PopupMenuItem(value: 'export', height: 26, child: Text('导出…')),
         if (!isView) const PopupMenuItem(value: 'count', height: 26, child: Text('统计行数')),
         if (!isView)
@@ -224,7 +231,7 @@ class _TableSidebarState extends State<TableSidebar> {
       case 'structure':
         onShowStructure?.call(table);
       case 'import':
-        onImport?.call(table);
+        await _import(isView ? null : table);
       case 'export':
         await _export(table);
       case 'count':

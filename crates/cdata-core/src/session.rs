@@ -237,6 +237,19 @@ pub async fn execute_script(session_id: u64, sql: &str, max_rows: usize) -> Resu
     Ok(ScriptSummary { outcomes, failure })
 }
 
+/// 从 SQL 文件按顺序导入。文件先完整解码和切分，再使用独占连接执行。
+pub async fn import_sql_file(
+    session_id: u64,
+    path: &str,
+    encoding: crate::export::ExportEncoding,
+) -> Result<crate::sql_import::SqlImportSummary> {
+    let statements = crate::sql_import::read_statements(path, encoding).map_err(Error::BadInput)?;
+    let (pool, _) = session_pool(session_id)?;
+    crate::db::run_sql_import(&pool, &statements)
+        .await
+        .map_err(Error::from)
+}
+
 /// 看一条语句的执行计划，结果作为一个子结果。普通 EXPLAIN 不执行语句本身
 pub async fn explain(session_id: u64, sql: &str, max_rows: usize) -> Result<StatementOutcome> {
     let statement = crate::script::explain_sql(sql).map_err(Error::BadInput)?;

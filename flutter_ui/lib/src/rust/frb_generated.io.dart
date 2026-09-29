@@ -98,6 +98,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   SavedConnection dco_decode_box_autoadd_saved_connection(dynamic raw);
 
   @protected
+  SqlImportFailure dco_decode_box_autoadd_sql_import_failure(dynamic raw);
+
+  @protected
   SshHop dco_decode_box_autoadd_ssh_hop(dynamic raw);
 
   @protected
@@ -440,6 +443,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   QuerySummary? dco_decode_opt_box_autoadd_query_summary(dynamic raw);
 
   @protected
+  SqlImportFailure? dco_decode_opt_box_autoadd_sql_import_failure(dynamic raw);
+
+  @protected
   StatementFailure? dco_decode_opt_box_autoadd_statement_failure(dynamic raw);
 
   @protected
@@ -486,6 +492,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   SlowLogEntry dco_decode_slow_log_entry(dynamic raw);
+
+  @protected
+  SqlImportFailure dco_decode_sql_import_failure(dynamic raw);
+
+  @protected
+  SqlImportSummary dco_decode_sql_import_summary(dynamic raw);
 
   @protected
   SqlToken dco_decode_sql_token(dynamic raw);
@@ -663,6 +675,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   SavedConnection sse_decode_box_autoadd_saved_connection(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  SqlImportFailure sse_decode_box_autoadd_sql_import_failure(
     SseDeserializer deserializer,
   );
 
@@ -1051,6 +1068,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  SqlImportFailure? sse_decode_opt_box_autoadd_sql_import_failure(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   StatementFailure? sse_decode_opt_box_autoadd_statement_failure(
     SseDeserializer deserializer,
   );
@@ -1101,6 +1123,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   SlowLogEntry sse_decode_slow_log_entry(SseDeserializer deserializer);
+
+  @protected
+  SqlImportFailure sse_decode_sql_import_failure(SseDeserializer deserializer);
+
+  @protected
+  SqlImportSummary sse_decode_sql_import_summary(SseDeserializer deserializer);
 
   @protected
   SqlToken sse_decode_sql_token(SseDeserializer deserializer);
@@ -1308,6 +1336,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_box_autoadd_saved_connection(
     SavedConnection self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_sql_import_failure(
+    SqlImportFailure self,
     SseSerializer serializer,
   );
 
@@ -1816,6 +1850,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_opt_box_autoadd_sql_import_failure(
+    SqlImportFailure? self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_opt_box_autoadd_statement_failure(
     StatementFailure? self,
     SseSerializer serializer,
@@ -1877,6 +1917,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_slow_log_entry(SlowLogEntry self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_sql_import_failure(
+    SqlImportFailure self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_sql_import_summary(
+    SqlImportSummary self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_sql_token(SqlToken self, SseSerializer serializer);

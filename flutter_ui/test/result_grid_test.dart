@@ -101,6 +101,18 @@ Future<void> shiftTap(WidgetTester tester, Finder finder) async {
 
 Finder cell(int row, int column) => find.byKey(ValueKey('cell-$row-$column'));
 
+class _CountingGridSource extends FakeGridSource {
+  _CountingGridSource(FakeGridSource source) : super(summary: source.summary, rows: source.rows);
+
+  final windowStarts = <int>[];
+
+  @override
+  Future<List<List<DisplayCell>>> windowText(int offset, int limit) {
+    windowStarts.add(offset);
+    return super.windowText(offset, limit);
+  }
+}
+
 void main() {
   testWidgets('内容恰好是 "NULL" 或 <…> 的文本按普通文本画，只有真正的 NULL 是占位样式', (tester) async {
     final source = FakeGridSource(
@@ -142,6 +154,21 @@ void main() {
 
     expect(find.text('用户1'), findsNothing);
     expect(find.textContaining('用户4'), findsWidgets);
+  });
+
+  testWidgets('停在窗口边界后不会在前后两段之间反复加载', (tester) async {
+    final source = _CountingGridSource(FakeGridSource.rows(500));
+    await pumpGrid(tester, source);
+
+    final scrollable = find.descendant(of: find.byType(ListView), matching: find.byType(Scrollable));
+    tester.state<ScrollableState>(scrollable).position.jumpTo(180 * 20);
+    for (var i = 0; i < 12; i++) {
+      await tester.pump(const Duration(milliseconds: 16));
+    }
+
+    expect(source.windowStarts.any((start) => start > 0), isTrue);
+    expect(find.text('用户181'), findsOneWidget);
+    expect(source.windowStarts.length, lessThanOrEqualTo(3), reason: '停住后窗口请求应该收敛');
   });
 
   testWidgets('截断时显著提示，不静默丢数据', (tester) async {

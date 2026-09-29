@@ -11,6 +11,7 @@ use mysql_async::{ClientIdentity, Column, Conn, Opts, OptsBuilder, Pool, SslOpts
 use serde::{Deserialize, Serialize};
 
 use crate::options::{ConnectionOptions, SshAuth, SslMode, SslOptions};
+use crate::sql_import::{ImportStatement, SqlImportFailure, SqlImportSummary};
 use crate::ssh::Tunnel;
 use crate::value::{cell_from_value, CellValue};
 
@@ -400,6 +401,79 @@ pub async fn run_script(
         }
     }
     Ok(ScriptRun { results, failure: None })
+}
+
+/// 导入文件使用文本协议，MySQL dump 中的 LOCK TABLES 等语句不能走 prepared statement。
+/// 每条语句的结果立即丢弃；全部在一条连接上执行，失败后停在该条。
+pub async fn run_sql_import(
+    pool: &DbPool,
+    statements: &[ImportStatement],
+) -> Result<SqlImportSummary, mysql_async::Error> {
+    let mut conn = pool.get_conn().await?;
+    let mut summary = SqlImportSummary {
+        executed: 0,
+        affected_rows: 0,
+        failure: None,
+    };
+    for (index, statement) in statements.iter().enumerate() {
+        let (result, usable) = run_drop_on_conn(pool, &mut conn, &statement.sql).await;
+        match result {
+            Ok(()) => {
+                summary.executed += 1;
+                summary.affected_rows += conn.affected_rows();
+            }
+            Err(err) => {
+                // MySQL 的语法错误可能引用 SQL 原文，里面可能有 CREATE USER 的密码。
+                let message = match &err {
+                    mysql_async::Error::Server(server) => format!("MySQL 错误 {} ({})", server.code, server.state),
+                    _ => err.to_string(),
+                };
+                summary.failure = Some(SqlImportFailure {
+                    statement: index as u64 + 1,
+                    line: statement.line,
+                    message,
+                });
+                if !usable {
+                    let _ = conn.disconnect().await;
+                }
+                return Ok(summary);
+            }
+        }
+    }
+    Ok(summary)
+}
+
+async fn run_drop_on_conn(
+    pool: &DbPool,
+    conn: &mut Conn,
+    sql: &str,
+) -> (Result<(), mysql_async::Error>, bool) {
+    let Some(limit) = pool.query_timeout else {
+        return (conn.query_drop(sql).await, true);
+    };
+    let connection_id = conn.id();
+    let mut running = Box::pin(conn.query_drop(sql));
+    if let Ok(result) = tokio::time::timeout(limit, &mut running).await {
+        return (result, true);
+    }
+
+    let kill_error = match tokio::time::timeout(KILL_GRACE, pool.kill_query(connection_id)).await {
+        Ok(Ok(())) => None,
+        Ok(Err(err)) => Some(err.to_string()),
+        Err(_) => Some(format!("KILL QUERY {} 秒内没有完成", KILL_GRACE.as_secs())),
+    };
+    let finished = match tokio::time::timeout(KILL_GRACE, &mut running).await {
+        Ok(Ok(_)) => true,
+        Ok(Err(mysql_async::Error::Server(ref err))) if err.code == ER_QUERY_INTERRUPTED => true,
+        Ok(Err(_)) | Err(_) => false,
+    };
+    drop(running);
+    let err = mysql_async::Error::Other(Box::new(QueryTimedOut {
+        seconds: limit.as_secs(),
+        confirmed_stopped: kill_error.is_none() && finished,
+        kill_error,
+    }));
+    (Err(err), finished)
 }
 
 /// 在给定连接上跑一条，带查询超时。第二项为 false 表示连接状态不明，调用方必须丢掉它

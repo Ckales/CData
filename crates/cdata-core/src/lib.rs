@@ -18,6 +18,7 @@ pub mod script;
 pub mod server;
 pub mod session;
 pub mod sql;
+pub mod sql_import;
 pub mod ssh;
 pub mod structure;
 pub mod table_ops;

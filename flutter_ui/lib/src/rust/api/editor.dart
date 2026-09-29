@@ -64,6 +64,17 @@ Future<ScriptSummary> executeScript({
   maxRows: maxRows,
 );
 
+/// SQL 文件由 core 解码、切分，再在独占连接上按顺序执行。
+Future<SqlImportSummary> importSqlFile({
+  required BigInt sessionId,
+  required String path,
+  required ExportEncoding encoding,
+}) => RustLib.instance.api.crateApiEditorImportSqlFile(
+  sessionId: sessionId,
+  path: path,
+  encoding: encoding,
+);
+
 /// 执行计划，结果放进一个子会话
 Future<StatementOutcome> explain({
   required BigInt sessionId,
@@ -187,6 +198,55 @@ class ScriptSummary {
       other is ScriptSummary &&
           runtimeType == other.runtimeType &&
           outcomes == other.outcomes &&
+          failure == other.failure;
+}
+
+class SqlImportFailure {
+  final BigInt statement;
+  final BigInt line;
+  final String message;
+
+  const SqlImportFailure({
+    required this.statement,
+    required this.line,
+    required this.message,
+  });
+
+  @override
+  int get hashCode => statement.hashCode ^ line.hashCode ^ message.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is SqlImportFailure &&
+          runtimeType == other.runtimeType &&
+          statement == other.statement &&
+          line == other.line &&
+          message == other.message;
+}
+
+class SqlImportSummary {
+  final BigInt executed;
+  final BigInt affectedRows;
+  final SqlImportFailure? failure;
+
+  const SqlImportSummary({
+    required this.executed,
+    required this.affectedRows,
+    this.failure,
+  });
+
+  @override
+  int get hashCode =>
+      executed.hashCode ^ affectedRows.hashCode ^ failure.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is SqlImportSummary &&
+          runtimeType == other.runtimeType &&
+          executed == other.executed &&
+          affectedRows == other.affectedRows &&
           failure == other.failure;
 }
 

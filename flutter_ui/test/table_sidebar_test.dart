@@ -17,7 +17,7 @@ Future<void> pumpSidebar(
   void Function(String table)? onTableSelected,
   void Function(String database)? onDatabaseChanged,
   void Function(String table)? onShowStructure,
-  void Function(String table)? onImport,
+  Future<bool> Function(String? table)? onImport,
   Future<String?> Function(String database)? onCreateTable,
   void Function(String table)? onOpenInNewTab,
   void Function(String table, TableAction action)? onTableAction,
@@ -121,20 +121,43 @@ void main() {
     expect(tapped, 'order_items');
   });
 
-  testWidgets('右键菜单的「导入 CSV」把表名交给调用方；不给回调就没有这一项', (tester) async {
-    String? importInto;
-    await pumpSidebar(tester, FakeSchemaSource.simple(), onImport: (table) => importInto = table);
+  testWidgets('导入只有一个入口；表传目标表，视图和空库不传目标表', (tester) async {
+    final targets = <String?>[];
+    await pumpSidebar(tester, FakeSchemaSource.simple(), onImport: (table) async {
+      targets.add(table);
+      return true;
+    });
 
     await tester.tap(find.text('users'), buttons: kSecondaryButton);
     await tester.pumpAndSettle();
-    await tester.tap(find.text('导入 CSV…'));
+    expect(find.text('导入…'), findsOneWidget);
+    expect(find.text('导入 CSV…'), findsNothing);
+    expect(find.text('导入 SQL…'), findsNothing);
+    await tester.tap(find.text('导入…'));
     await tester.pumpAndSettle();
-    expect(importInto, 'users');
+    expect(targets, ['users']);
+
+    await tester.tap(find.text('v_daily'), buttons: kSecondaryButton);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('导入…'));
+    await tester.pumpAndSettle();
+    expect(targets, ['users', null]);
+
+    await pumpSidebar(tester, FakeSchemaSource(dbs: ['shop'], tablesByDb: {'shop': []}), onImport: (table) async {
+      targets.add(table);
+      return false;
+    });
+    await tester.tap(find.byType(TableSidebar), buttons: kSecondaryButton);
+    await tester.pumpAndSettle();
+    expect(find.text('导入…'), findsOneWidget);
+    await tester.tap(find.text('导入…'));
+    await tester.pumpAndSettle();
+    expect(targets, ['users', null, null]);
 
     await pumpSidebar(tester, FakeSchemaSource.simple());
     await tester.tap(find.text('users'), buttons: kSecondaryButton);
     await tester.pumpAndSettle();
-    expect(find.text('导入 CSV…'), findsNothing);
+    expect(find.text('导入…'), findsNothing);
   });
 
   testWidgets('右键「新建表…」把当前库交给调用方，建好后重读清单并选中，不顺带跑查询', (tester) async {

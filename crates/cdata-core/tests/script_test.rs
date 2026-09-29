@@ -5,8 +5,9 @@ use cdata_core::db::ConnectionConfig;
 use cdata_core::edit::Editability;
 use cdata_core::options::ConnectionOptions;
 use cdata_core::session::{
-    close_session, execute, execute_script, explain, fetch_window, open_session, Error,
+    close_session, execute, execute_script, explain, fetch_window, import_sql_file, open_session, Error,
 };
+use cdata_core::export::ExportEncoding;
 use cdata_core::CellValue;
 
 fn config_from_env() -> Option<ConnectionConfig> {
@@ -25,6 +26,27 @@ fn config_from_env() -> Option<ConnectionConfig> {
         ssh_secrets: Vec::new(),
         saved_id: None,
     })
+}
+
+/// SQL 文件使用文本协议，同连接顺序执行，失败后准确报告位置。
+#[tokio::test]
+async fn sql_file_import_stops_at_first_failure() {
+    let Some(config) = config_from_env() else {
+        eprintln!("跳过：未配置 CDATA_TEST_* 环境变量");
+        return;
+    };
+    let session = open_session(&config).await.unwrap();
+    let path = std::env::temp_dir().join(format!("cdata_sql_import_{}.sql", std::process::id()));
+    std::fs::write(&path, "\u{feff}CREATE TEMPORARY TABLE cdata_import_probe (id INT);\nDELIMITER //\nINSERT INTO cdata_import_probe VALUES (1), (2)//\nDELIMITER ;\nSELECT * FROM cdata_import_missing;\nINSERT INTO cdata_import_probe VALUES (3);").unwrap();
+    let summary = import_sql_file(session, path.to_str().unwrap(), ExportEncoding::Utf8).await.unwrap();
+    std::fs::remove_file(&path).unwrap();
+    assert_eq!(summary.executed, 2);
+    assert_eq!(summary.affected_rows, 2);
+    let failure = summary.failure.unwrap();
+    assert_eq!(failure.statement, 3);
+    assert_eq!(failure.line, 5);
+    assert!(!failure.message.contains("cdata_import_missing"));
+    close_session(session).await.unwrap();
 }
 
 /// 脚本里的语句要在同一条连接上跑：用户变量、临时表都是会话级的，换了连接就没了
