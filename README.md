@@ -1,120 +1,19 @@
 # CData
 
-跨平台 MySQL 桌面客户端，macOS 与 Windows 通用。
+CData 是面向 macOS 和 Windows 的 MySQL 桌面客户端。可以管理连接、执行 SQL、查看与编辑表数据。
 
-Flutter 负责界面，Rust 负责全部数据库能力——连接、查询、类型解释、SQL 生成都在 Rust 核心里，
-界面层不解释 MySQL 值也不拼 SQL。
+**[下载最新版本](https://github.com/Ckales/CData/releases/latest)** · [反馈问题](https://github.com/Ckales/CData/issues)
 
-> 早期开发中，尚不可用。
+## 下载与安装
 
-## 状态
+- **macOS**：下载 `.dmg`，打开后将 `CData.app` 拖入“应用程序”。如果系统提示无法验证开发者，请确认文件来自本项目 Releases，再到“系统设置 → 隐私与安全性”允许打开。
+- **Windows**：下载 Windows `.zip` 并完整解压，在 `CData` 文件夹中运行 `CData.exe`。运行时需要压缩包内的其他文件。
 
-已完成：
+## 功能
 
-- 项目骨架（Flutter Desktop + Rust 核心 + flutter_rust_bridge）
-- 类型保真层：MySQL 值 → 单元格值的无损映射
+- 通过 TCP、SSL 或 SSH 隧道连接 MySQL；连接配置可保存，密码和 SSH 口令保存在系统凭据存储中。
+- 浏览数据库和表、执行 SQL、查看与编辑表结构，以及管理数据库用户。
+- 在数据网格中查看和编辑记录；导入 CSV、SQL，导出 CSV、SQL。
+- 保留 DECIMAL 精度和零日期原文；NULL、二进制及无效文本有明确区分。
 
-计划中：
-
-- 连接管理（TCP / SSH 隧道 / SSL）、查询执行与流式读取
-- 数据网格：虚拟滚动、区域选择、剪贴板、内联编辑
-- SQL 编辑器：语法高亮、schema 感知补全
-- 表结构查看与编辑、导入导出
-
-## 设计取向
-
-**不产出「假正确」的数据。** DECIMAL 不转浮点，`0000-00-00` 原样保留，文本列是否为二进制
-由列元数据决定而不是靠猜编码，解码失败显式标记而不是替换成替代字符，NULL 和二进制内容在
-界面上各有可辨认的占位而不是显示成空白。
-
-宁可报错、宁可留白，也不拼一个看起来正常的值。
-
-## 开发
-
-需要 Flutter 3.47+、Rust 1.95+，macOS 端另需 Xcode 与 CocoaPods。
-
-```bash
-cd flutter_ui
-flutter pub get
-flutter run -d macos     # 或 -d windows
-```
-
-改了 Rust 侧的公开类型之后要重新生成 FFI 绑定（生成物已入库，普通构建不需要这步）：
-
-```bash
-cd flutter_ui && flutter_rust_bridge_codegen generate
-```
-
-### 测试
-
-分三层，前两层不需要数据库：
-
-```bash
-cd crates/cdata-core && cargo test     # 核心逻辑
-cd flutter_ui && flutter analyze
-cd flutter_ui && flutter test          # 界面，喂内存数据
-```
-
-连真库的测试要先准备一个空库和几张表：
-
-```sql
-CREATE DATABASE cdata_test CHARACTER SET utf8mb4;
-USE cdata_test;
-SET SESSION sql_mode='';
-
--- 各种刁钻类型，验证读写不丢精度
-CREATE TABLE type_zoo (
-  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-  big_unsigned BIGINT UNSIGNED, big_signed BIGINT,
-  amount DECIMAL(20,4), ratio FLOAT, dbl DOUBLE,
-  d_zero DATE, dt_micro DATETIME(6), t_neg TIME,
-  txt_cn TEXT, vc VARCHAR(100), blob_col BLOB, vbin VARBINARY(64),
-  json_col JSON, enum_col ENUM('draft','paid','refunded'), set_col SET('x','y','z'),
-  bit_col BIT(8), tiny_bool TINYINT(1), nullable_txt VARCHAR(50)
-);
-
--- 行数多，验证流式读取和虚拟滚动
-CREATE TABLE big_rows (
-  id INT UNSIGNED PRIMARY KEY, name VARCHAR(64) NOT NULL,
-  amount DECIMAL(12,2) NOT NULL, created_at DATETIME NOT NULL,
-  status TINYINT NOT NULL, note VARCHAR(200)
-);
-
--- 编辑与拒绝规则
-CREATE TABLE edit_target (
-  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-  name VARCHAR(100), amount DECIMAL(12,2), note VARCHAR(200)
-);
-CREATE TABLE edit_composite (
-  shop_id INT NOT NULL, order_no VARCHAR(32) NOT NULL,
-  amount DECIMAL(12,2), PRIMARY KEY (shop_id, order_no)
-);
-CREATE TABLE no_pk (a INT, b VARCHAR(50));
-```
-
-> 造中文测试数据时客户端要带 `--default-character-set=utf8mb4`。有些 MySQL 发行版的
-> `character_set_client` 默认是 latin1，会把 UTF-8 字节双编码存进去，而读取时又反向转一次，
-> **在命令行里完全看不出来**，只有按 utf8mb4 读的客户端才会看到乱码。
-
-测试会自己在测试库里建几张探针表（`CREATE TABLE IF NOT EXISTS`，只增不删）：表结构查看用 `structure_parent` / `structure_child`，
-结构编辑用 `alter_probe_*`（跑完结构改回原样），新建表用 `create_probe_child`（只在不存在时建一次），导入用 `import_probe`（跑完按批次标记删掉本次写入的行）。
-用户与权限的测试会临时建 `cdata_probe_*`@localhost 账号（只授测试库上的权限），跑完只删自己建的这几个。
-
-连接信息通过环境变量传，不写进代码：
-
-```bash
-export CDATA_TEST_HOST=127.0.0.1
-export CDATA_TEST_PORT=3306
-export CDATA_TEST_USER=<user>
-export CDATA_TEST_PASSWORD=<password>
-export CDATA_TEST_DB=cdata_test
-
-cd crates/cdata-core && cargo test          # 真库测试，没配环境变量就自动跳过
-cd flutter_ui && ./run_integration_tests.sh # FFI 链路 + 端到端冒烟
-```
-
-`run_integration_tests.sh` 还会把主界面导出成 `flutter_ui/build/shots/main.png`。
-
-## 许可
-
-MIT
+Flutter 负责界面，Rust 核心处理数据库连接、查询与 MySQL 值。项目采用 [MIT 许可证](LICENSE.md)。

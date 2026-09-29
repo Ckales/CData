@@ -11,8 +11,6 @@ NEW_PATH=`echo $PATH | tr ":" "\n" | grep -v "Contents/Developer/" | tr "\n" ":"
 
 export PATH=${NEW_PATH%?} # remove trailing :
 
-env
-
 # Platform name (macosx, iphoneos, iphonesimulator)
 export CARGOKIT_DARWIN_PLATFORM_NAME=$PLATFORM_NAME
 
@@ -22,8 +20,8 @@ export CARGOKIT_DARWIN_ARCHS=$ARCHS
 # Current build configuration (Debug, Release)
 export CARGOKIT_CONFIGURATION=$CONFIGURATION
 
-# Path to directory containing Cargo.toml.
-export CARGOKIT_MANIFEST_DIR=$PODS_TARGET_SRCROOT/$1
+# Pod 插件目录在 CI 中是符号链接；先解析传入的 Rust crate 绝对路径。
+export CARGOKIT_MANIFEST_DIR=$(cd "$1" && pwd -P)
 
 # Temporary directory for build artifacts.
 export CARGOKIT_TARGET_TEMP_DIR=$TARGET_TEMP_DIR

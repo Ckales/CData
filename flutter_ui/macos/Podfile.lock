@@ -14,7 +14,7 @@ EXTERNAL SOURCES:
     :path: Flutter/ephemeral
 
 SPEC CHECKSUMS:
-  cdata_rust: 5fded60a7edf3dd492718f3cf46a56f64ff24e2a
+  cdata_rust: b1ed9d3a2fe6762c143d200b2b93e43512456ad5
   FlutterMacOS: c232990155153907050900a2e175c7773903ba4e
 
 PODFILE CHECKSUM: 1e95c36afbfd1cb6423ceca4de7a8e1b256fb6ac

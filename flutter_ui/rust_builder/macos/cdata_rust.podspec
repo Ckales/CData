@@ -27,8 +27,8 @@ A new Flutter FFI plugin project.
 
   s.script_phase = {
     :name => 'Build Rust library',
-    # First argument is relative path to the `rust` folder, second is name of rust library
-    :script => 'sh "$PODS_TARGET_SRCROOT/../cargokit/build_pod.sh" ../../rust cdata_rust',
+    # 从 Pods 根目录定位 Rust crate，不依赖插件符号链接的相对路径。
+    :script => 'sh "$PODS_TARGET_SRCROOT/../cargokit/build_pod.sh" "$PODS_ROOT/../../rust" cdata_rust',
     :execution_position => :before_compile,
     :input_files => ['${BUILT_PRODUCTS_DIR}/cargokit_phony'],
     # Let XCode know that the static library referenced in -force_load below is
