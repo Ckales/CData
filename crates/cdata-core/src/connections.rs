@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::db::ConnectionConfig;
 use crate::options::{ConnectionOptions, SshHop};
+use crate::history::data_file;
 
 const KEYRING_SERVICE: &str = "com.ckales.cdata";
 
@@ -120,6 +121,25 @@ pub fn list() -> Result<Vec<SavedConnection>> {
     serde_json::from_str(&text).map_err(|e| Error::Parse(e.to_string()))
 }
 
+/// 上次打开的收藏连接 ID。只保存 ID，不保存连接参数或凭据。
+pub fn open_connection_ids() -> Result<Vec<String>> {
+    let path = data_file("CDATA_OPEN_CONNECTIONS_PATH", "open_connections.json")?;
+    if !path.exists() {
+        return Ok(Vec::new());
+    }
+    let text = fs::read_to_string(&path).map_err(|e| Error::Io(e.to_string()))?;
+    serde_json::from_str(&text).map_err(|e| Error::Parse(e.to_string()))
+}
+
+pub fn save_open_connection_ids(ids: &[String]) -> Result<()> {
+    let path = data_file("CDATA_OPEN_CONNECTIONS_PATH", "open_connections.json")?;
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|e| Error::Io(e.to_string()))?;
+    }
+    let text = serde_json::to_string_pretty(ids).map_err(|e| Error::Parse(e.to_string()))?;
+    fs::write(path, text).map_err(|e| Error::Io(e.to_string()))
+}
+
 /// 新增或更新一条连接。密码为 None 表示不动钥匙串里已有的那份
 pub fn save(connection: &SavedConnection, password: Option<&str>) -> Result<()> {
     let mut all = list()?;
@@ -211,6 +231,23 @@ mod tests {
         let old = r#"[{"id":"c1","name":"本地","host":"127.0.0.1","port":3306,"user":"root","database":null}]"#;
         let all: Vec<SavedConnection> = serde_json::from_str(old).unwrap();
         assert_eq!(all[0].options, ConnectionOptions::default());
+    }
+
+    #[test]
+    fn open_connection_ids_store_only_ids() {
+        let dir = std::env::temp_dir().join(format!("cdata-open-ids-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("open_connections.json");
+        unsafe { std::env::set_var("CDATA_OPEN_CONNECTIONS_PATH", &path) };
+
+        assert!(open_connection_ids().unwrap().is_empty());
+        let ids = vec!["one".to_string(), "two".to_string()];
+        save_open_connection_ids(&ids).unwrap();
+        assert_eq!(open_connection_ids().unwrap(), ids);
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "[\n  \"one\",\n  \"two\"\n]");
+
+        unsafe { std::env::remove_var("CDATA_OPEN_CONNECTIONS_PATH") };
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     /// 配置文件的增删查往返。密码一律传 None，测试不碰钥匙串（会弹系统授权框）

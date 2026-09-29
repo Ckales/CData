@@ -48,9 +48,13 @@ class _PreferencesDialog extends StatefulWidget {
 class _PreferencesDialogState extends State<_PreferencesDialog> {
   _Category _category = _Category.general;
   late prefs.ThemeMode _theme = widget.initial.theme;
+  late bool _restoreConnections = widget.initial.restoreConnections;
+  late bool _saveQueryHistory = widget.initial.saveQueryHistory;
   // 控制器放在对话框这一层：切分类时输入框卸下来，填了没保存的值还在
   late final _fontSize = TextEditingController(text: '${widget.initial.editorFontSize}');
   late final _maxRows = TextEditingController(text: '${widget.initial.maxRows}');
+  late final _transcriptHistoryLimit = TextEditingController(text: '${widget.initial.transcriptHistoryLimit}');
+  late final _queryHistoryLimit = TextEditingController(text: '${widget.initial.queryHistoryLimit}');
   String? _error;
   bool _saving = false;
 
@@ -58,6 +62,8 @@ class _PreferencesDialogState extends State<_PreferencesDialog> {
   void dispose() {
     _fontSize.dispose();
     _maxRows.dispose();
+    _transcriptHistoryLimit.dispose();
+    _queryHistoryLimit.dispose();
     super.dispose();
   }
 
@@ -72,8 +78,26 @@ class _PreferencesDialogState extends State<_PreferencesDialog> {
       setState(() => _error = '行数上限要填整数');
       return;
     }
+    final transcriptHistoryLimit = int.tryParse(_transcriptHistoryLimit.text.trim());
+    if (transcriptHistoryLimit == null) {
+      setState(() => _error = 'Transcript 最近查询条数要填整数');
+      return;
+    }
+    final queryHistoryLimit = int.tryParse(_queryHistoryLimit.text.trim());
+    if (queryHistoryLimit == null) {
+      setState(() => _error = 'Query 最近查询条数要填整数');
+      return;
+    }
 
-    final preferences = prefs.Preferences(theme: _theme, editorFontSize: fontSize, maxRows: maxRows);
+    final preferences = prefs.Preferences(
+      theme: _theme,
+      editorFontSize: fontSize,
+      maxRows: maxRows,
+      restoreConnections: _restoreConnections,
+      transcriptHistoryLimit: transcriptHistoryLimit,
+      queryHistoryLimit: queryHistoryLimit,
+      saveQueryHistory: _saveQueryHistory,
+    );
     setState(() {
       _saving = true;
       _error = null;
@@ -196,6 +220,49 @@ class _PreferencesDialogState extends State<_PreferencesDialog> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        FormRow(
+          label: '启动时',
+          labelWidth: _labelWidth,
+          child: Row(children: [
+            Checkbox(
+              key: const ValueKey('pref-restore-connections'),
+              value: _restoreConnections,
+              onChanged: (value) => setState(() => _restoreConnections = value ?? false),
+            ),
+            const Text('恢复上次打开的连接'),
+          ]),
+        ),
+        _note('仅恢复上次打开的收藏连接'),
+        FormRow(
+          label: 'Transcript',
+          labelWidth: _labelWidth,
+          child: Row(children: [
+            SizedBox(width: 70, child: TextField(key: const ValueKey('pref-transcript-history-limit'), controller: _transcriptHistoryLimit)),
+            const SizedBox(width: 8),
+            const Text('条最近查询'),
+          ]),
+        ),
+        FormRow(
+          label: 'Query',
+          labelWidth: _labelWidth,
+          child: Row(children: [
+            SizedBox(width: 70, child: TextField(key: const ValueKey('pref-query-history-limit'), controller: _queryHistoryLimit)),
+            const SizedBox(width: 8),
+            const Text('条最近查询'),
+          ]),
+        ),
+        Padding(
+          padding: const EdgeInsets.only(left: _labelWidth + 8),
+          child: Row(children: [
+            Checkbox(
+              key: const ValueKey('pref-save-query-history'),
+              value: _saveQueryHistory,
+              onChanged: (value) => setState(() => _saveQueryHistory = value ?? false),
+            ),
+            const Text('跨启动保存 Query 最近查询'),
+          ]),
+        ),
+        const SizedBox(height: 12),
         FormRow(
           label: '查询行数上限',
           labelWidth: _labelWidth,

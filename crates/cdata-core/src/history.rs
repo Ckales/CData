@@ -2,14 +2,15 @@
 
 use std::fs;
 use std::path::PathBuf;
+use std::sync::{Mutex, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 
 use crate::connections::{Error, Result};
+use crate::preferences;
 
-/// 历史最多留这么多条，旧的丢掉
-const HISTORY_LIMIT: usize = 500;
+static SESSION_QUERY_HISTORY: OnceLock<Mutex<Vec<HistoryEntry>>> = OnceLock::new();
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct HistoryEntry {
@@ -61,13 +62,31 @@ fn history_path() -> Result<PathBuf> {
     data_file("CDATA_HISTORY_PATH", "history.json")
 }
 
+fn query_history_path() -> Result<PathBuf> {
+    data_file("CDATA_QUERY_HISTORY_PATH", "query_history.json")
+}
+
+fn session_query_history() -> &'static Mutex<Vec<HistoryEntry>> {
+    SESSION_QUERY_HISTORY.get_or_init(|| Mutex::new(Vec::new()))
+}
+
+fn push_history(entries: &mut Vec<HistoryEntry>, sql: &str, limit: usize) {
+    if entries.first().is_some_and(|last| last.sql == sql) {
+        entries.remove(0);
+    }
+    entries.insert(0, HistoryEntry { sql: sql.to_string(), executed_at: now_millis() });
+    entries.truncate(limit);
+}
+
 fn favorites_path() -> Result<PathBuf> {
     data_file("CDATA_FAVORITES_PATH", "favorites.json")
 }
 
 /// 历史，最新的在前
 pub fn history() -> Result<Vec<HistoryEntry>> {
-    read_json(&history_path()?)
+    let mut entries = read_json(&history_path()?)?;
+    entries.truncate(preferences::load()?.transcript_history_limit as usize);
+    Ok(entries)
 }
 
 /// 记一条。和最近一条一样就只更新时间，连着点十次运行不刷出十条
@@ -79,12 +98,38 @@ pub fn add_history(sql: &str) -> Result<()> {
 
     let path = history_path()?;
     let mut entries: Vec<HistoryEntry> = read_json(&path)?;
-    if entries.first().is_some_and(|last| last.sql == sql) {
-        entries.remove(0);
-    }
-    entries.insert(0, HistoryEntry { sql: sql.to_string(), executed_at: now_millis() });
-    entries.truncate(HISTORY_LIMIT);
+    push_history(&mut entries, sql, preferences::load()?.transcript_history_limit as usize);
     write_json(&path, &entries)
+}
+
+/// Query view 的最近查询。关闭跨启动保存时只读当前进程的内存记录。
+pub fn query_history() -> Result<Vec<HistoryEntry>> {
+    let preferences = preferences::load()?;
+    let mut entries = if preferences.save_query_history {
+        read_json(&query_history_path()?)?
+    } else {
+        session_query_history().lock().unwrap().clone()
+    };
+    entries.truncate(preferences.query_history_limit as usize);
+    Ok(entries)
+}
+
+pub fn add_query_history(sql: &str) -> Result<()> {
+    let sql = sql.trim();
+    if sql.is_empty() {
+        return Ok(());
+    }
+    let preferences = preferences::load()?;
+    if preferences.save_query_history {
+        let path = query_history_path()?;
+        let mut entries = read_json(&path)?;
+        push_history(&mut entries, sql, preferences.query_history_limit as usize);
+        write_json(&path, &entries)
+    } else {
+        let mut entries = session_query_history().lock().unwrap();
+        push_history(&mut entries, sql, preferences.query_history_limit as usize);
+        Ok(())
+    }
 }
 
 pub fn favorites() -> Result<Vec<Favorite>> {
@@ -130,13 +175,18 @@ mod tests {
     /// 两个测试都碰环境变量，放一个测试里串行跑
     #[test]
     fn history_and_favorites_round_trip() {
+        let _lock = crate::preferences::PREFS_ENV_LOCK.lock().unwrap();
         let dir = std::env::temp_dir().join(format!("cdata-history-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         // SAFETY: 只有这个测试碰这两个变量
         unsafe {
             std::env::set_var("CDATA_HISTORY_PATH", dir.join("history.json"));
             std::env::set_var("CDATA_FAVORITES_PATH", dir.join("favorites.json"));
+            std::env::set_var("CDATA_QUERY_HISTORY_PATH", dir.join("query_history.json"));
+            std::env::set_var("CDATA_PREFERENCES_PATH", dir.join("preferences.json"));
         }
+
+        preferences::save(&preferences::Preferences::default()).unwrap();
 
         assert!(history().unwrap().is_empty());
         add_history("SELECT 1").unwrap();
@@ -146,10 +196,21 @@ mod tests {
         let sqls: Vec<String> = history().unwrap().into_iter().map(|e| e.sql).collect();
         assert_eq!(sqls, ["SELECT 2", "SELECT 1"], "最新的在前，连着重复的只留一条，空的不记");
 
-        for i in 0..(HISTORY_LIMIT + 5) {
+        for i in 0..505 {
             add_history(&format!("SELECT {i}")).unwrap();
         }
-        assert_eq!(history().unwrap().len(), HISTORY_LIMIT);
+        assert_eq!(history().unwrap().len(), preferences::load().unwrap().transcript_history_limit as usize);
+
+        for i in 0..30 {
+            add_query_history(&format!("SELECT query_{i}")).unwrap();
+        }
+        assert_eq!(query_history().unwrap().len(), 25);
+        let saved = std::fs::read_to_string(dir.join("query_history.json")).unwrap();
+        preferences::save(&preferences::Preferences { save_query_history: false, ..preferences::Preferences::default() }).unwrap();
+        assert!(query_history().unwrap().is_empty());
+        add_query_history("SELECT session_only").unwrap();
+        assert_eq!(query_history().unwrap()[0].sql, "SELECT session_only");
+        assert_eq!(std::fs::read_to_string(dir.join("query_history.json")).unwrap(), saved);
 
         let id = save_favorite("日报", "SELECT * FROM daily").unwrap();
         let same = save_favorite("日报", "SELECT * FROM daily_v2").unwrap();
@@ -165,6 +226,8 @@ mod tests {
         unsafe {
             std::env::remove_var("CDATA_HISTORY_PATH");
             std::env::remove_var("CDATA_FAVORITES_PATH");
+            std::env::remove_var("CDATA_QUERY_HISTORY_PATH");
+            std::env::remove_var("CDATA_PREFERENCES_PATH");
         }
         std::fs::remove_dir_all(&dir).ok();
     }

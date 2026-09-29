@@ -22,6 +22,44 @@ pub struct SqlImportSummary {
     pub failure: Option<SqlImportFailure>,
 }
 
+pub(crate) fn server_error_message(server: &mysql_async::ServerError) -> String {
+    let prefix = format!("MySQL 错误 {} ({})", server.code, server.state);
+    let detail = match server.code {
+        1046 => "No database selected".to_string(),
+        1048 => "非空列不能写入 NULL".to_string(),
+        1050 => "表已存在".to_string(),
+        1052 => {
+            // 只放行可验证的列标识符与固定句式。任意服务器原文可能包含 SQL 字面量或凭据。
+            let parsed = server
+                .message
+                .strip_prefix("Column '")
+                .and_then(|rest| rest.split_once("' in "))
+                .and_then(|(column, context)| {
+                    let context = context.strip_suffix(" is ambiguous")?;
+                    let safe_name = !column.is_empty()
+                        && column.len() <= 128
+                        && column
+                            .chars()
+                            .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '_' | '.' | '$'));
+                    let safe_context =
+                        matches!(context, "field list" | "order clause" | "group statement");
+                    (safe_name && safe_context)
+                        .then(|| format!("Column '{column}' in {context} is ambiguous"))
+                });
+            parsed.unwrap_or_else(|| "Column name is ambiguous".to_string())
+        }
+        1054 => "列不存在".to_string(),
+        1062 => "唯一键冲突（重复值已隐藏）".to_string(),
+        1064 => "SQL syntax error (SQL excerpt hidden)".to_string(),
+        1146 => "表不存在".to_string(),
+        1292 | 1366 => "字段值格式不正确（原值已隐藏）".to_string(),
+        1406 => "字段值超出长度限制".to_string(),
+        1452 => "外键约束未满足".to_string(),
+        _ => return prefix,
+    };
+    format!("{prefix}：{detail}")
+}
+
 pub struct ImportStatement {
     pub sql: String,
     pub line: u64,
@@ -195,7 +233,7 @@ pub fn split_statements(sql: &str) -> Result<Vec<ImportStatement>, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{read_statements, split_statements};
+    use super::{read_statements, server_error_message, split_statements};
     use crate::export::ExportEncoding;
 
     #[test]
@@ -217,12 +255,55 @@ mod tests {
 
     #[test]
     fn file_encoding_is_explicit_and_lossless() {
-        let path = std::env::temp_dir().join(format!("cdata_sql_import_encoding_{}.sql", std::process::id()));
+        let path = std::env::temp_dir().join(format!(
+            "cdata_sql_import_encoding_{}.sql",
+            std::process::id()
+        ));
         let (gbk, _, _) = encoding_rs::GBK.encode("SELECT '中文';");
         std::fs::write(&path, gbk.as_ref()).unwrap();
         assert!(read_statements(path.to_str().unwrap(), ExportEncoding::Utf8).is_err());
         let statements = read_statements(path.to_str().unwrap(), ExportEncoding::Gbk).unwrap();
         assert_eq!(statements[0].sql, "SELECT '中文'");
         std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn import_error_explains_ambiguous_column_without_leaking_sql_literals() {
+        let ambiguous = mysql_async::ServerError {
+            code: 1052,
+            state: "23000".into(),
+            message: "Column 'id' in field list is ambiguous".into(),
+        };
+        assert_eq!(
+            server_error_message(&ambiguous),
+            "MySQL 错误 1052 (23000)：Column 'id' in field list is ambiguous"
+        );
+
+        let syntax = mysql_async::ServerError {
+            code: 1064,
+            state: "42000".into(),
+            message: "SQL syntax error near 'IDENTIFIED BY supersecret'".into(),
+        };
+        assert!(!server_error_message(&syntax).contains("supersecret"));
+
+        let unsafe_column = mysql_async::ServerError {
+            code: 1052,
+            state: "23000".into(),
+            message: "Column 'secret value' in field list is ambiguous".into(),
+        };
+        assert_eq!(
+            server_error_message(&unsafe_column),
+            "MySQL 错误 1052 (23000)：Column name is ambiguous"
+        );
+
+        let duplicate = mysql_async::ServerError {
+            code: 1062,
+            state: "23000".into(),
+            message: "Duplicate entry 'secret-token' for key 'uq_key'".into(),
+        };
+        assert_eq!(
+            server_error_message(&duplicate),
+            "MySQL 错误 1062 (23000)：唯一键冲突（重复值已隐藏）"
+        );
     }
 }

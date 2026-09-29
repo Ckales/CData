@@ -18,6 +18,10 @@ pub struct _Preferences {
     pub theme: ThemeMode,
     pub editor_font_size: u32,
     pub max_rows: u64,
+    pub restore_connections: bool,
+    pub transcript_history_limit: u32,
+    pub query_history_limit: u32,
+    pub save_query_history: bool,
 }
 
 /// 没存过就是默认值；存的值不合法报错

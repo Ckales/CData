@@ -243,6 +243,7 @@ class QueryTabState extends State<QueryTab> {
     String? historyError;
     try {
       await widget.library.addHistory(_baseSql);
+      if (widget.showEditor) await widget.library.addQueryHistory(_baseSql);
     } catch (e) {
       historyError = '记录历史失败：$e';
     }

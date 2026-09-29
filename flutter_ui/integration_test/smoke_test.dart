@@ -10,7 +10,7 @@ import 'dart:ui' as ui;
 
 import 'package:cdata_flutter/query_page.dart';
 import 'package:cdata_flutter/theme.dart';
-import 'package:cdata_flutter/src/rust/api/preferences.dart' show defaultPreferences;
+import 'package:cdata_flutter/src/rust/api/preferences.dart' show Preferences, defaultPreferences;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
@@ -80,6 +80,16 @@ void main() {
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
 
+    final defaults = defaultPreferences();
+    final preferences = Preferences(
+      theme: defaults.theme,
+      editorFontSize: defaults.editorFontSize,
+      maxRows: defaults.maxRows,
+      restoreConnections: false,
+      transcriptHistoryLimit: defaults.transcriptHistoryLimit,
+      queryHistoryLimit: defaults.queryHistoryLimit,
+      saveQueryHistory: defaults.saveQueryHistory,
+    );
     await tester.pumpWidget(
       RepaintBoundary(
         key: _boundaryKey,
@@ -87,7 +97,7 @@ void main() {
           debugShowCheckedModeBanner: false,
           // 和真 app 用同一套主题，截图才反映真实效果
           theme: appTheme(Brightness.light),
-          home: QueryPage(preferences: defaultPreferences(), onPreferencesChanged: (_) {}),
+          home: QueryPage(preferences: preferences, onPreferencesChanged: (_) {}, rememberOpenConnections: false),
         ),
       ),
     );

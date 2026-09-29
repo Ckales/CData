@@ -9,9 +9,13 @@ use crate::history::data_file;
 
 /// 结果集行数上限的上限。十万行是定下来的取舍（见 ROADMAP），偏好只能往小调
 pub const MAX_ROWS_LIMIT: u64 = 100_000;
+pub const MAX_HISTORY_LIMIT: u32 = 500;
 
 const FONT_SIZE_MIN: u32 = 10;
 const FONT_SIZE_MAX: u32 = 24;
+
+#[cfg(test)]
+pub(crate) static PREFS_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ThemeMode {
@@ -29,6 +33,10 @@ pub struct Preferences {
     pub editor_font_size: u32,
     /// 一次查询最多取多少行，超过截断并提示
     pub max_rows: u64,
+    pub restore_connections: bool,
+    pub transcript_history_limit: u32,
+    pub query_history_limit: u32,
+    pub save_query_history: bool,
 }
 
 impl Default for Preferences {
@@ -37,6 +45,10 @@ impl Default for Preferences {
             theme: ThemeMode::System,
             editor_font_size: 13,
             max_rows: MAX_ROWS_LIMIT,
+            restore_connections: true,
+            transcript_history_limit: 50,
+            query_history_limit: 25,
+            save_query_history: true,
         }
     }
 }
@@ -55,6 +67,14 @@ impl Preferences {
                 "编辑器字号要在 {FONT_SIZE_MIN} 到 {FONT_SIZE_MAX} 之间，现在是 {}",
                 self.editor_font_size
             )));
+        }
+        for (name, limit) in [
+            ("Transcript 最近查询条数", self.transcript_history_limit),
+            ("Query 最近查询条数", self.query_history_limit),
+        ] {
+            if limit == 0 || limit > MAX_HISTORY_LIMIT {
+                return Err(Error::Invalid(format!("{name}要在 1 到 {MAX_HISTORY_LIMIT} 之间，现在是 {limit}")));
+            }
         }
         Ok(())
     }
@@ -89,6 +109,7 @@ pub fn save(preferences: &Preferences) -> Result<()> {
 mod tests {
     use super::*;
 
+
     #[test]
     fn rejects_out_of_range_values() {
         let too_many = Preferences { max_rows: MAX_ROWS_LIMIT + 1, ..Preferences::default() };
@@ -100,6 +121,11 @@ mod tests {
         let tiny_font = Preferences { editor_font_size: 6, ..Preferences::default() };
         assert!(tiny_font.validate().is_err());
 
+        let no_history = Preferences { query_history_limit: 0, ..Preferences::default() };
+        assert!(no_history.validate().is_err());
+        let too_much_history = Preferences { transcript_history_limit: MAX_HISTORY_LIMIT + 1, ..Preferences::default() };
+        assert!(too_much_history.validate().is_err());
+
         assert!(Preferences::default().validate().is_ok());
     }
 
@@ -108,10 +134,15 @@ mod tests {
         let preferences: Preferences = serde_json::from_str(r#"{"theme":"Dark"}"#).unwrap();
         assert_eq!(preferences.theme, ThemeMode::Dark);
         assert_eq!(preferences.max_rows, MAX_ROWS_LIMIT);
+        assert_eq!(preferences.transcript_history_limit, 50);
+        assert_eq!(preferences.query_history_limit, 25);
+        assert!(preferences.restore_connections);
+        assert!(preferences.save_query_history);
     }
 
     #[test]
     fn save_load_round_trip() {
+        let _lock = PREFS_ENV_LOCK.lock().unwrap();
         let dir = std::env::temp_dir().join(format!("cdata-prefs-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("preferences.json");
@@ -121,7 +152,7 @@ mod tests {
         // 文件不存在是默认值，不是错误
         assert_eq!(load().unwrap(), Preferences::default());
 
-        let changed = Preferences { theme: ThemeMode::Dark, editor_font_size: 15, max_rows: 5000 };
+        let changed = Preferences { theme: ThemeMode::Dark, editor_font_size: 15, max_rows: 5000, ..Preferences::default() };
         save(&changed).unwrap();
         assert_eq!(load().unwrap(), changed);
 

@@ -39,6 +39,12 @@ Future<List<HistoryEntry>> listHistory() =>
 Future<void> addHistory({required String sql}) =>
     RustLib.instance.api.crateApiEditorAddHistory(sql: sql);
 
+Future<List<HistoryEntry>> listQueryHistory() =>
+    RustLib.instance.api.crateApiEditorListQueryHistory();
+
+Future<void> addQueryHistory({required String sql}) =>
+    RustLib.instance.api.crateApiEditorAddQueryHistory(sql: sql);
+
 Future<List<Favorite>> listFavorites() =>
     RustLib.instance.api.crateApiEditorListFavorites();
 
@@ -69,10 +75,12 @@ Future<SqlImportSummary> importSqlFile({
   required BigInt sessionId,
   required String path,
   required ExportEncoding encoding,
+  required String database,
 }) => RustLib.instance.api.crateApiEditorImportSqlFile(
   sessionId: sessionId,
   path: path,
   encoding: encoding,
+  database: database,
 );
 
 /// 执行计划，结果放进一个子会话

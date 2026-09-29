@@ -4,13 +4,15 @@ import 'mac_widgets.dart';
 import 'src/rust/api/editor.dart';
 import 'src/rust/api/editor.dart'
     as editor
-    show listHistory, addHistory, listFavorites, saveFavorite, deleteFavorite;
+    show listHistory, addHistory, listQueryHistory, addQueryHistory, listFavorites, saveFavorite, deleteFavorite;
 
 /// 执行历史和收藏。生产环境存在 Rust 侧的 JSON 文件里，测试换成内存实现
 abstract class SqlLibrary {
   /// 最新的在前
   Future<List<HistoryEntry>> history();
   Future<void> addHistory(String sql);
+  Future<List<HistoryEntry>> queryHistory();
+  Future<void> addQueryHistory(String sql);
   Future<List<Favorite>> favorites();
 
   /// 同名覆盖，返回 id
@@ -26,6 +28,12 @@ class RustSqlLibrary implements SqlLibrary {
 
   @override
   Future<void> addHistory(String sql) => editor.addHistory(sql: sql);
+
+  @override
+  Future<List<HistoryEntry>> queryHistory() => editor.listQueryHistory();
+
+  @override
+  Future<void> addQueryHistory(String sql) => editor.addQueryHistory(sql: sql);
 
   @override
   Future<List<Favorite>> favorites() => editor.listFavorites();
@@ -61,6 +69,7 @@ class _LibraryDialog extends StatefulWidget {
 
 class _LibraryDialogState extends State<_LibraryDialog> {
   List<HistoryEntry>? _history;
+  List<HistoryEntry>? _queryHistory;
   List<Favorite>? _favorites;
   String? _error;
   final _search = TextEditingController();
@@ -82,10 +91,12 @@ class _LibraryDialogState extends State<_LibraryDialog> {
   Future<void> _load() async {
     try {
       final history = await widget.library.history();
+      final queryHistory = await widget.library.queryHistory();
       final favorites = await widget.library.favorites();
       if (!mounted) return;
       setState(() {
         _history = history;
+        _queryHistory = queryHistory;
         _favorites = favorites;
         _error = null;
       });
@@ -124,13 +135,13 @@ class _LibraryDialogState extends State<_LibraryDialog> {
         width: 760,
         height: 520,
         child: DefaultTabController(
-          length: 2,
+          length: 3,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               MacPanelBar(
                 children: [
-                  const Expanded(child: MacTabBar(labels: ['历史', '收藏'])),
+                  const Expanded(child: MacTabBar(labels: ['Transcript', 'Query', '收藏'])),
                   IconButton(
                     tooltip: '关闭',
                     onPressed: () => Navigator.of(context).pop(),
@@ -146,7 +157,7 @@ class _LibraryDialogState extends State<_LibraryDialog> {
               Expanded(
                 child: ColoredBox(
                   color: scheme.surface,
-                  child: TabBarView(children: [_historyTab(), _favoritesTab()]),
+                  child: TabBarView(children: [_historyTab(_history), _historyTab(_queryHistory), _favoritesTab()]),
                 ),
               ),
             ],
@@ -170,8 +181,7 @@ class _LibraryDialogState extends State<_LibraryDialog> {
     return Center(child: Text(text, style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant)));
   }
 
-  Widget _historyTab() {
-    final history = _history;
+  Widget _historyTab(List<HistoryEntry>? history) {
     if (history == null) return const Center(child: Text('加载中…'));
 
     final keyword = _search.text.trim().toLowerCase();

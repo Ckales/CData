@@ -136,16 +136,43 @@ class _TableSidebarState extends State<TableSidebar> {
     await _reload();
   }
 
-  static const _createTableItem = PopupMenuItem(
-    value: 'create',
-    height: 26,
-    child: Text('新建表…'),
-  );
+  PopupMenuItem<T> _menuItem<T>(
+    T value,
+    String label,
+    IconData icon, {
+    bool destructive = false,
+    bool submenu = false,
+  }) {
+    final mac = MacColors.of(context);
+    final color = destructive ? Theme.of(context).colorScheme.error : mac.text;
+    return PopupMenuItem<T>(
+      value: value,
+      height: 30,
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      child: Row(
+        children: [
+          Icon(icon, size: 16, color: destructive ? color : mac.secondaryText),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(label, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w400, color: color)),
+          ),
+          if (submenu)
+            Icon(Icons.chevron_right, size: 16, color: mac.secondaryText),
+        ],
+      ),
+    );
+  }
 
-  static const _createDatabaseItem = PopupMenuItem(
-    value: 'create-database',
-    height: 26,
-    child: Text('新建数据库…'),
+  Future<T?> _showSidebarMenu<T>(
+    RelativeRect position,
+    List<PopupMenuEntry<T>> items,
+  ) => showMenu<T>(
+    context: context,
+    position: position,
+    constraints: const BoxConstraints(minWidth: 224, maxWidth: 260),
+    menuPadding: const EdgeInsets.symmetric(vertical: 4),
+    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(9)),
+    items: items,
   );
 
   Future<void> _import(String? table) async {
@@ -155,13 +182,14 @@ class _TableSidebarState extends State<TableSidebar> {
 
   /// 没有表可以右键时（空库、过滤后没有匹配），在空白处右键只给「新建库…」「新建表…」
   Future<void> _showBlankMenu(Offset position) async {
-    final choice = await showMenu<String>(
-      context: context,
-      position: RelativeRect.fromLTRB(position.dx, position.dy, position.dx, position.dy),
-      items: [
-        _createDatabaseItem,
-        if (widget.onCreateTable != null && widget.database.isNotEmpty) _createTableItem,
-        if (widget.onImport != null) const PopupMenuItem(value: 'import', height: 26, child: Text('导入…')),
+    final choice = await _showSidebarMenu<String>(
+      RelativeRect.fromLTRB(position.dx, position.dy, position.dx, position.dy),
+      [
+        _menuItem('create-database', '新建数据库…', Icons.storage_outlined),
+        if (widget.onCreateTable != null && widget.database.isNotEmpty)
+          _menuItem('create', '新建表…', Icons.add_box_outlined),
+        if (widget.onImport != null)
+          _menuItem('import', '导入…', Icons.file_download_outlined),
       ],
     );
     if (!mounted) return;
@@ -176,39 +204,39 @@ class _TableSidebarState extends State<TableSidebar> {
     final isView = info.isView;
     final onShowStructure = widget.onShowStructure;
     final onOpenInNewTab = widget.onOpenInNewTab;
-    final at = RelativeRect.fromLTRB(position.dx, position.dy, position.dx, position.dy);
-    final choice = await showMenu<String>(
-      context: context,
-      position: at,
-      items: [
-        const PopupMenuItem(value: 'browse', height: 26, child: Text('浏览数据')),
-        if (onOpenInNewTab != null) const PopupMenuItem(value: 'new-tab', height: 26, child: Text('在新标签中打开')),
-        const PopupMenuDivider(height: 8),
-        const PopupMenuItem(value: 'rename', height: 26, child: Text('重命名…')),
-        // 视图没法 CREATE TABLE … LIKE，复制请拿建表语句改
-        if (!isView) const PopupMenuItem(value: 'duplicate', height: 26, child: Text('复制表…')),
-        const PopupMenuDivider(height: 8),
-        const PopupMenuItem(value: 'drop', height: 26, child: Text('删除…')),
-        const PopupMenuDivider(height: 8),
-        const PopupMenuItem(value: 'copy-name', height: 26, child: Text('复制名称')),
-        const PopupMenuItem(value: 'copy-create', height: 26, child: Text('复制建表语句')),
-        if (!isView) const PopupMenuItem(value: 'copy-insert', height: 26, child: Text('复制 INSERT 语句')),
-        const PopupMenuDivider(height: 8),
-        if (onShowStructure != null) const PopupMenuItem(value: 'structure', height: 26, child: Text('查看结构')),
-        if (widget.onImport != null) const PopupMenuItem(value: 'import', height: 26, child: Text('导入…')),
-        const PopupMenuItem(value: 'export', height: 26, child: Text('导出…')),
-        if (!isView) const PopupMenuItem(value: 'count', height: 26, child: Text('统计行数')),
-        if (!isView)
-          const PopupMenuItem(
-            value: 'operations',
-            height: 26,
-            child: Row(children: [Expanded(child: Text('表操作')), Icon(Icons.chevron_right, size: 16)]),
-          ),
-        const PopupMenuDivider(height: 8),
-        _createDatabaseItem,
-        if (widget.onCreateTable != null) _createTableItem,
-      ],
+    final at = RelativeRect.fromLTRB(
+      position.dx,
+      position.dy,
+      position.dx,
+      position.dy,
     );
+    final choice = await _showSidebarMenu<String>(at, [
+      _menuItem('browse', '浏览数据', Icons.table_rows_outlined),
+      if (onOpenInNewTab != null)
+        _menuItem('new-tab', '在新标签中打开', Icons.open_in_new),
+      const PopupMenuDivider(height: 8),
+      _menuItem('rename', '重命名…', Icons.drive_file_rename_outline),
+      // 视图没法 CREATE TABLE … LIKE，复制请拿建表语句改
+      if (!isView) _menuItem('duplicate', '复制表…', Icons.content_copy_outlined),
+      const PopupMenuDivider(height: 8),
+      _menuItem('drop', '删除…', Icons.delete_outline, destructive: true),
+      const PopupMenuDivider(height: 8),
+      _menuItem('copy-name', '复制名称', Icons.short_text),
+      _menuItem('copy-create', '复制建表语句', Icons.code),
+      if (!isView) _menuItem('copy-insert', '复制 INSERT 语句', Icons.data_object),
+      const PopupMenuDivider(height: 8),
+      if (onShowStructure != null)
+        _menuItem('structure', '查看结构', Icons.account_tree_outlined),
+      if (widget.onImport != null)
+        _menuItem('import', '导入…', Icons.file_download_outlined),
+      _menuItem('export', '导出…', Icons.file_upload_outlined),
+      if (!isView) _menuItem('count', '统计行数', Icons.numbers),
+      if (!isView) _menuItem('operations', '表操作', Icons.tune, submenu: true),
+      const PopupMenuDivider(height: 8),
+      _menuItem('create-database', '新建数据库…', Icons.storage_outlined),
+      if (widget.onCreateTable != null)
+        _menuItem('create', '新建表…', Icons.add_box_outlined),
+    ]);
     if (!mounted || choice == null) return;
     setState(() => _error = null);
     switch (choice) {
@@ -318,20 +346,23 @@ class _TableSidebarState extends State<TableSidebar> {
 
   /// 「表操作」二级菜单，在同一个位置弹出
   Future<void> _showOperations(String table, RelativeRect at) async {
-    final choice = await showMenu<Object>(
-      context: context,
-      position: at,
-      items: const [
-        PopupMenuItem(value: 'truncate', height: 26, child: Text('清空表…')),
-        PopupMenuDivider(height: 8),
-        PopupMenuItem(value: Maintenance.analyze, height: 26, child: Text('分析表')),
-        PopupMenuItem(value: Maintenance.check, height: 26, child: Text('检查表')),
-        PopupMenuItem(value: Maintenance.optimize, height: 26, child: Text('优化表')),
-        PopupMenuItem(value: Maintenance.repair, height: 26, child: Text('修复表')),
-      ],
-    );
+    final choice = await _showSidebarMenu<Object>(at, [
+      _menuItem(
+        'truncate',
+        '清空表…',
+        Icons.delete_sweep_outlined,
+        destructive: true,
+      ),
+      PopupMenuDivider(height: 8),
+      _menuItem(Maintenance.analyze, '分析表', Icons.analytics_outlined),
+      _menuItem(Maintenance.check, '检查表', Icons.fact_check_outlined),
+      _menuItem(Maintenance.optimize, '优化表', Icons.tune),
+      _menuItem(Maintenance.repair, '修复表', Icons.build_outlined),
+    ]);
     if (!mounted || choice == null) return;
-    if (choice == 'truncate') await _runAction(table, const TableAction.truncate());
+    if (choice == 'truncate') {
+      await _runAction(table, const TableAction.truncate());
+    }
     if (choice is Maintenance) await _maintain(table, choice);
   }
 

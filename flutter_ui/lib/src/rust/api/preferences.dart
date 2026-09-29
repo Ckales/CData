@@ -24,16 +24,30 @@ class Preferences {
   final ThemeMode theme;
   final int editorFontSize;
   final BigInt maxRows;
+  final bool restoreConnections;
+  final int transcriptHistoryLimit;
+  final int queryHistoryLimit;
+  final bool saveQueryHistory;
 
   const Preferences({
     required this.theme,
     required this.editorFontSize,
     required this.maxRows,
+    required this.restoreConnections,
+    required this.transcriptHistoryLimit,
+    required this.queryHistoryLimit,
+    required this.saveQueryHistory,
   });
 
   @override
   int get hashCode =>
-      theme.hashCode ^ editorFontSize.hashCode ^ maxRows.hashCode;
+      theme.hashCode ^
+      editorFontSize.hashCode ^
+      maxRows.hashCode ^
+      restoreConnections.hashCode ^
+      transcriptHistoryLimit.hashCode ^
+      queryHistoryLimit.hashCode ^
+      saveQueryHistory.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -42,7 +56,11 @@ class Preferences {
           runtimeType == other.runtimeType &&
           theme == other.theme &&
           editorFontSize == other.editorFontSize &&
-          maxRows == other.maxRows;
+          maxRows == other.maxRows &&
+          restoreConnections == other.restoreConnections &&
+          transcriptHistoryLimit == other.transcriptHistoryLimit &&
+          queryHistoryLimit == other.queryHistoryLimit &&
+          saveQueryHistory == other.saveQueryHistory;
 }
 
 enum ThemeMode { system, light, dark }

@@ -31,14 +31,16 @@ fn config_from_env() -> Option<ConnectionConfig> {
 /// SQL 文件使用文本协议，同连接顺序执行，失败后准确报告位置。
 #[tokio::test]
 async fn sql_file_import_stops_at_first_failure() {
-    let Some(config) = config_from_env() else {
+    let Some(mut config) = config_from_env() else {
         eprintln!("跳过：未配置 CDATA_TEST_* 环境变量");
         return;
     };
+    // 工作区建立时未选库，用户后来在标签页选择目标库：导入连接必须应用标签的库。
+    let selected_database = config.database.take().unwrap();
     let session = open_session(&config).await.unwrap();
     let path = std::env::temp_dir().join(format!("cdata_sql_import_{}.sql", std::process::id()));
     std::fs::write(&path, "\u{feff}CREATE TEMPORARY TABLE cdata_import_probe (id INT);\nDELIMITER //\nINSERT INTO cdata_import_probe VALUES (1), (2)//\nDELIMITER ;\nSELECT * FROM cdata_import_missing;\nINSERT INTO cdata_import_probe VALUES (3);").unwrap();
-    let summary = import_sql_file(session, path.to_str().unwrap(), ExportEncoding::Utf8).await.unwrap();
+    let summary = import_sql_file(session, path.to_str().unwrap(), ExportEncoding::Utf8, &selected_database).await.unwrap();
     std::fs::remove_file(&path).unwrap();
     assert_eq!(summary.executed, 2);
     assert_eq!(summary.affected_rows, 2);

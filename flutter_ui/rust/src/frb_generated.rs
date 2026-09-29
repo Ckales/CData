@@ -39,7 +39,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.13.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 1892539613;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 935839389;
 
 // Section: executor
 
@@ -112,6 +112,39 @@ fn wire__crate__api__editor__add_history_impl(
             move |context| {
                 transform_result_sse::<_, String>((move || {
                     let output_ok = crate::api::editor::add_history(api_sql)?;
+                    std::result::Result::Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
+fn wire__crate__api__editor__add_query_history_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "add_query_history",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_sql = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, String>((move || {
+                    let output_ok = crate::api::editor::add_query_history(api_sql)?;
                     std::result::Result::Ok(output_ok)
                 })())
             }
@@ -1454,6 +1487,7 @@ fn wire__crate__api__editor__import_sql_file_impl(
             let api_session_id = <u64>::sse_decode(&mut deserializer);
             let api_path = <String>::sse_decode(&mut deserializer);
             let api_encoding = <crate::api::db::ExportEncoding>::sse_decode(&mut deserializer);
+            let api_database = <String>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| async move {
                 transform_result_sse::<_, String>(
@@ -1462,6 +1496,7 @@ fn wire__crate__api__editor__import_sql_file_impl(
                             api_session_id,
                             api_path,
                             api_encoding,
+                            api_database,
                         )
                         .await?;
                         std::result::Result::Ok(output_ok)
@@ -1793,6 +1828,38 @@ fn wire__crate__api__editor__list_history_impl(
         },
     )
 }
+fn wire__crate__api__editor__list_query_history_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "list_query_history",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, String>((move || {
+                    let output_ok = crate::api::editor::list_query_history()?;
+                    std::result::Result::Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
 fn wire__crate__api__schema__list_tables_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
@@ -2029,6 +2096,38 @@ fn wire__crate__api__schema__new_table_draft_impl(
                 let output_ok = Ok::<_, ()>(crate::api::schema::new_table_draft())?;
                 std::result::Result::Ok(output_ok)
             })())
+        },
+    )
+}
+fn wire__crate__api__connections__open_connection_ids_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "open_connection_ids",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, String>((move || {
+                    let output_ok = crate::api::connections::open_connection_ids()?;
+                    std::result::Result::Ok(output_ok)
+                })())
+            }
         },
     )
 }
@@ -2712,6 +2811,39 @@ fn wire__crate__api__layouts__save_layout_impl(
             move |context| {
                 transform_result_sse::<_, String>((move || {
                     let output_ok = crate::api::layouts::save_layout(api_key, api_columns)?;
+                    std::result::Result::Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
+fn wire__crate__api__connections__save_open_connection_ids_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "save_open_connection_ids",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_ids = <Vec<String>>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, String>((move || {
+                    let output_ok = crate::api::connections::save_open_connection_ids(api_ids)?;
                     std::result::Result::Ok(output_ok)
                 })())
             }
@@ -3578,6 +3710,10 @@ const _: fn() = || {
         let _: crate::api::preferences::ThemeMode = Preferences.theme;
         let _: u32 = Preferences.editor_font_size;
         let _: u64 = Preferences.max_rows;
+        let _: bool = Preferences.restore_connections;
+        let _: u32 = Preferences.transcript_history_limit;
+        let _: u32 = Preferences.query_history_limit;
+        let _: bool = Preferences.save_query_history;
     }
     {
         let PreviewRow = None::<crate::api::csv_import::PreviewRow>.unwrap();
@@ -5555,10 +5691,18 @@ impl SseDecode for crate::api::preferences::Preferences {
         let mut var_theme = <crate::api::preferences::ThemeMode>::sse_decode(deserializer);
         let mut var_editorFontSize = <u32>::sse_decode(deserializer);
         let mut var_maxRows = <u64>::sse_decode(deserializer);
+        let mut var_restoreConnections = <bool>::sse_decode(deserializer);
+        let mut var_transcriptHistoryLimit = <u32>::sse_decode(deserializer);
+        let mut var_queryHistoryLimit = <u32>::sse_decode(deserializer);
+        let mut var_saveQueryHistory = <bool>::sse_decode(deserializer);
         return crate::api::preferences::Preferences {
             theme: var_theme,
             editor_font_size: var_editorFontSize,
             max_rows: var_maxRows,
+            restore_connections: var_restoreConnections,
+            transcript_history_limit: var_transcriptHistoryLimit,
+            query_history_limit: var_queryHistoryLimit,
+            save_query_history: var_saveQueryHistory,
         };
     }
 }
@@ -6308,104 +6452,118 @@ fn pde_ffi_dispatcher_primary_impl(
     match func_id {
         1 => wire__crate__api__users__account_grants_impl(port, ptr, rust_vec_len, data_len),
         2 => wire__crate__api__editor__add_history_impl(port, ptr, rust_vec_len, data_len),
-        3 => wire__crate__api__schema__apply_alter_impl(port, ptr, rust_vec_len, data_len),
-        4 => {
+        3 => wire__crate__api__editor__add_query_history_impl(port, ptr, rust_vec_len, data_len),
+        4 => wire__crate__api__schema__apply_alter_impl(port, ptr, rust_vec_len, data_len),
+        5 => {
             wire__crate__api__schema__apply_create_database_impl(port, ptr, rust_vec_len, data_len)
         }
-        5 => wire__crate__api__db__apply_edit_impl(port, ptr, rust_vec_len, data_len),
-        6 => wire__crate__api__server__apply_set_global_impl(port, ptr, rust_vec_len, data_len),
-        7 => wire__crate__api__schema__apply_table_action_impl(port, ptr, rust_vec_len, data_len),
-        8 => wire__crate__api__users__apply_user_change_impl(port, ptr, rust_vec_len, data_len),
-        9 => wire__crate__api__schema__browse_sql_impl(port, ptr, rust_vec_len, data_len),
-        10 => wire__crate__api__csv_import__cancel_import_impl(port, ptr, rust_vec_len, data_len),
-        12 => wire__crate__api__csv_import__close_import_impl(port, ptr, rust_vec_len, data_len),
-        13 => wire__crate__api__db__close_session_impl(port, ptr, rust_vec_len, data_len),
-        14 => wire__crate__api__db__column_choices_impl(port, ptr, rust_vec_len, data_len),
-        16 => wire__crate__api__db__copy_range_impl(port, ptr, rust_vec_len, data_len),
-        17 => wire__crate__api__schema__count_rows_impl(port, ptr, rust_vec_len, data_len),
-        18 => wire__crate__api__schema__create_table_impl(port, ptr, rust_vec_len, data_len),
-        19 => wire__crate__api__schema__database_options_impl(port, ptr, rust_vec_len, data_len),
-        22 => {
+        6 => wire__crate__api__db__apply_edit_impl(port, ptr, rust_vec_len, data_len),
+        7 => wire__crate__api__server__apply_set_global_impl(port, ptr, rust_vec_len, data_len),
+        8 => wire__crate__api__schema__apply_table_action_impl(port, ptr, rust_vec_len, data_len),
+        9 => wire__crate__api__users__apply_user_change_impl(port, ptr, rust_vec_len, data_len),
+        10 => wire__crate__api__schema__browse_sql_impl(port, ptr, rust_vec_len, data_len),
+        11 => wire__crate__api__csv_import__cancel_import_impl(port, ptr, rust_vec_len, data_len),
+        13 => wire__crate__api__csv_import__close_import_impl(port, ptr, rust_vec_len, data_len),
+        14 => wire__crate__api__db__close_session_impl(port, ptr, rust_vec_len, data_len),
+        15 => wire__crate__api__db__column_choices_impl(port, ptr, rust_vec_len, data_len),
+        17 => wire__crate__api__db__copy_range_impl(port, ptr, rust_vec_len, data_len),
+        18 => wire__crate__api__schema__count_rows_impl(port, ptr, rust_vec_len, data_len),
+        19 => wire__crate__api__schema__create_table_impl(port, ptr, rust_vec_len, data_len),
+        20 => wire__crate__api__schema__database_options_impl(port, ptr, rust_vec_len, data_len),
+        23 => {
             wire__crate__api__connections__delete_connection_impl(port, ptr, rust_vec_len, data_len)
         }
-        23 => wire__crate__api__editor__delete_favorite_impl(port, ptr, rust_vec_len, data_len),
-        24 => wire__crate__api__db__delete_rows_impl(port, ptr, rust_vec_len, data_len),
-        25 => wire__crate__api__value__display_text_impl(port, ptr, rust_vec_len, data_len),
-        26 => wire__crate__api__editor__drop_child_results_impl(port, ptr, rust_vec_len, data_len),
-        27 => wire__crate__api__db__execute_impl(port, ptr, rust_vec_len, data_len),
-        28 => wire__crate__api__db__execute_filtered_view_impl(port, ptr, rust_vec_len, data_len),
-        29 => wire__crate__api__editor__execute_script_impl(port, ptr, rust_vec_len, data_len),
-        30 => wire__crate__api__editor__explain_impl(port, ptr, rust_vec_len, data_len),
-        31 => wire__crate__api__db__export_rows_impl(port, ptr, rust_vec_len, data_len),
-        32 => wire__crate__api__db__export_table_impl(port, ptr, rust_vec_len, data_len),
-        33 => wire__crate__api__db__fetch_window_impl(port, ptr, rust_vec_len, data_len),
-        34 => wire__crate__api__db__fetch_window_text_impl(port, ptr, rust_vec_len, data_len),
-        35 => wire__crate__api__value__format_json_impl(port, ptr, rust_vec_len, data_len),
-        36 => wire__crate__api__value__hex_dump_impl(port, ptr, rust_vec_len, data_len),
-        37 => wire__crate__api__editor__import_sql_file_impl(port, ptr, rust_vec_len, data_len),
-        38 => wire__crate__api__csv_import__import_status_impl(port, ptr, rust_vec_len, data_len),
-        39 => wire__crate__api__init_app_impl(port, ptr, rust_vec_len, data_len),
-        40 => wire__crate__api__db__insert_row_impl(port, ptr, rust_vec_len, data_len),
-        41 => wire__crate__api__schema__insert_template_impl(port, ptr, rust_vec_len, data_len),
-        42 => wire__crate__api__server__kill_process_impl(port, ptr, rust_vec_len, data_len),
-        43 => {
+        24 => wire__crate__api__editor__delete_favorite_impl(port, ptr, rust_vec_len, data_len),
+        25 => wire__crate__api__db__delete_rows_impl(port, ptr, rust_vec_len, data_len),
+        26 => wire__crate__api__value__display_text_impl(port, ptr, rust_vec_len, data_len),
+        27 => wire__crate__api__editor__drop_child_results_impl(port, ptr, rust_vec_len, data_len),
+        28 => wire__crate__api__db__execute_impl(port, ptr, rust_vec_len, data_len),
+        29 => wire__crate__api__db__execute_filtered_view_impl(port, ptr, rust_vec_len, data_len),
+        30 => wire__crate__api__editor__execute_script_impl(port, ptr, rust_vec_len, data_len),
+        31 => wire__crate__api__editor__explain_impl(port, ptr, rust_vec_len, data_len),
+        32 => wire__crate__api__db__export_rows_impl(port, ptr, rust_vec_len, data_len),
+        33 => wire__crate__api__db__export_table_impl(port, ptr, rust_vec_len, data_len),
+        34 => wire__crate__api__db__fetch_window_impl(port, ptr, rust_vec_len, data_len),
+        35 => wire__crate__api__db__fetch_window_text_impl(port, ptr, rust_vec_len, data_len),
+        36 => wire__crate__api__value__format_json_impl(port, ptr, rust_vec_len, data_len),
+        37 => wire__crate__api__value__hex_dump_impl(port, ptr, rust_vec_len, data_len),
+        38 => wire__crate__api__editor__import_sql_file_impl(port, ptr, rust_vec_len, data_len),
+        39 => wire__crate__api__csv_import__import_status_impl(port, ptr, rust_vec_len, data_len),
+        40 => wire__crate__api__init_app_impl(port, ptr, rust_vec_len, data_len),
+        41 => wire__crate__api__db__insert_row_impl(port, ptr, rust_vec_len, data_len),
+        42 => wire__crate__api__schema__insert_template_impl(port, ptr, rust_vec_len, data_len),
+        43 => wire__crate__api__server__kill_process_impl(port, ptr, rust_vec_len, data_len),
+        44 => {
             wire__crate__api__connections__list_connections_impl(port, ptr, rust_vec_len, data_len)
         }
-        44 => wire__crate__api__schema__list_databases_impl(port, ptr, rust_vec_len, data_len),
-        45 => wire__crate__api__editor__list_favorites_impl(port, ptr, rust_vec_len, data_len),
-        46 => wire__crate__api__editor__list_history_impl(port, ptr, rust_vec_len, data_len),
-        47 => wire__crate__api__schema__list_tables_impl(port, ptr, rust_vec_len, data_len),
-        48 => wire__crate__api__editor__load_catalog_impl(port, ptr, rust_vec_len, data_len),
-        49 => wire__crate__api__layouts__load_layout_impl(port, ptr, rust_vec_len, data_len),
-        50 => wire__crate__api__connections__load_password_impl(port, ptr, rust_vec_len, data_len),
-        51 => {
+        45 => wire__crate__api__schema__list_databases_impl(port, ptr, rust_vec_len, data_len),
+        46 => wire__crate__api__editor__list_favorites_impl(port, ptr, rust_vec_len, data_len),
+        47 => wire__crate__api__editor__list_history_impl(port, ptr, rust_vec_len, data_len),
+        48 => wire__crate__api__editor__list_query_history_impl(port, ptr, rust_vec_len, data_len),
+        49 => wire__crate__api__schema__list_tables_impl(port, ptr, rust_vec_len, data_len),
+        50 => wire__crate__api__editor__load_catalog_impl(port, ptr, rust_vec_len, data_len),
+        51 => wire__crate__api__layouts__load_layout_impl(port, ptr, rust_vec_len, data_len),
+        52 => wire__crate__api__connections__load_password_impl(port, ptr, rust_vec_len, data_len),
+        53 => {
             wire__crate__api__preferences__load_preferences_impl(port, ptr, rust_vec_len, data_len)
         }
-        52 => wire__crate__api__users__load_user_admin_impl(port, ptr, rust_vec_len, data_len),
-        54 => wire__crate__api__db__open_session_impl(port, ptr, rust_vec_len, data_len),
-        55 => wire__crate__api__db__parse_clipboard_impl(port, ptr, rust_vec_len, data_len),
-        56 => wire__crate__api__db__paste_cells_impl(port, ptr, rust_vec_len, data_len),
-        57 => wire__crate__api__csv_import__prepare_import_impl(port, ptr, rust_vec_len, data_len),
-        58 => wire__crate__api__schema__preview_alter_impl(port, ptr, rust_vec_len, data_len),
-        59 => wire__crate__api__schema__preview_create_database_impl(
+        54 => wire__crate__api__users__load_user_admin_impl(port, ptr, rust_vec_len, data_len),
+        56 => wire__crate__api__connections__open_connection_ids_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        60 => {
+        57 => wire__crate__api__db__open_session_impl(port, ptr, rust_vec_len, data_len),
+        58 => wire__crate__api__db__parse_clipboard_impl(port, ptr, rust_vec_len, data_len),
+        59 => wire__crate__api__db__paste_cells_impl(port, ptr, rust_vec_len, data_len),
+        60 => wire__crate__api__csv_import__prepare_import_impl(port, ptr, rust_vec_len, data_len),
+        61 => wire__crate__api__schema__preview_alter_impl(port, ptr, rust_vec_len, data_len),
+        62 => wire__crate__api__schema__preview_create_database_impl(
+            port,
+            ptr,
+            rust_vec_len,
+            data_len,
+        ),
+        63 => {
             wire__crate__api__schema__preview_create_table_impl(port, ptr, rust_vec_len, data_len)
         }
-        61 => wire__crate__api__csv_import__preview_csv_impl(port, ptr, rust_vec_len, data_len),
-        62 => wire__crate__api__server__preview_set_global_impl(port, ptr, rust_vec_len, data_len),
-        63 => {
+        64 => wire__crate__api__csv_import__preview_csv_impl(port, ptr, rust_vec_len, data_len),
+        65 => wire__crate__api__server__preview_set_global_impl(port, ptr, rust_vec_len, data_len),
+        66 => {
             wire__crate__api__schema__preview_table_action_impl(port, ptr, rust_vec_len, data_len)
         }
-        64 => wire__crate__api__users__preview_user_change_impl(port, ptr, rust_vec_len, data_len),
-        65 => wire__crate__api__db__refresh_row_impl(port, ptr, rust_vec_len, data_len),
-        66 => wire__crate__api__schema__run_maintenance_impl(port, ptr, rust_vec_len, data_len),
-        67 => {
+        67 => wire__crate__api__users__preview_user_change_impl(port, ptr, rust_vec_len, data_len),
+        68 => wire__crate__api__db__refresh_row_impl(port, ptr, rust_vec_len, data_len),
+        69 => wire__crate__api__schema__run_maintenance_impl(port, ptr, rust_vec_len, data_len),
+        70 => {
             wire__crate__api__connections__save_connection_impl(port, ptr, rust_vec_len, data_len)
         }
-        68 => wire__crate__api__editor__save_favorite_impl(port, ptr, rust_vec_len, data_len),
-        69 => {
+        71 => wire__crate__api__editor__save_favorite_impl(port, ptr, rust_vec_len, data_len),
+        72 => {
             wire__crate__api__csv_import__save_import_errors_impl(port, ptr, rust_vec_len, data_len)
         }
-        70 => wire__crate__api__layouts__save_layout_impl(port, ptr, rust_vec_len, data_len),
-        71 => {
+        73 => wire__crate__api__layouts__save_layout_impl(port, ptr, rust_vec_len, data_len),
+        74 => wire__crate__api__connections__save_open_connection_ids_impl(
+            port,
+            ptr,
+            rust_vec_len,
+            data_len,
+        ),
+        75 => {
             wire__crate__api__preferences__save_preferences_impl(port, ptr, rust_vec_len, data_len)
         }
-        72 => {
+        76 => {
             wire__crate__api__connections__save_ssh_secret_impl(port, ptr, rust_vec_len, data_len)
         }
-        73 => wire__crate__api__server__server_processes_impl(port, ptr, rust_vec_len, data_len),
-        74 => wire__crate__api__server__server_status_impl(port, ptr, rust_vec_len, data_len),
-        75 => wire__crate__api__server__server_variables_impl(port, ptr, rust_vec_len, data_len),
-        76 => wire__crate__api__server__slow_log_config_impl(port, ptr, rust_vec_len, data_len),
-        77 => wire__crate__api__server__slow_log_entries_impl(port, ptr, rust_vec_len, data_len),
-        79 => wire__crate__api__csv_import__start_import_impl(port, ptr, rust_vec_len, data_len),
-        82 => wire__crate__api__schema__table_structure_impl(port, ptr, rust_vec_len, data_len),
-        84 => wire__crate__api__options__trust_host_key_impl(port, ptr, rust_vec_len, data_len),
+        77 => wire__crate__api__server__server_processes_impl(port, ptr, rust_vec_len, data_len),
+        78 => wire__crate__api__server__server_status_impl(port, ptr, rust_vec_len, data_len),
+        79 => wire__crate__api__server__server_variables_impl(port, ptr, rust_vec_len, data_len),
+        80 => wire__crate__api__server__slow_log_config_impl(port, ptr, rust_vec_len, data_len),
+        81 => wire__crate__api__server__slow_log_entries_impl(port, ptr, rust_vec_len, data_len),
+        83 => wire__crate__api__csv_import__start_import_impl(port, ptr, rust_vec_len, data_len),
+        86 => wire__crate__api__schema__table_structure_impl(port, ptr, rust_vec_len, data_len),
+        88 => wire__crate__api__options__trust_host_key_impl(port, ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -6418,17 +6576,17 @@ fn pde_ffi_dispatcher_sync_impl(
 ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
     // Codec=Pde (Serialization + dispatch), see doc to use other codecs
     match func_id {
-        11 => wire__crate__api__value__check_time_text_impl(ptr, rust_vec_len, data_len),
-        15 => wire__crate__api__editor__complete_sql_impl(ptr, rust_vec_len, data_len),
-        20 => {
+        12 => wire__crate__api__value__check_time_text_impl(ptr, rust_vec_len, data_len),
+        16 => wire__crate__api__editor__complete_sql_impl(ptr, rust_vec_len, data_len),
+        21 => {
             wire__crate__api__options__default_connection_options_impl(ptr, rust_vec_len, data_len)
         }
-        21 => wire__crate__api__preferences__default_preferences_impl(ptr, rust_vec_len, data_len),
-        53 => wire__crate__api__schema__new_table_draft_impl(ptr, rust_vec_len, data_len),
-        78 => wire__crate__api__editor__split_statements_impl(ptr, rust_vec_len, data_len),
-        80 => wire__crate__api__csv_import__suggest_mapping_impl(ptr, rust_vec_len, data_len),
-        81 => wire__crate__api__schema__table_draft_impl(ptr, rust_vec_len, data_len),
-        83 => wire__crate__api__editor__tokenize_sql_impl(ptr, rust_vec_len, data_len),
+        22 => wire__crate__api__preferences__default_preferences_impl(ptr, rust_vec_len, data_len),
+        55 => wire__crate__api__schema__new_table_draft_impl(ptr, rust_vec_len, data_len),
+        82 => wire__crate__api__editor__split_statements_impl(ptr, rust_vec_len, data_len),
+        84 => wire__crate__api__csv_import__suggest_mapping_impl(ptr, rust_vec_len, data_len),
+        85 => wire__crate__api__schema__table_draft_impl(ptr, rust_vec_len, data_len),
+        87 => wire__crate__api__editor__tokenize_sql_impl(ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -7818,6 +7976,10 @@ impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::preferences::Prefe
             self.0.theme.into_into_dart().into_dart(),
             self.0.editor_font_size.into_into_dart().into_dart(),
             self.0.max_rows.into_into_dart().into_dart(),
+            self.0.restore_connections.into_into_dart().into_dart(),
+            self.0.transcript_history_limit.into_into_dart().into_dart(),
+            self.0.query_history_limit.into_into_dart().into_dart(),
+            self.0.save_query_history.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -10103,6 +10265,10 @@ impl SseEncode for crate::api::preferences::Preferences {
         <crate::api::preferences::ThemeMode>::sse_encode(self.theme, serializer);
         <u32>::sse_encode(self.editor_font_size, serializer);
         <u64>::sse_encode(self.max_rows, serializer);
+        <bool>::sse_encode(self.restore_connections, serializer);
+        <u32>::sse_encode(self.transcript_history_limit, serializer);
+        <u32>::sse_encode(self.query_history_limit, serializer);
+        <bool>::sse_encode(self.save_query_history, serializer);
     }
 }
 

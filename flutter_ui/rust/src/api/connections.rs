@@ -30,6 +30,14 @@ pub fn list_connections() -> Result<Vec<SavedConnection>> {
     cdata_core::connections::list().map_err(to_message)
 }
 
+pub fn open_connection_ids() -> Result<Vec<String>> {
+    cdata_core::connections::open_connection_ids().map_err(to_message)
+}
+
+pub fn save_open_connection_ids(ids: Vec<String>) -> Result<()> {
+    cdata_core::connections::save_open_connection_ids(&ids).map_err(to_message)
+}
+
 /// 新增或更新。password 为 None 表示保留钥匙串里已有的那份
 pub fn save_connection(connection: SavedConnection, password: Option<String>) -> Result<()> {
     cdata_core::connections::save(&connection, password.as_deref()).map_err(to_message)

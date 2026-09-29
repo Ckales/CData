@@ -95,6 +95,14 @@ pub fn add_history(sql: String) -> Result<()> {
     cdata_core::history::add_history(&sql).map_err(|err| err.to_string())
 }
 
+pub fn list_query_history() -> Result<Vec<HistoryEntry>> {
+    cdata_core::history::query_history().map_err(|err| err.to_string())
+}
+
+pub fn add_query_history(sql: String) -> Result<()> {
+    cdata_core::history::add_query_history(&sql).map_err(|err| err.to_string())
+}
+
 pub fn list_favorites() -> Result<Vec<Favorite>> {
     cdata_core::history::favorites().map_err(|err| err.to_string())
 }
@@ -155,8 +163,8 @@ pub async fn execute_script(session_id: u64, sql: String, max_rows: u64) -> Resu
 }
 
 /// SQL 文件由 core 解码、切分，再在独占连接上按顺序执行。
-pub async fn import_sql_file(session_id: u64, path: String, encoding: ExportEncoding) -> Result<SqlImportSummary> {
-    on_runtime(async move { cdata_core::session::import_sql_file(session_id, &path, encoding).await }).await
+pub async fn import_sql_file(session_id: u64, path: String, encoding: ExportEncoding, database: String) -> Result<SqlImportSummary> {
+    on_runtime(async move { cdata_core::session::import_sql_file(session_id, &path, encoding, &database).await }).await
 }
 
 /// 执行计划，结果放进一个子会话

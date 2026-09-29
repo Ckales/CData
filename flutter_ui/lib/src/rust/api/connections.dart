@@ -14,6 +14,12 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 Future<List<SavedConnection>> listConnections() =>
     RustLib.instance.api.crateApiConnectionsListConnections();
 
+Future<List<String>> openConnectionIds() =>
+    RustLib.instance.api.crateApiConnectionsOpenConnectionIds();
+
+Future<void> saveOpenConnectionIds({required List<String> ids}) =>
+    RustLib.instance.api.crateApiConnectionsSaveOpenConnectionIds(ids: ids);
+
 /// 新增或更新。password 为 None 表示保留钥匙串里已有的那份
 Future<void> saveConnection({
   required SavedConnection connection,

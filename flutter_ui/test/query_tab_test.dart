@@ -103,6 +103,7 @@ StatementOutcome writeOutcome(String sql, int affected) {
 
 class FakeLibrary implements SqlLibrary {
   final List<HistoryEntry> entries = [];
+  final List<HistoryEntry> queryEntries = [];
   final List<Favorite> saved = [];
   String? historyError;
 
@@ -115,6 +116,12 @@ class FakeLibrary implements SqlLibrary {
 
   @override
   Future<List<HistoryEntry>> history() async => entries;
+
+  @override
+  Future<void> addQueryHistory(String sql) async => queryEntries.insert(0, HistoryEntry(sql: sql, executedAt: 0));
+
+  @override
+  Future<List<HistoryEntry>> queryHistory() async => queryEntries;
 
   @override
   Future<List<Favorite>> favorites() async => saved;
@@ -179,6 +186,7 @@ void main() {
 
     expect(runner.runs.single.sql, 'SELECT * FROM t');
     expect(library.entries.single.sql, 'SELECT * FROM t');
+    expect(library.queryEntries.single.sql, 'SELECT * FROM t');
     expect(ran, ['SELECT * FROM t'], reason: '标签标题跟着 SQL 变');
     expect(find.text('用户1'), findsOneWidget);
   });
@@ -308,6 +316,21 @@ void main() {
       find.descendant(of: find.byKey(const ValueKey('sql-editor')), matching: find.byType(TextField)),
     );
     expect(editor.controller!.text, 'SELECT 42');
+  });
+
+  testWidgets('Query 最近查询列表与 Transcript 分开显示', (tester) async {
+    final library = FakeLibrary()
+      ..entries.add(const HistoryEntry(sql: 'SELECT 1', executedAt: 0))
+      ..queryEntries.add(const HistoryEntry(sql: 'SELECT 2', executedAt: 0));
+    await pumpTab(tester, FakeRunner(), library);
+
+    await tester.tap(find.text('历史 / 收藏'));
+    await tester.pumpAndSettle();
+    expect(find.text('SELECT 1'), findsOneWidget);
+    await tester.tap(find.text('Query'));
+    await tester.pumpAndSettle();
+    expect(find.text('SELECT 2'), findsOneWidget);
+    expect(find.text('SELECT 1'), findsNothing);
   });
 
   testWidgets('收藏当前 SQL、删除收藏', (tester) async {

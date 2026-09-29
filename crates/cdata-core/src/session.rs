@@ -242,10 +242,11 @@ pub async fn import_sql_file(
     session_id: u64,
     path: &str,
     encoding: crate::export::ExportEncoding,
+    database: &str,
 ) -> Result<crate::sql_import::SqlImportSummary> {
     let statements = crate::sql_import::read_statements(path, encoding).map_err(Error::BadInput)?;
     let (pool, _) = session_pool(session_id)?;
-    crate::db::run_sql_import(&pool, &statements)
+    crate::db::run_sql_import(&pool, &statements, database)
         .await
         .map_err(Error::from)
 }

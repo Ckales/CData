@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'connection_screen.dart';
+import 'src/rust/api/connections.dart';
 import 'preferences_dialog.dart';
 import 'query_tab.dart';
 import 'src/rust/api/db.dart';
@@ -25,12 +26,14 @@ class QueryPage extends StatefulWidget {
 
   /// 启动时就有的错误，比如偏好文件读不出来
   final String? startupError;
+  final bool rememberOpenConnections;
 
   const QueryPage({
     super.key,
     required this.preferences,
     required this.onPreferencesChanged,
     this.startupError,
+    this.rememberOpenConnections = true,
   });
 
   @override
@@ -50,6 +53,64 @@ class _QueryPageState extends State<QueryPage> {
   bool get _showConnectionScreen => _workspaces.isEmpty || _connecting;
 
   @override
+  void initState() {
+    super.initState();
+    if (widget.preferences.restoreConnections) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _restoreConnections());
+    }
+  }
+
+  Future<void> _restoreConnections() async {
+    try {
+      final ids = await openConnectionIds();
+      final saved = await listConnections();
+      final byId = {for (final connection in saved) connection.id: connection};
+      final errors = <String>[];
+      for (final id in ids) {
+        if (!mounted) return;
+        final connection = byId[id];
+        if (connection == null) {
+          errors.add('找不到收藏的连接 $id');
+          continue;
+        }
+        final config = ConnectionConfig(
+          host: connection.host,
+          port: connection.port,
+          user: connection.user,
+          password: '',
+          database: connection.database,
+          options: connection.options,
+          sshSecrets: const [],
+          savedId: connection.id,
+        );
+        final error = await _openConnection(config, connection.name, remember: false);
+        if (error != null) errors.add('${connection.name}：$error');
+      }
+      if (mounted && errors.isNotEmpty) _showError('恢复连接失败：${errors.join('；')}');
+    } catch (e) {
+      if (mounted) _showError('恢复连接失败：$e');
+    }
+  }
+
+  void _showError(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  Future<void> _rememberConnections() async {
+    if (!widget.rememberOpenConnections) return;
+    final ids = <String>[];
+    for (final workspace in _workspaces) {
+      final id = workspace.config.savedId;
+      if (id != null && !ids.contains(id)) ids.add(id);
+    }
+    try {
+      await saveOpenConnectionIds(ids: ids);
+    } catch (e) {
+      if (mounted) _showError('记录打开的连接失败：$e');
+    }
+  }
+
+  @override
   void dispose() {
     for (final workspace in _workspaces) {
       _closeWorkspace(workspace);
@@ -58,7 +119,9 @@ class _QueryPageState extends State<QueryPage> {
   }
 
   /// 连上一条新连接：开侧栏会话，列一次库确认真的连得上，再开工作区。失败返回原因
-  Future<String?> _connect(ConnectionConfig config, String name) async {
+  Future<String?> _connect(ConnectionConfig config, String name) => _openConnection(config, name, remember: true);
+
+  Future<String?> _openConnection(ConnectionConfig config, String name, {required bool remember}) async {
     final BigInt sessionId;
     try {
       sessionId = await openSessionTrusting(config, _confirmHostKey);
@@ -81,6 +144,7 @@ class _QueryPageState extends State<QueryPage> {
       _active = _workspaces.length - 1;
       _connecting = false;
     });
+    if (remember) await _rememberConnections();
     return null;
   }
 
@@ -113,6 +177,7 @@ class _QueryPageState extends State<QueryPage> {
         _active = _workspaces.indexOf(activeWorkspace);
       }
     });
+    await _rememberConnections();
     await _closeWorkspace(workspace);
   }
 

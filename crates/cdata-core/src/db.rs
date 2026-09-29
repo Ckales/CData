@@ -12,6 +12,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::options::{ConnectionOptions, SshAuth, SslMode, SslOptions};
 use crate::sql_import::{ImportStatement, SqlImportFailure, SqlImportSummary};
+use crate::sql::quote_ident;
 use crate::ssh::Tunnel;
 use crate::value::{cell_from_value, CellValue};
 
@@ -235,11 +236,22 @@ pub async fn open_pool(config: &ConnectionConfig) -> Result<DbPool, OpenError> {
         tunnel = Some(Arc::new(opened));
     }
 
+    // 自动恢复的连接只带收藏 ID；数据库密码从钥匙串在 core 内取，不回传给界面。
+    let password = if config.password.is_empty() {
+        match &config.saved_id {
+            Some(id) => crate::connections::load_password(id)
+                .map_err(|err| OpenError::BadOptions(err.to_string()))?
+                .unwrap_or_default(),
+            None => String::new(),
+        }
+    } else {
+        config.password.clone()
+    };
     let mut builder = OptsBuilder::default()
         .ip_or_hostname(host)
         .tcp_port(port)
         .user(Some(config.user.clone()))
-        .pass(Some(config.password.clone()))
+        .pass(Some(password))
         // mysql_async 默认 prefer_socket = true：TCP 连上后读服务器的 @@socket，再去连**本机**
         // 同名的 unix socket。远程服务器的 socket 路径和本机 MySQL 一样（/tmp/mysql.sock 很常见）时，
         // 会悄悄连到本机那个库；走隧道时连的是 127.0.0.1，更是必中。unix socket 上也不做 TLS
@@ -408,8 +420,12 @@ pub async fn run_script(
 pub async fn run_sql_import(
     pool: &DbPool,
     statements: &[ImportStatement],
+    database: &str,
 ) -> Result<SqlImportSummary, mysql_async::Error> {
     let mut conn = pool.get_conn().await?;
+    if !database.is_empty() {
+        conn.query_drop(format!("USE {}", quote_ident(database))).await?;
+    }
     let mut summary = SqlImportSummary {
         executed: 0,
         affected_rows: 0,
@@ -425,7 +441,7 @@ pub async fn run_sql_import(
             Err(err) => {
                 // MySQL 的语法错误可能引用 SQL 原文，里面可能有 CREATE USER 的密码。
                 let message = match &err {
-                    mysql_async::Error::Server(server) => format!("MySQL 错误 {} ({})", server.code, server.state),
+                    mysql_async::Error::Server(server) => crate::sql_import::server_error_message(server),
                     _ => err.to_string(),
                 };
                 summary.failure = Some(SqlImportFailure {

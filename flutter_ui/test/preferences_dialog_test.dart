@@ -4,7 +4,15 @@ import 'package:cdata_flutter/theme.dart';
 import 'package:flutter/material.dart' hide ThemeMode;
 import 'package:flutter_test/flutter_test.dart';
 
-final _initial = Preferences(theme: ThemeMode.system, editorFontSize: 13, maxRows: BigInt.from(100000));
+final _initial = Preferences(
+  theme: ThemeMode.system,
+  editorFontSize: 13,
+  maxRows: BigInt.from(100000),
+  restoreConnections: true,
+  transcriptHistoryLimit: 50,
+  queryHistoryLimit: 25,
+  saveQueryHistory: true,
+);
 
 /// 打开对话框，把结果放进 result 里
 Future<void> _open(
@@ -86,6 +94,23 @@ void main() {
 
     expect(called, isFalse);
     expect(find.text('编辑器字号要填整数'), findsOneWidget);
+  });
+
+  testWidgets('恢复连接和最近查询设置会随保存返回', (tester) async {
+    Preferences? saved;
+    await _open(tester, (preferences) async => saved = preferences, (_) {});
+
+    await tester.tap(find.byKey(const ValueKey('pref-restore-connections')));
+    await tester.enterText(find.byKey(const ValueKey('pref-transcript-history-limit')), '40');
+    await tester.enterText(find.byKey(const ValueKey('pref-query-history-limit')), '12');
+    await tester.tap(find.byKey(const ValueKey('pref-save-query-history')));
+    await tester.tap(find.text('保存'));
+    await tester.pumpAndSettle();
+
+    expect(saved!.restoreConnections, isFalse);
+    expect(saved!.transcriptHistoryLimit, 40);
+    expect(saved!.queryHistoryLimit, 12);
+    expect(saved!.saveQueryHistory, isFalse);
   });
 
   testWidgets('切分类不丢没保存的输入；快捷键页只读列出', (tester) async {
