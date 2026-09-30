@@ -1,4 +1,5 @@
-import 'package:file_selector/file_selector.dart' show XTypeGroup, getSaveLocation, openFile;
+import 'package:file_selector/file_selector.dart'
+    show XTypeGroup, getSaveLocation, openFile;
 import 'package:flutter/material.dart';
 
 import 'data_source.dart';
@@ -8,16 +9,20 @@ import 'src/rust/api/db.dart' show ExportEncoding;
 import 'src/rust/api/value.dart' show DisplayCell;
 
 Future<String?> _systemOpenPath() async {
-  final file = await openFile(acceptedTypeGroups: const [
-    XTypeGroup(label: 'CSV', extensions: ['csv', 'tsv', 'txt']),
-  ]);
+  final file = await openFile(
+    acceptedTypeGroups: const [
+      XTypeGroup(label: 'CSV', extensions: ['csv', 'tsv', 'txt']),
+    ],
+  );
   return file?.path;
 }
 
 Future<String?> _systemSavePath(String suggestedName) async {
   final location = await getSaveLocation(
     suggestedName: suggestedName,
-    acceptedTypeGroups: const [XTypeGroup(label: 'CSV', extensions: ['csv'])],
+    acceptedTypeGroups: const [
+      XTypeGroup(label: 'CSV', extensions: ['csv']),
+    ],
   );
   return location?.path;
 }
@@ -135,11 +140,11 @@ class _ImportDialogState extends State<_ImportDialog> {
   }
 
   ImportOptions get _options => ImportOptions(
-        encoding: _encoding,
-        delimiter: _delimiter,
-        header: _header,
-        nullText: _nullText,
-      );
+    encoding: _encoding,
+    delimiter: _delimiter,
+    header: _header,
+    nullText: _nullText,
+  );
 
   Future<void> _pickFile() async {
     final path = await widget.pickFile();
@@ -263,47 +268,247 @@ class _ImportDialogState extends State<_ImportDialog> {
   }
 
   /// 已经开始、还没结束。这时候不能关对话框，只能取消
-  bool get _running => _job != null && _status is! ImportStatus_Finished && _pollError == null;
+  bool get _running =>
+      _job != null && _status is! ImportStatus_Finished && _pollError == null;
 
   @override
   Widget build(BuildContext context) {
-    return PopScope(canPop: !_running, child: _dialog());
+    return PopScope(canPop: !_running && !_loading, child: _dialog());
   }
 
   Widget _dialog() {
-    return AlertDialog(
-      title: Text('导入到 ${widget.database}.${widget.table}'),
-      content: SizedBox(
-        width: _step == _Step.file ? 480 : 760,
-        child: switch (_step) {
-          _Step.file => _fileStep(),
-          _Step.mapping => _mappingStep(),
-          _Step.result => _resultStep(),
-        },
+    final screen = MediaQuery.sizeOf(context);
+    final width = (screen.width - 56).clamp(0.0, 900.0).toDouble();
+    final height = (screen.height - 56).clamp(0.0, 620.0).toDouble();
+
+    return Dialog(
+      insetPadding: const EdgeInsets.all(28),
+      clipBehavior: Clip.antiAlias,
+      child: SizedBox(
+        width: width,
+        height: height,
+        child: Column(
+          children: [
+            _dialogHeader(),
+            Divider(
+              height: 1,
+              color: Theme.of(context).colorScheme.outlineVariant,
+            ),
+            Expanded(
+              child: Row(
+                children: [
+                  _stepSidebar(),
+                  VerticalDivider(
+                    width: 1,
+                    color: Theme.of(context).colorScheme.outlineVariant,
+                  ),
+                  Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
+                      child: switch (_step) {
+                        _Step.file => _fileStep(),
+                        _Step.mapping => _mappingStep(),
+                        _Step.result => _resultStep(),
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Divider(
+              height: 1,
+              color: Theme.of(context).colorScheme.outlineVariant,
+            ),
+            _dialogFooter(),
+          ],
+        ),
       ),
-      actions: switch (_step) {
-        _Step.file => [
-            OutlinedButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('取消')),
-            FilledButton(
-              key: const ValueKey('import-next'),
-              onPressed: _path != null && _target != null && !_loading ? _loadPreview : null,
-              child: Text(_loading ? '读取中…' : '下一步'),
-            ),
-          ],
-        _Step.mapping => [
-            OutlinedButton(
-              onPressed: _loading ? null : () => setState(() => _step = _Step.file),
-              child: const Text('上一步'),
-            ),
-            FilledButton(
-              key: const ValueKey('import-start'),
-              onPressed: _loading ? null : _start,
-              child: Text(_loading ? '检查中…' : '开始导入'),
-            ),
-          ],
-        _Step.result => _resultActions(),
-      },
     );
+  }
+
+  Widget _dialogHeader() {
+    final colors = Theme.of(context).colorScheme;
+    return SizedBox(
+      height: 58,
+      child: Padding(
+        padding: const EdgeInsets.only(left: 18, right: 8),
+        child: Row(
+          children: [
+            Expanded(
+              child: Row(
+                children: [
+                  Flexible(
+                    child: Text(
+                      '导入 CSV 到 ${widget.table}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Flexible(
+                    child: Text(
+                      '${widget.database} / ${widget.table}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: colors.onSurfaceVariant,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            IconButton(
+              tooltip: '关闭',
+              onPressed: _running || _loading ? null : _closeDialog,
+              icon: const Icon(Icons.close),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _stepSidebar() {
+    final colors = Theme.of(context).colorScheme;
+    const steps = [
+      (label: '选择文件', step: _Step.file),
+      (label: '字段映射', step: _Step.mapping),
+      (label: '预览与导入', step: _Step.result),
+    ];
+    return Container(
+      width: 148,
+      color: colors.surfaceContainerHigh,
+      padding: const EdgeInsets.only(top: 20, left: 14, right: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          for (final item in steps)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 20),
+              child: Row(
+                children: [
+                  _stepCircle(item.step),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      item.label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: _step == item.step
+                            ? FontWeight.w600
+                            : FontWeight.normal,
+                        color: _step.index >= item.step.index
+                            ? colors.primary
+                            : colors.onSurfaceVariant,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _stepCircle(_Step step) {
+    final colors = Theme.of(context).colorScheme;
+    final complete = _step.index > step.index;
+    final active = _step == step;
+    return Container(
+      width: 22,
+      height: 22,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: active || complete
+            ? colors.primary
+            : colors.surfaceContainerHighest,
+      ),
+      child: complete
+          ? Icon(Icons.check, size: 13, color: colors.onPrimary)
+          : Text(
+              '${step.index + 1}',
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                color: active ? colors.onPrimary : colors.onSurfaceVariant,
+              ),
+            ),
+    );
+  }
+
+  Widget _dialogFooter() {
+    final colors = Theme.of(context).colorScheme;
+    final hint = switch (_step) {
+      _Step.file => '选择 CSV 文件并设置编码、分隔符和表头。',
+      _Step.mapping => '导入前请检查字段映射与数据预览。',
+      _Step.result => _running ? '正在处理文件，请等待完成或取消。' : '',
+    };
+    final actions = switch (_step) {
+      _Step.file => [
+        OutlinedButton(
+          onPressed: _loading ? null : () => Navigator.of(context).pop(false),
+          child: const Text('取消'),
+        ),
+        FilledButton(
+          key: const ValueKey('import-next'),
+          onPressed: _path != null && _target != null && !_loading
+              ? _loadPreview
+              : null,
+          child: Text(_loading ? '读取中…' : '下一步'),
+        ),
+      ],
+      _Step.mapping => [
+        OutlinedButton(
+          onPressed: _loading ? null : () => setState(() => _step = _Step.file),
+          child: const Text('上一步'),
+        ),
+        FilledButton(
+          key: const ValueKey('import-start'),
+          onPressed: _loading ? null : _start,
+          child: Text(_loading ? '检查中…' : '开始导入'),
+        ),
+      ],
+      _Step.result => _resultActions(),
+    };
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(18, 8, 16, 8),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              hint,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(fontSize: 11, color: colors.onSurfaceVariant),
+            ),
+          ),
+          const SizedBox(width: 12),
+          for (final action in actions) ...[action, const SizedBox(width: 8)],
+        ],
+      ),
+    );
+  }
+
+  void _closeDialog() {
+    if (_pollError != null) {
+      Navigator.of(context).pop(true);
+      return;
+    }
+    final status = _status;
+    if (status is ImportStatus_Finished) {
+      Navigator.of(context)
+          .pop(status.field0.progress.rowsInserted > BigInt.zero);
+      return;
+    }
+    Navigator.of(context).pop(false);
   }
 
   Widget _fileStep() {
@@ -317,7 +522,10 @@ class _ImportDialogState extends State<_ImportDialog> {
         if (targetError != null)
           Padding(
             padding: const EdgeInsets.only(bottom: 8),
-            child: Text('不能导入：$targetError', style: TextStyle(fontSize: 12, color: colors.error)),
+            child: Text(
+              '不能导入：$targetError',
+              style: TextStyle(fontSize: 12, color: colors.error),
+            ),
           ),
         _row(
           '文件',
@@ -329,45 +537,47 @@ class _ImportDialogState extends State<_ImportDialog> {
                   child: Text(
                     _path ?? '还没选文件',
                     overflow: TextOverflow.ellipsis,
-                    style: TextStyle(fontSize: 12, color: _path == null ? colors.onSurfaceVariant : colors.onSurface),
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: _path == null
+                          ? colors.onSurfaceVariant
+                          : colors.onSurface,
+                    ),
                   ),
                 ),
               ),
               const SizedBox(width: 6),
-              OutlinedButton(key: const ValueKey('import-pick-file'), onPressed: _pickFile, child: const Text('选择…')),
+              OutlinedButton(
+                key: const ValueKey('import-pick-file'),
+                onPressed: _pickFile,
+                child: const Text('选择…'),
+              ),
             ],
           ),
         ),
         _row(
           '编码',
-          _dropdown<ExportEncoding>(
-            'import-encoding',
-            _encoding,
-            const {
-              ExportEncoding.utf8: 'UTF-8',
-              ExportEncoding.utf8Bom: 'UTF-8（带 BOM）',
-              ExportEncoding.gbk: 'GBK',
-            },
-            (value) => _encoding = value,
-          ),
+          _dropdown<ExportEncoding>('import-encoding', _encoding, const {
+            ExportEncoding.utf8: 'UTF-8',
+            ExportEncoding.utf8Bom: 'UTF-8（带 BOM）',
+            ExportEncoding.gbk: 'GBK',
+          }, (value) => _encoding = value),
         ),
         _row(
           '分隔符',
-          _dropdown<String>(
-            'import-delimiter',
-            _delimiter,
-            const {',': '逗号 ,', ';': '分号 ;', '\t': '制表符'},
-            (value) => _delimiter = value,
-          ),
+          _dropdown<String>('import-delimiter', _delimiter, const {
+            ',': '逗号 ,',
+            ';': '分号 ;',
+            '\t': '制表符',
+          }, (value) => _delimiter = value),
         ),
         _row(
           'NULL 写法',
-          _dropdown<String>(
-            'import-null',
-            _nullText,
-            const {'NULL': 'NULL', '': '空（空字符串写成 ""）', r'\N': r'\N'},
-            (value) => _nullText = value,
-          ),
+          _dropdown<String>('import-null', _nullText, const {
+            'NULL': 'NULL',
+            '': '空（空字符串写成 ""）',
+            r'\N': r'\N',
+          }, (value) => _nullText = value),
         ),
         _row(
           '表头',
@@ -383,7 +593,8 @@ class _ImportDialogState extends State<_ImportDialog> {
                   child: Checkbox(
                     key: const ValueKey('import-header'),
                     value: _header,
-                    onChanged: (value) => setState(() => _header = value ?? true),
+                    onChanged: (value) =>
+                        setState(() => _header = value ?? true),
                   ),
                 ),
                 const SizedBox(width: 6),
@@ -403,7 +614,10 @@ class _ImportDialogState extends State<_ImportDialog> {
         if (previewError != null)
           Padding(
             padding: const EdgeInsets.only(top: 8),
-            child: Text(previewError, style: TextStyle(fontSize: 12, color: colors.error)),
+            child: Text(
+              previewError,
+              style: TextStyle(fontSize: 12, color: colors.error),
+            ),
           ),
       ],
     );
@@ -422,13 +636,17 @@ class _ImportDialogState extends State<_ImportDialog> {
     }
     final missing = <String>[];
     for (var i = 0; i < target.columns.length; i++) {
-      if (target.columns[i].mandatory && !mapped.contains(i)) missing.add(target.columns[i].name);
+      if (target.columns[i].mandatory && !mapped.contains(i)) {
+        missing.add(target.columns[i].name);
+      }
     }
 
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        _mappingFileSummary(),
+        const SizedBox(height: 10),
         if (!target.strict)
           Padding(
             padding: const EdgeInsets.only(bottom: 8),
@@ -449,7 +667,10 @@ class _ImportDialogState extends State<_ImportDialog> {
         if (previewError != null)
           Padding(
             padding: const EdgeInsets.only(top: 6),
-            child: Text('$previewError。导入会在这里停下', style: TextStyle(fontSize: 12, color: colors.error)),
+            child: Text(
+              '$previewError。导入会在这里停下',
+              style: TextStyle(fontSize: 12, color: colors.error),
+            ),
           ),
         if (missing.isNotEmpty)
           Padding(
@@ -462,24 +683,91 @@ class _ImportDialogState extends State<_ImportDialog> {
         const SizedBox(height: 6),
         _row(
           '出错时',
-          _dropdown<OnError>(
-            'import-on-error',
-            _onError,
-            const {
-              OnError.rollbackAll: '整体回滚：有一行失败就全部不写入（仍会检查完所有行）',
-              OnError.skipRow: '跳过错误行继续：每批单独提交',
-            },
-            (value) => _onError = value,
-          ),
+          _dropdown<OnError>('import-on-error', _onError, const {
+            OnError.rollbackAll: '整体回滚：有一行失败就全部不写入（仍会检查完所有行）',
+            OnError.skipRow: '跳过错误行继续：每批单独提交',
+          }, (value) => _onError = value),
         ),
         if (startError != null)
           Padding(
             padding: const EdgeInsets.only(top: 6),
-            child: Text(startError, style: TextStyle(fontSize: 12, color: colors.error)),
+            child: Text(
+              startError,
+              style: TextStyle(fontSize: 12, color: colors.error),
+            ),
           ),
       ],
     );
   }
+
+  Widget _mappingFileSummary() {
+    final colors = Theme.of(context).colorScheme;
+    final path = _path ?? '';
+    final filename = path.split(RegExp(r'[/\\]')).last;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 8),
+      decoration: BoxDecoration(
+        color: colors.surfaceContainerLow,
+        border: Border.all(color: colors.outlineVariant),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.table_chart_outlined, size: 17, color: colors.primary),
+          const SizedBox(width: 9),
+          Expanded(
+            child: Tooltip(
+              message: path,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    filename,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  Text(
+                    'CSV · ${_encodingLabel(_encoding)} · ${_delimiterLabel(_delimiter)}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 10,
+                      color: colors.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          TextButton(
+            onPressed: _loading
+                ? null
+                : () => setState(() => _step = _Step.file),
+            child: const Text('更换文件'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _encodingLabel(ExportEncoding encoding) => switch (encoding) {
+    ExportEncoding.utf8 => 'UTF-8',
+    ExportEncoding.utf8Bom => 'UTF-8 BOM',
+    ExportEncoding.gbk => 'GBK',
+  };
+
+  String _delimiterLabel(String delimiter) => switch (delimiter) {
+    ',' => '逗号分隔',
+    ';' => '分号分隔',
+    '\t' => '制表符分隔',
+    _ => delimiter,
+  };
 
   static const double _lineWidth = 56;
   static const double _cellWidth = 160;
@@ -487,8 +775,15 @@ class _ImportDialogState extends State<_ImportDialog> {
   Widget _previewTable(CsvPreview preview, ImportTarget target) {
     final colors = Theme.of(context).colorScheme;
     final columnCount = preview.columnCount.toInt();
-    final cellStyle = TextStyle(fontSize: 12, fontFamily: 'Menlo', color: colors.onSurface);
-    final placeholderStyle = cellStyle.copyWith(color: colors.onSurfaceVariant, fontStyle: FontStyle.italic);
+    final cellStyle = TextStyle(
+      fontSize: 12,
+      fontFamily: 'Menlo',
+      color: colors.onSurface,
+    );
+    final placeholderStyle = cellStyle.copyWith(
+      color: colors.onSurfaceVariant,
+      fontStyle: FontStyle.italic,
+    );
 
     Widget cell(DisplayCell? value) {
       if (value == null) return const SizedBox(width: _cellWidth);
@@ -517,7 +812,10 @@ class _ImportDialogState extends State<_ImportDialog> {
             width: _lineWidth,
             child: Padding(
               padding: const EdgeInsets.only(left: 6),
-              child: Text('行', style: TextStyle(fontSize: 11, color: colors.onSurfaceVariant)),
+              child: Text(
+                '行',
+                style: TextStyle(fontSize: 11, color: colors.onSurfaceVariant),
+              ),
             ),
           ),
           for (var i = 0; i < columnCount; i++)
@@ -529,10 +827,15 @@ class _ImportDialogState extends State<_ImportDialog> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      i < preview.header.length ? preview.header[i] : '第 ${i + 1} 列',
+                      i < preview.header.length
+                          ? preview.header[i]
+                          : '第 ${i + 1} 列',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
+                      style: const TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                     const SizedBox(height: 2),
                     _mappingDropdown(i, target),
@@ -548,23 +851,36 @@ class _ImportDialogState extends State<_ImportDialog> {
     for (var index = 0; index < preview.rows.length; index++) {
       final row = preview.rows[index];
       final error = row.error;
-      rows.add(Container(
-        height: 20,
-        color: index.isOdd ? colors.surfaceContainerLow : colors.surface,
-        child: Row(
-          children: [
-            SizedBox(
-              width: _lineWidth,
-              child: Padding(
-                padding: const EdgeInsets.only(left: 6),
-                child: Text('${row.line}', style: TextStyle(fontSize: 11, color: colors.onSurfaceVariant)),
+      rows.add(
+        Container(
+          height: 20,
+          color: index.isOdd ? colors.surfaceContainerLow : colors.surface,
+          child: Row(
+            children: [
+              SizedBox(
+                width: _lineWidth,
+                child: Padding(
+                  padding: const EdgeInsets.only(left: 6),
+                  child: Text(
+                    '${row.line}',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: colors.onSurfaceVariant,
+                    ),
+                  ),
+                ),
               ),
-            ),
-            for (var i = 0; i < columnCount; i++) cell(i < row.cells.length ? row.cells[i] : null),
-            if (error != null) Text(error, style: TextStyle(fontSize: 12, color: colors.error)),
-          ],
+              for (var i = 0; i < columnCount; i++)
+                cell(i < row.cells.length ? row.cells[i] : null),
+              if (error != null)
+                Text(
+                  error,
+                  style: TextStyle(fontSize: 12, color: colors.error),
+                ),
+            ],
+          ),
         ),
-      ));
+      );
     }
 
     return Container(
@@ -586,7 +902,10 @@ class _ImportDialogState extends State<_ImportDialog> {
               header,
               Flexible(
                 child: SingleChildScrollView(
-                  child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: rows),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: rows,
+                  ),
                 ),
               ),
             ],
@@ -605,8 +924,8 @@ class _ImportDialogState extends State<_ImportDialog> {
       items[i] = column.generated
           ? '${column.name}（生成列）'
           : column.mandatory
-              ? '${column.name}（必填）'
-              : column.name;
+          ? '${column.name}（必填）'
+          : column.name;
       if (column.generated) generated.add(i);
     }
     return MacPopupButton<int?>(
@@ -623,10 +942,15 @@ class _ImportDialogState extends State<_ImportDialog> {
     final colors = Theme.of(context).colorScheme;
     final pollError = _pollError;
     if (pollError != null) {
-      return Text('读不到导入进度：$pollError', style: TextStyle(fontSize: 12, color: colors.error));
+      return Text(
+        '读不到导入进度：$pollError',
+        style: TextStyle(fontSize: 12, color: colors.error),
+      );
     }
     final status = _status;
-    if (status == null) return const Text('开始导入…', style: TextStyle(fontSize: 12));
+    if (status == null) {
+      return const Text('开始导入…', style: TextStyle(fontSize: 12));
+    }
 
     switch (status) {
       case ImportStatus_Running(field0: final progress):
@@ -635,10 +959,15 @@ class _ImportDialogState extends State<_ImportDialog> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(_cancelling ? '正在取消…' : '正在导入…', style: const TextStyle(fontSize: 13)),
+            Text(
+              _cancelling ? '正在取消…' : '正在导入…',
+              style: const TextStyle(fontSize: 13),
+            ),
             const SizedBox(height: 8),
             // 有确定进度的进度条不会无限重绘
-            LinearProgressIndicator(value: total == 0 ? 0 : progress.bytesRead.toDouble() / total),
+            LinearProgressIndicator(
+              value: total == 0 ? 0 : progress.bytesRead.toDouble() / total,
+            ),
             const SizedBox(height: 8),
             Text(
               '已读 ${progress.rowsRead} 行 · 已写入 ${progress.rowsInserted} 行'
@@ -658,8 +987,14 @@ class _ImportDialogState extends State<_ImportDialog> {
     final progress = report.progress;
     final failed = progress.rowsFailed.toInt();
     final (headline, isError) = switch (report.outcome) {
-      ImportOutcome_Completed() when failed == 0 => ('导入完成，写入 ${progress.rowsInserted} 行', false),
-      ImportOutcome_Completed() => ('导入完成，写入 ${progress.rowsInserted} 行，跳过 $failed 行', true),
+      ImportOutcome_Completed() when failed == 0 => (
+        '导入完成，写入 ${progress.rowsInserted} 行',
+        false,
+      ),
+      ImportOutcome_Completed() => (
+        '导入完成，写入 ${progress.rowsInserted} 行，跳过 $failed 行',
+        true,
+      ),
       ImportOutcome_RolledBack() => ('有 $failed 行失败，已整体回滚，没有写入任何行', true),
       ImportOutcome_Stopped(field0: final reason) => ('导入中途停止：$reason', true),
     };
@@ -672,7 +1007,10 @@ class _ImportDialogState extends State<_ImportDialog> {
         Text(
           headline,
           key: const ValueKey('import-headline'),
-          style: TextStyle(fontSize: 13, color: isError ? colors.error : colors.onSurface),
+          style: TextStyle(
+            fontSize: 13,
+            color: isError ? colors.error : colors.onSurface,
+          ),
         ),
         const SizedBox(height: 6),
         Text(
@@ -688,7 +1026,10 @@ class _ImportDialogState extends State<_ImportDialog> {
                 shrinkWrap: true,
                 children: [
                   for (final error in report.errors)
-                    Text('第 ${error.line} 行：${error.reason}', style: const TextStyle(fontSize: 12)),
+                    Text(
+                      '第 ${error.line} 行：${error.reason}',
+                      style: const TextStyle(fontSize: 12),
+                    ),
                 ],
               ),
             ),
@@ -712,7 +1053,12 @@ class _ImportDialogState extends State<_ImportDialog> {
     final status = _status;
     if (_pollError != null) {
       // 不知道写进去多少，让调用方按「可能有」处理，重新查一次
-      return [FilledButton(onPressed: () => Navigator.of(context).pop(true), child: const Text('关闭'))];
+      return [
+        FilledButton(
+          onPressed: () => Navigator.of(context).pop(true),
+          child: const Text('关闭'),
+        ),
+      ];
     }
     if (status is! ImportStatus_Finished) {
       return [
@@ -726,10 +1072,16 @@ class _ImportDialogState extends State<_ImportDialog> {
     final report = status.field0;
     return [
       if (report.progress.rowsFailed > BigInt.zero)
-        OutlinedButton(key: const ValueKey('import-save-errors'), onPressed: _saveErrors, child: const Text('导出错误行…')),
+        OutlinedButton(
+          key: const ValueKey('import-save-errors'),
+          onPressed: _saveErrors,
+          child: const Text('导出错误行…'),
+        ),
       FilledButton(
         key: const ValueKey('import-done'),
-        onPressed: () => Navigator.of(context).pop(report.progress.rowsInserted > BigInt.zero),
+        onPressed: () =>
+            Navigator.of(context)
+                .pop(report.progress.rowsInserted > BigInt.zero),
         child: const Text('完成'),
       ),
     ];
@@ -745,7 +1097,12 @@ class _ImportDialogState extends State<_ImportDialog> {
     );
   }
 
-  Widget _dropdown<T>(String key, T value, Map<T, String> items, void Function(T value) onChanged) {
+  Widget _dropdown<T>(
+    String key,
+    T value,
+    Map<T, String> items,
+    void Function(T value) onChanged,
+  ) {
     return MacPopupButton<T>(
       key: ValueKey(key),
       value: value,

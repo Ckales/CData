@@ -11,6 +11,7 @@ import 'src/rust/api/editor.dart';
 import 'src/rust/api/editor.dart' as editor show explain, dropChildResults;
 import 'src/rust/api/options.dart';
 import 'src/rust/api/value.dart';
+import 'theme.dart';
 
 /// 一个标签页跑查询的后端。每个标签一个会话：结果集留在会话里，一个会话只放一份结果
 abstract class QueryRunner {
@@ -572,45 +573,69 @@ class _SqlBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final mac = MacColors.of(context);
     final scheme = Theme.of(context).colorScheme;
-    // Querious 的查询视图：编辑器占满宽度，下面一排小按钮
+    // 查询工具栏在上，编辑区和下方结果分区保持独立高度。
     return Container(
-      padding: const EdgeInsets.fromLTRB(8, 8, 8, 6),
-      decoration: BoxDecoration(border: Border(bottom: BorderSide(color: scheme.outlineVariant))),
+      height: 277,
+      decoration: BoxDecoration(
+        color: mac.content,
+        border: Border(bottom: BorderSide(color: mac.separator)),
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          SqlEditorField(
-            key: const ValueKey('sql-editor'),
-            controller: controller,
-            complete: complete,
-            onRun: onRun,
-            fontSize: fontSize,
+          Container(
+            height: 34,
+            padding: const EdgeInsets.symmetric(horizontal: 15),
+            decoration: BoxDecoration(border: Border(bottom: BorderSide(color: scheme.outlineVariant))),
+            child: Row(
+              children: [
+                Tooltip(
+                  message: '⌘ / Ctrl + Enter',
+                  child: FilledButton.icon(
+                    onPressed: onRun,
+                    icon: const Icon(Icons.play_arrow, size: 14),
+                    // 无限动画会卡死 pumpAndSettle，用文字表达忙碌状态
+                    label: Text(busy ? '运行中…' : '运行'),
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Tooltip(
+                  message: 'EXPLAIN：只看计划，不执行语句',
+                  child: OutlinedButton(onPressed: onExplain, child: const Text('执行计划')),
+                ),
+                const Spacer(),
+                TextButton.icon(
+                  onPressed: onOpenLibrary,
+                  icon: const Icon(Icons.history, size: 14),
+                  label: const Text('历史 / 收藏'),
+                ),
+              ],
+            ),
           ),
-          const SizedBox(height: 6),
-          Row(
-            children: [
-              Tooltip(
-                message: '⌘ / Ctrl + Enter',
-                child: FilledButton.icon(
-                  onPressed: onRun,
-                  icon: const Icon(Icons.play_arrow, size: 14),
-                  // 无限动画会卡死 pumpAndSettle，用文字表达忙碌状态
-                  label: Text(busy ? '运行中…' : '运行'),
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(17, 15, 17, 12),
+              child: Theme(
+                data: Theme.of(context).copyWith(
+                  inputDecorationTheme: Theme.of(context).inputDecorationTheme.copyWith(
+                    filled: false,
+                    fillColor: mac.content,
+                    border: InputBorder.none,
+                    enabledBorder: InputBorder.none,
+                    focusedBorder: InputBorder.none,
+                  ),
+                ),
+                child: SqlEditorField(
+                  key: const ValueKey('sql-editor'),
+                  controller: controller,
+                  complete: complete,
+                  onRun: onRun,
+                  fontSize: fontSize,
                 ),
               ),
-              const SizedBox(width: 6),
-              Tooltip(
-                message: 'EXPLAIN：只看计划，不执行语句',
-                child: OutlinedButton(onPressed: onExplain, child: const Text('执行计划')),
-              ),
-              const Spacer(),
-              TextButton.icon(
-                onPressed: onOpenLibrary,
-                icon: const Icon(Icons.history, size: 14),
-                label: const Text('历史 / 收藏'),
-              ),
-            ],
+            ),
           ),
         ],
       ),
@@ -677,11 +702,15 @@ class _ResultStrip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final mac = MacColors.of(context);
     final scheme = Theme.of(context).colorScheme;
     return Container(
-      height: 30,
-      padding: const EdgeInsets.symmetric(horizontal: 8),
-      decoration: BoxDecoration(border: Border(bottom: BorderSide(color: scheme.outlineVariant))),
+      height: 31,
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      decoration: BoxDecoration(
+        color: mac.content,
+        border: Border(bottom: BorderSide(color: scheme.outlineVariant)),
+      ),
       child: ListView.builder(
         scrollDirection: Axis.horizontal,
         itemCount: views.length,
@@ -696,7 +725,7 @@ class _ResultStrip extends StatelessWidget {
               onTap: () => onSelect(index),
               child: Container(
                 alignment: Alignment.center,
-                padding: const EdgeInsets.symmetric(horizontal: 12),
+                padding: const EdgeInsets.symmetric(horizontal: 10),
                 decoration: BoxDecoration(
                   border: Border(
                     bottom: BorderSide(color: selected ? scheme.primary : Colors.transparent, width: 2),
@@ -704,7 +733,7 @@ class _ResultStrip extends StatelessWidget {
                 ),
                 child: Text(
                   view.title,
-                  style: TextStyle(fontSize: 12, fontWeight: selected ? FontWeight.w600 : null),
+                  style: TextStyle(fontSize: 10, fontWeight: selected ? FontWeight.w600 : null),
                 ),
               ),
             ),

@@ -85,6 +85,21 @@ void main() {
     expect(filter, findsNothing);
   });
 
+  testWidgets('数据库选择框的关闭按钮清除当前库', (tester) async {
+    String? selected;
+    await pumpSidebar(
+      tester,
+      FakeSchemaSource.simple(),
+      onDatabaseChanged: (database) => selected = database,
+    );
+
+    await tester.tap(find.descendant(
+      of: find.byKey(const ValueKey('database-picker')),
+      matching: find.byIcon(Icons.close),
+    ));
+    expect(selected, '');
+  });
+
   testWidgets('估算行数标 ~，视图不标', (tester) async {
     await pumpSidebar(tester, FakeSchemaSource.simple());
 

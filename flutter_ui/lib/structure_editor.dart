@@ -16,7 +16,7 @@ Future<bool> showStructureEditor(
   final applied = await showDialog<String>(
     context: context,
     barrierDismissible: false,
-    builder: (context) => _EditorDialog(source: source, database: database, table: table, structure: structure),
+    builder: (context) => StructureEditorPanel(source: source, database: database, table: table, structure: structure, dialog: true),
   );
   return applied != null;
 }
@@ -31,7 +31,7 @@ Future<String?> showTableCreator(
   return showDialog<String>(
     context: context,
     barrierDismissible: false,
-    builder: (context) => _EditorDialog(source: source, database: database, table: null, structure: null),
+    builder: (context) => StructureEditorPanel(source: source, database: database, table: null, structure: null, dialog: true),
   );
 }
 
@@ -183,21 +183,33 @@ class _CheckRow {
   }
 }
 
-class _EditorDialog extends StatefulWidget {
+class StructureEditorPanel extends StatefulWidget {
   final SchemaSource source;
   final String database;
 
   /// 新建表时 table 和 structure 都是 null
   final String? table;
   final TableStructure? structure;
+  final bool dialog;
+  final VoidCallback? onApplied;
+  final VoidCallback? onCancel;
 
-  const _EditorDialog({required this.source, required this.database, required this.table, required this.structure});
+  const StructureEditorPanel({
+    super.key,
+    required this.source,
+    required this.database,
+    required this.table,
+    required this.structure,
+    this.dialog = false,
+    this.onApplied,
+    this.onCancel,
+  });
 
   @override
-  State<_EditorDialog> createState() => _EditorDialogState();
+  State<StructureEditorPanel> createState() => _StructureEditorPanelState();
 }
 
-class _EditorDialogState extends State<_EditorDialog> {
+class _StructureEditorPanelState extends State<StructureEditorPanel> {
   final List<_ColumnRow> _columns = [];
   final List<_IndexRow> _indexes = [];
   final List<_ForeignKeyRow> _foreignKeys = [];
@@ -424,7 +436,13 @@ class _EditorDialogState extends State<_EditorDialog> {
           ? widget.source.createTable(widget.database, table, draft, plan.statements)
           : widget.source.applyAlter(widget.database, table, structure, draft, plan.statements),
     );
-    if (applied && mounted) Navigator.of(context).pop(table);
+    if (applied && mounted) {
+      if (widget.dialog) {
+        Navigator.of(context).pop(table);
+      } else {
+        widget.onApplied?.call();
+      }
+    }
   }
 
   void _addColumn() {
@@ -464,17 +482,12 @@ class _EditorDialogState extends State<_EditorDialog> {
     final scheme = Theme.of(context).colorScheme;
     final titleStyle = Theme.of(context).textTheme.titleMedium;
     final error = _error;
-    return Dialog(
-      clipBehavior: Clip.antiAlias,
-      child: SizedBox(
-        width: 1100,
-        height: 640,
-        child: DefaultTabController(
+    final editor = DefaultTabController(
           length: 5,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Padding(
+              if (widget.dialog) Padding(
                 padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
                 child: _creating
                     ? Row(
@@ -523,7 +536,10 @@ class _EditorDialogState extends State<_EditorDialog> {
                       children: [
                         Text('改动在预览确认之前不会写入数据库', style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant)),
                         const Spacer(),
-                        OutlinedButton(onPressed: () => Navigator.of(context).pop(), child: const Text('取消')),
+                        OutlinedButton(
+                          onPressed: widget.dialog ? () => Navigator.of(context).pop() : widget.onCancel,
+                          child: Text(widget.dialog ? '取消' : '查看'),
+                        ),
                         const SizedBox(width: 8),
                         FilledButton(
                           onPressed: _previewing ? null : _preview,
@@ -536,8 +552,11 @@ class _EditorDialogState extends State<_EditorDialog> {
               ),
             ],
           ),
-        ),
-      ),
+        );
+    if (!widget.dialog) return editor;
+    return Dialog(
+      clipBehavior: Clip.antiAlias,
+      child: SizedBox(width: 1100, height: 640, child: editor),
     );
   }
 

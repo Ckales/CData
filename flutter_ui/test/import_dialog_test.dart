@@ -143,7 +143,8 @@ void main() {
     ]);
     final result = await openDialog(tester, source);
 
-    expect(find.text('导入到 shop.orders'), findsOneWidget);
+    expect(find.text('导入 CSV 到 orders'), findsOneWidget);
+    expect(find.text('shop / orders'), findsOneWidget);
     await pickAndPreview(tester);
 
     final (path, options) = source.previews.single;

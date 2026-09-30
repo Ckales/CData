@@ -25,10 +25,12 @@ String filterOpLabel(FilterOp op) {
 }
 
 /// IS NULL 这类运算符不看值
-bool filterOpTakesValue(FilterOp op) => op != FilterOp.isNull && op != FilterOp.isNotNull;
+bool filterOpTakesValue(FilterOp op) =>
+    op != FilterOp.isNull && op != FilterOp.isNotNull;
 
 /// IN / NOT IN 的值是一行一个的列表，怎么切、哪些值不许写由 core 定
-bool filterOpTakesList(FilterOp op) => op == FilterOp.in_ || op == FilterOp.notIn;
+bool filterOpTakesList(FilterOp op) =>
+    op == FilterOp.in_ || op == FilterOp.notIn;
 
 String _describeCondition(FilterCondition condition) {
   final op = filterOpLabel(condition.op);
@@ -36,7 +38,9 @@ String _describeCondition(FilterCondition condition) {
   if (filterOpTakesList(condition.op)) {
     // 只是摘要：换行显示成逗号，末尾粘贴带进来的换行不显示
     final lines = condition.value.replaceAll('\r\n', '\n');
-    final shown = lines.endsWith('\n') ? lines.substring(0, lines.length - 1) : lines;
+    final shown = lines.endsWith('\n')
+        ? lines.substring(0, lines.length - 1)
+        : lines;
     return '${condition.column} $op (${shown.replaceAll('\n', ', ')})';
   }
   return '${condition.column} $op ${condition.value}';
@@ -72,53 +76,57 @@ class FilterBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final description = this.description;
     final mac = MacColors.of(context);
-    // Querious 网格上方那一条：左边一个小弹出按钮，后面接当前条件
+    final scheme = Theme.of(context).colorScheme;
     return Container(
-      height: 28,
-      padding: const EdgeInsets.symmetric(horizontal: 8),
+      height: 40,
+      padding: const EdgeInsets.symmetric(horizontal: 16),
       decoration: BoxDecoration(
-        color: mac.window,
+        color: mac.content,
         border: Border(bottom: BorderSide(color: mac.separator)),
       ),
       child: Row(
         children: [
-          OutlinedButton(
-            onPressed: onEdit,
-            // 高度跟主题按钮一样 24px：带边框的按钮再矮，边框就贴着字了
-            style: OutlinedButton.styleFrom(
-              padding: const EdgeInsets.only(left: 6, right: 2, top: 4, bottom: 4),
-              // 有筛选时按钮变成系统蓝，一眼看出结果是筛过的
-              foregroundColor: description == null ? mac.text : mac.accent,
-            ),
-            child: const Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.filter_alt_outlined, size: 13),
-                SizedBox(width: 3),
-                // 字号写在 Text 上而不是 textStyle：textStyle 会整个替换主题的按钮字体
-                Text('筛选', style: TextStyle(fontSize: 12)),
-                Icon(Icons.unfold_more, size: 13),
-              ],
-            ),
+          Text(
+            '筛选',
+            style: TextStyle(fontSize: 11, color: mac.secondaryText),
           ),
           const SizedBox(width: 8),
           Expanded(
-            child: Text(
-              description ?? '未筛选',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(fontSize: 12, color: description == null ? mac.tertiaryText : mac.text),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: description == null
+                  ? Text(
+                      '未筛选',
+                      style: TextStyle(fontSize: 11, color: mac.tertiaryText),
+                    )
+                  : Container(
+                      constraints: const BoxConstraints(maxWidth: 530),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: scheme.primaryContainer.withValues(alpha: 0.35),
+                        border: Border.all(color: mac.separator),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        description,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(fontSize: 11, color: mac.text),
+                      ),
+                    ),
             ),
           ),
+          OutlinedButton.icon(
+            key: const ValueKey('filter-edit'),
+            onPressed: onEdit,
+            icon: const Icon(Icons.add, size: 13),
+            label: Text(description == null ? '添加条件' : '编辑条件'),
+          ),
           if (description != null)
-            TextButton(
-              onPressed: onClear,
-              style: TextButton.styleFrom(
-                minimumSize: const Size(0, 22),
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-              ),
-              child: const Text('清除', style: TextStyle(fontSize: 12)),
-            ),
+            TextButton(onPressed: onClear, child: const Text('清除')),
         ],
       ),
     );
@@ -146,7 +154,7 @@ class _Draft extends _Node {
   final TextEditingController value;
 
   _Draft({required this.column, required this.op, required String value})
-      : value = TextEditingController(text: value);
+    : value = TextEditingController(text: value);
 }
 
 class _GroupDraft extends _Node {
@@ -188,8 +196,11 @@ class _FilterDialogState extends State<_FilterDialog> {
     final draft = _GroupDraft(matchAll: group.matchAll);
     for (final item in group.items) {
       draft.items.add(switch (item) {
-        FilterItem_Condition(:final field0) =>
-          _Draft(column: field0.column, op: field0.op, value: field0.value),
+        FilterItem_Condition(:final field0) => _Draft(
+          column: field0.column,
+          op: field0.op,
+          value: field0.value,
+        ),
         FilterItem_Group(:final field0) => _draftOf(field0),
       });
     }
@@ -207,7 +218,8 @@ class _FilterDialogState extends State<_FilterDialog> {
     }
   }
 
-  _Draft _newDraft() => _Draft(column: widget.columns.first, op: FilterOp.eq, value: '');
+  _Draft _newDraft() =>
+      _Draft(column: widget.columns.first, op: FilterOp.eq, value: '');
 
   /// 删掉 group 里的第 index 项。里层的组删空了就连组一起删：空组在 core 里是拒绝的，
   /// 留着只会让「应用」报错
@@ -227,12 +239,16 @@ class _FilterDialogState extends State<_FilterDialog> {
     for (final node in draft.items) {
       switch (node) {
         case _Draft():
-          items.add(FilterItem.condition(FilterCondition(
-            column: node.column,
-            op: node.op,
-            // 不看值的运算符不带值，免得描述里出现残留的旧输入
-            value: filterOpTakesValue(node.op) ? node.value.text : '',
-          )));
+          items.add(
+            FilterItem.condition(
+              FilterCondition(
+                column: node.column,
+                op: node.op,
+                // 不看值的运算符不带值，免得描述里出现残留的旧输入
+                value: filterOpTakesValue(node.op) ? node.value.text : '',
+              ),
+            ),
+          );
         case _GroupDraft():
           items.add(FilterItem.group(_groupOf(node)));
       }
@@ -263,7 +279,10 @@ class _FilterDialogState extends State<_FilterDialog> {
         ),
       ),
       actions: [
-        OutlinedButton(onPressed: () => Navigator.of(context).pop(), child: const Text('取消')),
+        OutlinedButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('取消'),
+        ),
         FilledButton(onPressed: _apply, child: const Text('应用')),
       ],
     );
@@ -279,7 +298,12 @@ class _FilterDialogState extends State<_FilterDialog> {
   }
 
   /// 小号的文字按钮：添加条件、添加分组
-  Widget _smallButton(Key key, IconData icon, String label, VoidCallback onPressed) {
+  Widget _smallButton(
+    Key key,
+    IconData icon,
+    String label,
+    VoidCallback onPressed,
+  ) {
     return TextButton.icon(
       key: key,
       onPressed: onPressed,
@@ -298,7 +322,11 @@ class _FilterDialogState extends State<_FilterDialog> {
     return IconButton(
       key: key,
       tooltip: tooltip,
-      style: IconButton.styleFrom(minimumSize: const Size(22, 22), padding: EdgeInsets.zero, iconSize: 14),
+      style: IconButton.styleFrom(
+        minimumSize: const Size(22, 22),
+        padding: EdgeInsets.zero,
+        iconSize: 14,
+      ),
       onPressed: onPressed,
       icon: const Icon(Icons.remove_circle_outline),
     );
@@ -308,7 +336,9 @@ class _FilterDialogState extends State<_FilterDialog> {
   /// key 用下标路径，最外层是 `0`、`1`，第 1 项里的第 0 项是 `1.0`
   List<Widget> _groupBody(List<_GroupDraft> path, String keyPrefix) {
     final group = path.last;
-    final addSuffix = keyPrefix.isEmpty ? '' : '-${keyPrefix.substring(0, keyPrefix.length - 1)}';
+    final addSuffix = keyPrefix.isEmpty
+        ? ''
+        : '-${keyPrefix.substring(0, keyPrefix.length - 1)}';
     return [
       for (var i = 0; i < group.items.length; i++)
         switch (group.items[i]) {
@@ -328,14 +358,23 @@ class _FilterDialogState extends State<_FilterDialog> {
             Icons.account_tree_outlined,
             '添加分组',
             // 新组先给一条条件：空组没有意义，core 也不收
-            () => setState(() => group.items.add(_GroupDraft(matchAll: !group.matchAll)..items.add(_newDraft()))),
+            () => setState(
+              () => group.items.add(
+                _GroupDraft(matchAll: !group.matchAll)..items.add(_newDraft()),
+              ),
+            ),
           ),
         ],
       ),
     ];
   }
 
-  Widget _groupBox(_GroupDraft inner, List<_GroupDraft> path, int index, String key) {
+  Widget _groupBox(
+    _GroupDraft inner,
+    List<_GroupDraft> path,
+    int index,
+    String key,
+  ) {
     final mac = MacColors.of(context);
     return Container(
       margin: const EdgeInsets.symmetric(vertical: 3),
@@ -351,11 +390,18 @@ class _FilterDialogState extends State<_FilterDialog> {
         children: [
           Row(
             children: [
-              Text('分组', style: TextStyle(fontSize: 12, color: mac.secondaryText)),
+              Text(
+                '分组',
+                style: TextStyle(fontSize: 12, color: mac.secondaryText),
+              ),
               const SizedBox(width: 8),
               _matchDropdown(inner, ValueKey('filter-match-$key')),
               const Spacer(),
-              _removeButton(ValueKey('filter-remove-$key'), '删掉这个分组', () => _remove(path, index)),
+              _removeButton(
+                ValueKey('filter-remove-$key'),
+                '删掉这个分组',
+                () => _remove(path, index),
+              ),
             ],
           ),
           ..._groupBody([...path, inner], '$key.'),
@@ -364,7 +410,12 @@ class _FilterDialogState extends State<_FilterDialog> {
     );
   }
 
-  Widget _draftRow(_Draft draft, List<_GroupDraft> path, int index, String key) {
+  Widget _draftRow(
+    _Draft draft,
+    List<_GroupDraft> path,
+    int index,
+    String key,
+  ) {
     // 条件里的列不在当前列里时也列出来，让人看得见、能改掉，而不是让下拉框直接崩
     final columns = [...widget.columns];
     if (!columns.contains(draft.column)) columns.add(draft.column);
@@ -403,12 +454,17 @@ class _FilterDialogState extends State<_FilterDialog> {
               // 列表一行一个值，回车是换行；单值时回车直接应用
               minLines: 1,
               maxLines: takesList ? 5 : 1,
-              keyboardType: takesList ? TextInputType.multiline : TextInputType.text,
+              keyboardType: takesList
+                  ? TextInputType.multiline
+                  : TextInputType.text,
               style: const TextStyle(fontSize: 12),
               // 边框、底色沿用主题，只压低高度和弹出按钮对齐
               decoration: InputDecoration(
                 // 紧凑输入框的高度是 10 + 上下内边距，6 正好 22px，和弹出按钮一样高
-                contentPadding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 6,
+                  vertical: 6,
+                ),
                 hintText: takesList ? '一行一个值' : null,
                 helperText: switch (draft.op) {
                   FilterOp.in_ => '列表里不能写 NULL，要找 NULL 另加「为 NULL」',
@@ -421,7 +477,11 @@ class _FilterDialogState extends State<_FilterDialog> {
             ),
           ),
           const SizedBox(width: 2),
-          _removeButton(ValueKey('filter-remove-$key'), '删掉这条', () => _remove(path, index)),
+          _removeButton(
+            ValueKey('filter-remove-$key'),
+            '删掉这条',
+            () => _remove(path, index),
+          ),
         ],
       ),
     );

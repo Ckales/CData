@@ -143,7 +143,7 @@ void main() {
   testWidgets('账号清单标出当前登录、锁定、过期；选中后按层显示权限和原文', (tester) async {
     await openAdmin(tester);
     expect(find.text('当前登录'), findsOneWidget);
-    expect(find.text('已锁定'), findsOneWidget);
+    expect(find.textContaining('已锁定'), findsOneWidget);
     expect(find.text('密码过期'), findsOneWidget);
     expect(find.text("当前登录：'admin'@'%'"), findsOneWidget);
 

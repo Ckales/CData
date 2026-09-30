@@ -91,8 +91,6 @@ Future<FakeSchemaSource> openEditor(WidgetTester tester, {VoidCallback? onAltere
   ));
   await tester.tap(find.text('打开'));
   await tester.pumpAndSettle();
-  await tester.tap(find.text('编辑'));
-  await tester.pumpAndSettle();
   return source;
 }
 
@@ -100,7 +98,7 @@ void main() {
   testWidgets('改列名后索引跟着改名，预览、执行后结构页重读', (tester) async {
     var altered = 0;
     final source = await openEditor(tester, onAltered: () => altered++);
-    expect(find.text('编辑结构：shop.posts'), findsOneWidget);
+    expect(find.byKey(const ValueKey('column-name-1')), findsOneWidget);
     final loadsBefore = source.structureLoads;
 
     await tester.enterText(find.byKey(const ValueKey('column-name-1')), 'headline');
@@ -133,7 +131,7 @@ void main() {
     await settle(tester);
     expect(source.applied.single, source.plan.statements);
     expect(find.text('确认要执行的 DDL'), findsNothing);
-    expect(find.text('编辑结构：shop.posts'), findsNothing);
+    expect(find.byKey(const ValueKey('column-name-1')), findsOneWidget);
     expect(source.structureLoads, loadsBefore + 1, reason: '执行后结构页重读');
     expect(altered, 1, reason: '执行成功要通知外面刷新补全目录');
   });
@@ -248,8 +246,6 @@ void main() {
       ),
     ));
     await tester.tap(find.text('打开'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('编辑'));
     await tester.pumpAndSettle();
 
     expect(find.byKey(const ValueKey('column-locked-1')), findsOneWidget);

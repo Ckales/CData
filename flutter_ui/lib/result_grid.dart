@@ -18,14 +18,14 @@ import 'src/rust/api/value.dart';
 import 'theme.dart';
 
 /// 行号列的宽度。表头、数据行、总宽三处共用，漏掉任何一处都会让 Row 比容器宽
-const double _rowNumberWidth = 48;
+const double _rowNumberWidth = 34;
 
 /// 表头高度。Querious 的表头很矮，和工具栏一样浅灰
-const double _headerHeight = 22;
+const double _headerHeight = 29;
 
-/// 单元格和表头的字：系统字体 12px，不用等宽字体（Querious 也是系统字体）
-const _cellStyle = TextStyle(fontSize: 12);
-const _headerStyle = TextStyle(fontSize: 12, fontWeight: FontWeight.w500);
+/// 单元格和表头的字：系统字体 11px，不用等宽字体（Querious 也是系统字体）
+const _cellStyle = TextStyle(fontSize: 11);
+const _headerStyle = TextStyle(fontSize: 11, fontWeight: FontWeight.w600);
 
 /// 结果网格。
 ///
@@ -81,7 +81,7 @@ class _ResultGridState extends State<ResultGrid> {
   static const double _defaultColumnWidth = 170;
   static const double _minColumnWidth = 48;
   static const double _maxAutoFitWidth = 600;
-  static const double _rowHeight = 20;
+  static const double _rowHeight = 29;
 
   /// 显示顺序：第 n 个位置显示第 _order[n] 列。列下标始终指结果集里的原始位置
   late List<int> _order;
@@ -1027,7 +1027,7 @@ class _ResultGridState extends State<ResultGrid> {
     }
   }
 
-  /// 单元格右键菜单，按 Querious 的分组：值、行、表。
+  /// 单元格右键菜单，按值、筛选、行、结果分组。
   /// 右键点在选区外就先选中这一格；点在选中的行上，删除作用于全部选中行
   Future<void> _showCellMenu(int row, int position, Offset globalPosition) async {
     _gridFocus.requestFocus();
@@ -1052,31 +1052,83 @@ class _ResultGridState extends State<ResultGrid> {
 
     final choice = await showMenu<String>(
       context: context,
-      position: RelativeRect.fromLTRB(globalPosition.dx, globalPosition.dy, globalPosition.dx, globalPosition.dy),
+      position: RelativeRect.fromLTRB(
+        globalPosition.dx,
+        globalPosition.dy,
+        globalPosition.dx,
+        globalPosition.dy,
+      ),
+      constraints: const BoxConstraints(minWidth: 250, maxWidth: 320),
       items: [
-        PopupMenuItem(value: 'copy-value', height: 26, child: Text('复制 "$name" 的值')),
-        PopupMenuItem(value: 'edit', height: 26, enabled: editable, child: Text('编辑 "$name" 的值…')),
-        PopupMenuItem(value: 'null', height: 26, enabled: editable, child: Text('将 "$name" 设为 NULL')),
+        desktopMenuItem(
+          value: 'copy-value',
+          label: '复制 "$name" 的值',
+          icon: Icons.content_copy_outlined,
+        ),
+        desktopMenuItem(
+          value: 'edit',
+          label: '编辑 "$name" 的值…',
+          icon: Icons.edit_outlined,
+          enabled: editable,
+        ),
+        desktopMenuItem(
+          value: 'null',
+          label: '将 "$name" 设为 NULL',
+          icon: Icons.do_not_disturb_on_outlined,
+          enabled: editable,
+        ),
         if (widget.onAddToSearch != null) ...[
           const PopupMenuDivider(height: 8),
-          PopupMenuItem(value: 'search', height: 26, child: Text('将 "$name" 加入筛选…')),
+          desktopMenuItem(
+            value: 'search',
+            label: '将 "$name" 加入筛选…',
+            icon: Icons.filter_alt_outlined,
+          ),
         ],
         const PopupMenuDivider(height: 8),
-        PopupMenuItem(
+        desktopMenuItem(
           value: 'delete',
-          height: 26,
+          label: rows.length == 1 ? '删除行' : '删除 ${rows.length} 行',
+          icon: Icons.delete_outline,
           enabled: editable,
-          child: Text(rows.length == 1 ? '删除行' : '删除 ${rows.length} 行'),
+          destructive: true,
         ),
         const PopupMenuDivider(height: 8),
-        PopupMenuItem(value: 'insert', height: 26, enabled: editable, child: const Text('新增行…')),
-        PopupMenuItem(value: 'duplicate', height: 26, enabled: editable, child: const Text('复制为新行…')),
-        const PopupMenuItem(value: 'copy-row', height: 26, child: Text('复制整行')),
-        PopupMenuItem(value: 'refresh-row', height: 26, enabled: editable, child: const Text('刷新行')),
+        desktopMenuItem(
+          value: 'insert',
+          label: '新增行…',
+          icon: Icons.add,
+          enabled: editable,
+        ),
+        desktopMenuItem(
+          value: 'duplicate',
+          label: '复制为新行…',
+          icon: Icons.copy_all_outlined,
+          enabled: editable,
+        ),
+        desktopMenuItem(
+          value: 'copy-row',
+          label: '复制整行',
+          icon: Icons.content_copy_outlined,
+        ),
+        desktopMenuItem(
+          value: 'refresh-row',
+          label: '刷新行',
+          icon: Icons.refresh,
+          enabled: editable,
+        ),
         const PopupMenuDivider(height: 8),
         if (widget.onRefreshAll != null)
-          const PopupMenuItem(value: 'refresh-all', height: 26, child: Text('刷新全部行')),
-        const PopupMenuItem(value: 'export', height: 26, child: Text('导出…')),
+          desktopMenuItem(
+            value: 'refresh-all',
+            label: '刷新全部行',
+            icon: Icons.autorenew,
+          ),
+        desktopMenuItem(
+          value: 'export',
+          label: '导出…',
+          icon: Icons.file_download_outlined,
+        ),
       ],
     );
     if (!mounted || choice == null) return;
@@ -1344,7 +1396,7 @@ class _HeaderRow extends StatelessWidget {
                   child: InkWell(
                     onTap: onSortColumn == null ? null : () => onSortColumn!(column.name),
                     child: Padding(
-                      padding: const EdgeInsets.only(left: 6),
+                      padding: const EdgeInsets.only(left: 10),
                       child: Row(
                         children: [
                           Expanded(child: label),
@@ -1433,12 +1485,17 @@ class _DataRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final mac = MacColors.of(context);
-    final gridLine = Border(right: BorderSide(color: mac.separator));
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    final selectionColor = mac.accent.withValues(alpha: dark ? 0.28 : 0.12);
+    final gridLine = Border(
+      right: BorderSide(color: mac.separator.withValues(alpha: 0.5)),
+      bottom: BorderSide(color: mac.separator.withValues(alpha: 0.7)),
+    );
     return DecoratedBox(
-      // 没有横线，只靠斑马纹分行；点行号选中的整行叠一层浅系统蓝
+      // 斑马纹和细横线区分行；点行号选中整行
       decoration: BoxDecoration(
         color: selected
-            ? mac.accent.withValues(alpha: 0.16)
+            ? selectionColor
             : rowNumber.isEven
             ? mac.zebra
             : null,
@@ -1457,25 +1514,37 @@ class _DataRow extends StatelessWidget {
               // 行号不抢眼：小一号、三级文字色
               child: Text(
                 '$rowNumber',
-                style: TextStyle(fontSize: 10, color: selected ? mac.accent : mac.tertiaryText),
+                style: TextStyle(
+                  fontSize: 10,
+                  color: selected ? mac.accent : mac.tertiaryText,
+                ),
               ),
             ),
           ),
           for (var position = 0; position < order.length; position++)
-            _cell(mac, gridLine, position, order[position]),
+            _cell(mac, gridLine, dark ? 0.36 : 0.18, position, order[position]),
         ],
       ),
     );
   }
 
-  Widget _cell(MacColors mac, Border gridLine, int position, int i) {
+  Widget _cell(
+    MacColors mac,
+    Border gridLine,
+    double selectionAlpha,
+    int position,
+    int i,
+  ) {
     final range = selectedPositions;
-    final inRange = range != null && position >= range.left && position <= range.right;
+    final inRange =
+        range != null && position >= range.left && position <= range.right;
     // 数值右对齐，位数一眼能比；只看列元数据，不看值长得像不像数字
-    final alignment = columns[i].kind == ColumnKind.number ? Alignment.centerRight : Alignment.centerLeft;
+    final alignment = columns[i].kind == ColumnKind.number
+        ? Alignment.centerRight
+        : Alignment.centerLeft;
 
     return DecoratedBox(
-      // 列之间 1px 竖线。画在前景，选区的底色不会盖住它
+      // 细网格线画在前景，选区底色不会盖住分隔线
       position: DecorationPosition.foreground,
       decoration: BoxDecoration(border: gridLine),
       child: SizedBox(
@@ -1494,17 +1563,25 @@ class _DataRow extends StatelessWidget {
             // 按下就选中。用 Listener 而不是 onTap：onTap 要等双击判定超时才触发，点了会慢半拍
             : Listener(
                 onPointerDown: (event) {
-                  if (event.buttons == kPrimaryButton) onPointerDownCell(event, position);
+                  if (event.buttons == kPrimaryButton) {
+                    onPointerDownCell(event, position);
+                  }
                 },
                 child: GestureDetector(
                   behavior: HitTestBehavior.opaque,
                   onDoubleTap: () => onDoubleTapCell(i),
-                  onSecondaryTapUp: (details) => onSecondaryTapCell(position, details.globalPosition),
+                  onSecondaryTapUp: (details) =>
+                      onSecondaryTapCell(position, details.globalPosition),
                   child: ColoredBox(
-                    color: inRange ? mac.accent.withValues(alpha: 0.24) : Colors.transparent,
+                    color: inRange
+                        ? mac.accent.withValues(alpha: selectionAlpha)
+                        : Colors.transparent,
                     child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 6),
-                      child: Align(alignment: alignment, child: _CellText(cell: cells?[i])),
+                      padding: const EdgeInsets.symmetric(horizontal: 10),
+                      child: Align(
+                        alignment: alignment,
+                        child: _CellText(cell: cells?[i]),
+                      ),
                     ),
                   ),
                 ),

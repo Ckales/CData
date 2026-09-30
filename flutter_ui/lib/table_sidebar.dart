@@ -9,7 +9,7 @@ import 'src/rust/api/schema.dart';
 import 'structure_editor.dart' show showDdlPreview;
 import 'theme.dart';
 
-/// 左侧的库表清单（Querious 的样子）：库选择器、过滤框、蓝色表图标的紧凑列表。
+/// 左侧的库表清单：库选择器、过滤框、当前库和表列表。
 /// 选库、过滤、点表浏览数据，右键看结构、导入、新建表。
 class TableSidebar extends StatefulWidget {
   final SchemaSource source;
@@ -79,7 +79,8 @@ class _TableSidebarState extends State<TableSidebar> {
   @override
   void didUpdateWidget(TableSidebar oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.source != widget.source || oldWidget.database != widget.database) {
+    if (oldWidget.source != widget.source ||
+        oldWidget.database != widget.database) {
       _reload();
     }
   }
@@ -98,7 +99,9 @@ class _TableSidebarState extends State<TableSidebar> {
     try {
       final databases = await widget.source.databases();
       // 连接时没指定库：先只列库，等用户在上面选一个
-      final tables = widget.database.isEmpty ? <TableInfo>[] : await widget.source.tables(widget.database);
+      final tables = widget.database.isEmpty
+          ? <TableInfo>[]
+          : await widget.source.tables(widget.database);
       if (!mounted) return;
       setState(() {
         _databases = databases;
@@ -142,26 +145,13 @@ class _TableSidebarState extends State<TableSidebar> {
     IconData icon, {
     bool destructive = false,
     bool submenu = false,
-  }) {
-    final mac = MacColors.of(context);
-    final color = destructive ? Theme.of(context).colorScheme.error : mac.text;
-    return PopupMenuItem<T>(
-      value: value,
-      height: 30,
-      padding: const EdgeInsets.symmetric(horizontal: 12),
-      child: Row(
-        children: [
-          Icon(icon, size: 16, color: destructive ? color : mac.secondaryText),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(label, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w400, color: color)),
-          ),
-          if (submenu)
-            Icon(Icons.chevron_right, size: 16, color: mac.secondaryText),
-        ],
-      ),
-    );
-  }
+  }) => desktopMenuItem<T>(
+    value: value,
+    label: label,
+    icon: icon,
+    destructive: destructive,
+    submenu: submenu,
+  );
 
   Future<T?> _showSidebarMenu<T>(
     RelativeRect position,
@@ -169,9 +159,7 @@ class _TableSidebarState extends State<TableSidebar> {
   ) => showMenu<T>(
     context: context,
     position: position,
-    constraints: const BoxConstraints(minWidth: 224, maxWidth: 260),
-    menuPadding: const EdgeInsets.symmetric(vertical: 4),
-    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(9)),
+    constraints: const BoxConstraints(minWidth: 250, maxWidth: 300),
     items: items,
   );
 
@@ -253,7 +241,10 @@ class _TableSidebarState extends State<TableSidebar> {
       case 'copy-name':
         await Clipboard.setData(ClipboardData(text: table));
       case 'copy-create':
-        await _copy(() async => (await widget.source.structure(widget.database, table)).createSql);
+        await _copy(
+          () async =>
+              (await widget.source.structure(widget.database, table)).createSql,
+        );
       case 'copy-insert':
         await _copy(() => widget.source.insertTemplate(widget.database, table));
       case 'structure':
@@ -291,7 +282,12 @@ class _TableSidebarState extends State<TableSidebar> {
     setState(() => _busy = '正在导出 $table…');
     final int written;
     try {
-      written = await widget.source.exportTable(database, table, path, choice.options);
+      written = await widget.source.exportTable(
+        database,
+        table,
+        path,
+        choice.options,
+      );
     } catch (e) {
       if (mounted) setState(() => _error = '导出 $table 失败：$e');
       return;
@@ -304,7 +300,12 @@ class _TableSidebarState extends State<TableSidebar> {
       builder: (context) => AlertDialog(
         title: const Text('导出完成'),
         content: SelectableText('已把 $table 的 $written 行导出到\n$path'),
-        actions: [FilledButton(onPressed: () => Navigator.of(context).pop(), child: const Text('好'))],
+        actions: [
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('好'),
+          ),
+        ],
       ),
     );
   }
@@ -319,15 +320,20 @@ class _TableSidebarState extends State<TableSidebar> {
       return;
     }
     if (!mounted) return;
-    final input = await showDialog<({String name, String charset, String collation})>(
-      context: context,
-      builder: (context) => _CreateDatabaseDialog(options: options),
-    );
+    final input =
+        await showDialog<({String name, String charset, String collation})>(
+          context: context,
+          builder: (context) => _CreateDatabaseDialog(options: options),
+        );
     if (input == null || !mounted) return;
 
     final AlterPlan plan;
     try {
-      plan = await widget.source.previewCreateDatabase(input.name, input.charset, input.collation);
+      plan = await widget.source.previewCreateDatabase(
+        input.name,
+        input.charset,
+        input.collation,
+      );
     } catch (e) {
       if (mounted) setState(() => _error = '$e');
       return;
@@ -337,7 +343,12 @@ class _TableSidebarState extends State<TableSidebar> {
       context,
       plan: plan,
       cancelLabel: '取消',
-      apply: () => widget.source.applyCreateDatabase(input.name, input.charset, input.collation, plan.statements),
+      apply: () => widget.source.applyCreateDatabase(
+        input.name,
+        input.charset,
+        input.collation,
+        plan.statements,
+      ),
     );
     if (!applied || !mounted) return;
     widget.onDatabaseChanged(input.name);
@@ -376,15 +387,27 @@ class _TableSidebarState extends State<TableSidebar> {
   }
 
   Future<void> _rename(String table) async {
-    final result = await _askName(title: '重命名 $table', initial: table, confirm: '预览');
+    final result = await _askName(
+      title: '重命名 $table',
+      initial: table,
+      confirm: '预览',
+    );
     if (result == null || !mounted) return;
     await _runAction(table, TableAction.rename(newName: result.name));
   }
 
   Future<void> _duplicate(String table) async {
-    final result = await _askName(title: '复制表 $table', initial: '${table}_copy', confirm: '预览', askData: true);
+    final result = await _askName(
+      title: '复制表 $table',
+      initial: '${table}_copy',
+      confirm: '预览',
+      askData: true,
+    );
     if (result == null || !mounted) return;
-    await _runAction(table, TableAction.duplicate(newName: result.name, withData: result.withData));
+    await _runAction(
+      table,
+      TableAction.duplicate(newName: result.name, withData: result.withData),
+    );
   }
 
   /// 预览 → 确认框 → 执行。成功后重读清单并通知外面
@@ -402,7 +425,12 @@ class _TableSidebarState extends State<TableSidebar> {
       context,
       plan: plan,
       cancelLabel: '取消',
-      apply: () => widget.source.applyTableAction(database, table, action, plan.statements),
+      apply: () => widget.source.applyTableAction(
+        database,
+        table,
+        action,
+        plan.statements,
+      ),
     );
     if (!applied || !mounted) return;
     widget.onTableAction?.call(table, action);
@@ -423,7 +451,12 @@ class _TableSidebarState extends State<TableSidebar> {
       builder: (context) => AlertDialog(
         title: Text(table),
         content: Text('共 $count 行（COUNT(*) 精确值）'),
-        actions: [FilledButton(onPressed: () => Navigator.of(context).pop(), child: const Text('好'))],
+        actions: [
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('好'),
+          ),
+        ],
       ),
     );
   }
@@ -471,7 +504,12 @@ class _TableSidebarState extends State<TableSidebar> {
               ],
             ),
           ),
-          actions: [FilledButton(onPressed: () => Navigator.of(context).pop(), child: const Text('好'))],
+          actions: [
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('好'),
+            ),
+          ],
         );
       },
     );
@@ -486,7 +524,12 @@ class _TableSidebarState extends State<TableSidebar> {
   }) {
     return showDialog<({String name, bool withData})>(
       context: context,
-      builder: (context) => _NameDialog(title: title, initial: initial, confirm: confirm, askData: askData),
+      builder: (context) => _NameDialog(
+        title: title,
+        initial: initial,
+        confirm: confirm,
+        askData: askData,
+      ),
     );
   }
 
@@ -496,7 +539,7 @@ class _TableSidebarState extends State<TableSidebar> {
     final mac = MacColors.of(context);
 
     return Container(
-      width: 240,
+      width: 225,
       decoration: BoxDecoration(
         color: mac.sidebar,
         border: Border(right: BorderSide(color: mac.separator)),
@@ -505,7 +548,7 @@ class _TableSidebarState extends State<TableSidebar> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(8, 8, 8, 6),
+            padding: const EdgeInsets.fromLTRB(6, 7, 6, 5),
             child: _DatabasePicker(
               databases: _databases,
               current: widget.database,
@@ -513,10 +556,10 @@ class _TableSidebarState extends State<TableSidebar> {
             ),
           ),
           Padding(
-            padding: const EdgeInsets.fromLTRB(8, 0, 8, 6),
+            padding: const EdgeInsets.fromLTRB(6, 0, 6, 7),
             child: MacSearchField(
               controller: _filter,
-              hint: '过滤表名',
+              hint: 'Filter',
               icon: Icons.filter_list,
               onChanged: (_) => setState(() {}),
             ),
@@ -524,12 +567,49 @@ class _TableSidebarState extends State<TableSidebar> {
           if (widget.database.isEmpty)
             Padding(
               padding: const EdgeInsets.all(12),
-              child: Text('在上面选一个库', style: TextStyle(fontSize: 12, color: mac.secondaryText)),
+              child: Text(
+                '在上面选一个库',
+                style: TextStyle(fontSize: 12, color: mac.secondaryText),
+              ),
             ),
           if (_error != null)
             Padding(
               padding: const EdgeInsets.all(8),
-              child: Text(_error!, style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.error)),
+              child: Text(
+                _error!,
+                style: TextStyle(
+                  fontSize: 11,
+                  color: Theme.of(context).colorScheme.error,
+                ),
+              ),
+            ),
+          if (widget.database.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(10, 9, 10, 6),
+              child: Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  Row(
+                    children: [
+                      Icon(Icons.storage, size: 16, color: mac.databaseIcon),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          widget.database,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(fontSize: 12, color: mac.text),
+                        ),
+                      ),
+                    ],
+                  ),
+                  Positioned(
+                    left: 1,
+                    bottom: -5,
+                    child: Container(width: 18, height: 2, color: mac.accent),
+                  ),
+                ],
+              ),
             ),
           Expanded(
             // 只在没有行的时候接空白处的右键：行和外层都接右键的话，按住稍久两边都会弹菜单
@@ -537,24 +617,31 @@ class _TableSidebarState extends State<TableSidebar> {
                 ? GestureDetector(
                     key: const ValueKey('sidebar-blank'),
                     behavior: HitTestBehavior.opaque,
-                    onSecondaryTapDown: (details) => _showBlankMenu(details.globalPosition),
+                    onSecondaryTapDown: (details) =>
+                        _showBlankMenu(details.globalPosition),
                     child: const SizedBox.expand(),
                   )
                 : ListView.builder(
                     padding: const EdgeInsets.only(bottom: 6),
                     itemCount: visible.length,
-                    itemExtent: 26,
+                    itemExtent: 29,
                     itemBuilder: (context, index) {
                       final table = visible[index];
                       return SidebarItem(
-                        icon: table.isView ? Icons.visibility_outlined : Icons.grid_on,
+                        icon: table.isView
+                            ? Icons.visibility_outlined
+                            : Icons.grid_on,
                         iconColor: mac.tableIcon,
                         label: table.name,
                         // InnoDB 的行数是估算值，标个 ~ 免得被当成精确数字
-                        trailing: !table.isView && table.estimatedRows > BigInt.zero ? '~${table.estimatedRows}' : null,
+                        trailing:
+                            !table.isView && table.estimatedRows > BigInt.zero
+                            ? '~${table.estimatedRows}'
+                            : null,
                         selected: table.name == widget.selectedTable,
                         onTap: () => _browse(table.name),
-                        onSecondaryTap: (position) => _showMenu(table, position),
+                        onSecondaryTap: (position) =>
+                            _showMenu(table, position),
                       );
                     },
                   ),
@@ -579,7 +666,11 @@ class _DatabasePicker extends StatefulWidget {
   final String current;
   final void Function(String database) onChanged;
 
-  const _DatabasePicker({required this.databases, required this.current, required this.onChanged});
+  const _DatabasePicker({
+    required this.databases,
+    required this.current,
+    required this.onChanged,
+  });
 
   @override
   State<_DatabasePicker> createState() => _DatabasePickerState();
@@ -654,27 +745,50 @@ class _DatabasePickerState extends State<_DatabasePicker> {
               key: const ValueKey('database-picker'),
               onTap: () => _portal.isShowing ? _close() : _open(),
               child: Container(
-                height: 24,
+                height: 28,
                 padding: const EdgeInsets.only(left: 8, right: 4),
                 decoration: BoxDecoration(
-                  color: mac.control,
+                  color: Theme.of(context).brightness == Brightness.dark
+                      ? const Color(0xFF303A46)
+                      : const Color(0xFFE1E3E6),
                   border: Border.all(color: mac.controlBorder),
                   borderRadius: BorderRadius.circular(5),
                 ),
                 child: Row(
                   children: [
-                    Icon(Icons.storage, size: 14, color: mac.databaseIcon),
+                    Icon(
+                      Icons.filter_tilt_shift,
+                      size: 16,
+                      color: mac.secondaryText,
+                    ),
                     const SizedBox(width: 5),
                     Expanded(
                       child: Text(
                         hasCurrent ? widget.current : '选择数据库',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: TextStyle(fontSize: 12, color: hasCurrent ? mac.text : mac.tertiaryText),
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: hasCurrent ? mac.text : mac.tertiaryText,
+                        ),
                       ),
                     ),
                     const SizedBox(width: 4),
-                    Icon(Icons.unfold_more, size: 14, color: mac.secondaryText),
+                    if (hasCurrent)
+                      GestureDetector(
+                        onTap: () => widget.onChanged(''),
+                        child: Icon(
+                          Icons.close,
+                          size: 15,
+                          color: mac.secondaryText,
+                        ),
+                      )
+                    else
+                      Icon(
+                        Icons.unfold_more,
+                        size: 14,
+                        color: mac.secondaryText,
+                      ),
                   ],
                 ),
               ),
@@ -697,7 +811,9 @@ class _DatabasePickerState extends State<_DatabasePicker> {
           groupId: _tapGroup,
           onTapOutside: (_) => _close(),
           child: CallbackShortcuts(
-            bindings: {const SingleActivator(LogicalKeyboardKey.escape): _close},
+            bindings: {
+              const SingleActivator(LogicalKeyboardKey.escape): _close,
+            },
             child: Material(
               color: mac.content,
               elevation: 8,
@@ -719,9 +835,18 @@ class _DatabasePickerState extends State<_DatabasePicker> {
                           style: const TextStyle(fontSize: 13),
                           decoration: InputDecoration(
                             hintText: '过滤库名',
-                            prefixIcon: Icon(Icons.search, size: 15, color: mac.tertiaryText),
-                            prefixIconConstraints: const BoxConstraints(minWidth: 28, minHeight: 24),
-                            contentPadding: const EdgeInsets.symmetric(vertical: 5),
+                            prefixIcon: Icon(
+                              Icons.search,
+                              size: 15,
+                              color: mac.tertiaryText,
+                            ),
+                            prefixIconConstraints: const BoxConstraints(
+                              minWidth: 28,
+                              minHeight: 24,
+                            ),
+                            contentPadding: const EdgeInsets.symmetric(
+                              vertical: 5,
+                            ),
                           ),
                           onChanged: (_) => setState(() {}),
                           onSubmitted: (_) {
@@ -734,11 +859,19 @@ class _DatabasePickerState extends State<_DatabasePicker> {
                     if (visible.isEmpty)
                       Padding(
                         padding: const EdgeInsets.all(10),
-                        child: Text('没有匹配的库', style: TextStyle(fontSize: 12, color: mac.secondaryText)),
+                        child: Text(
+                          '没有匹配的库',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: mac.secondaryText,
+                          ),
+                        ),
                       )
                     else
                       ConstrainedBox(
-                        constraints: const BoxConstraints(maxHeight: _maxListHeight),
+                        constraints: const BoxConstraints(
+                          maxHeight: _maxListHeight,
+                        ),
                         child: ListView.builder(
                           // 过滤后列表短了，旧的滚动位置会越界，换个新的从头开始
                           controller: _filter.text.isEmpty ? _scroll : null,
@@ -746,7 +879,8 @@ class _DatabasePickerState extends State<_DatabasePicker> {
                           padding: const EdgeInsets.symmetric(vertical: 4),
                           itemExtent: _rowHeight,
                           itemCount: visible.length,
-                          itemBuilder: (context, index) => _row(mac, visible[index]),
+                          itemBuilder: (context, index) =>
+                              _row(mac, visible[index]),
                         ),
                       ),
                   ],
@@ -768,10 +902,17 @@ class _DatabasePickerState extends State<_DatabasePicker> {
           children: [
             SizedBox(
               width: 18,
-              child: database == widget.current ? Icon(Icons.check, size: 13, color: mac.text) : null,
+              child: database == widget.current
+                  ? Icon(Icons.check, size: 13, color: mac.text)
+                  : null,
             ),
             Expanded(
-              child: Text(database, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13)),
+              child: Text(
+                database,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontSize: 13),
+              ),
             ),
           ],
         ),
@@ -783,11 +924,17 @@ class _DatabasePickerState extends State<_DatabasePicker> {
 class _SidebarFooter extends StatelessWidget {
   final int count;
   final int total;
+
   /// 右下角的状态文字，null 不显示
   final String? status;
   final VoidCallback? onCreateTable;
 
-  const _SidebarFooter({required this.count, required this.total, required this.status, required this.onCreateTable});
+  const _SidebarFooter({
+    required this.count,
+    required this.total,
+    required this.status,
+    required this.onCreateTable,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -795,7 +942,9 @@ class _SidebarFooter extends StatelessWidget {
     return Container(
       height: 24,
       padding: const EdgeInsets.only(left: 4, right: 10),
-      decoration: BoxDecoration(border: Border(top: BorderSide(color: mac.separator))),
+      decoration: BoxDecoration(
+        border: Border(top: BorderSide(color: mac.separator)),
+      ),
       child: Row(
         children: [
           if (onCreateTable != null)
@@ -804,7 +953,11 @@ class _SidebarFooter extends StatelessWidget {
               child: InkWell(
                 onTap: onCreateTable,
                 borderRadius: BorderRadius.circular(4),
-                child: SizedBox(width: 22, height: 20, child: Icon(Icons.add, size: 14, color: mac.secondaryText)),
+                child: SizedBox(
+                  width: 22,
+                  height: 20,
+                  child: Icon(Icons.add, size: 14, color: mac.secondaryText),
+                ),
               ),
             ),
           const SizedBox(width: 4),
@@ -814,7 +967,11 @@ class _SidebarFooter extends StatelessWidget {
           ),
           const Spacer(),
           // 同 result_grid：无限动画会把 pumpAndSettle 卡死
-          if (status != null) Text(status!, style: TextStyle(fontSize: 11, color: mac.secondaryText)),
+          if (status != null)
+            Text(
+              status!,
+              style: TextStyle(fontSize: 11, color: mac.secondaryText),
+            ),
         ],
       ),
     );
@@ -827,7 +984,12 @@ class _NameDialog extends StatefulWidget {
   final String confirm;
   final bool askData;
 
-  const _NameDialog({required this.title, required this.initial, required this.confirm, required this.askData});
+  const _NameDialog({
+    required this.title,
+    required this.initial,
+    required this.confirm,
+    required this.askData,
+  });
 
   @override
   State<_NameDialog> createState() => _NameDialogState();
@@ -835,7 +997,10 @@ class _NameDialog extends StatefulWidget {
 
 class _NameDialogState extends State<_NameDialog> {
   late final _name = TextEditingController(text: widget.initial)
-    ..selection = TextSelection(baseOffset: 0, extentOffset: widget.initial.length);
+    ..selection = TextSelection(
+      baseOffset: 0,
+      extentOffset: widget.initial.length,
+    );
   bool _withData = true;
 
   @override
@@ -844,7 +1009,8 @@ class _NameDialogState extends State<_NameDialog> {
     super.dispose();
   }
 
-  void _submit() => Navigator.of(context).pop((name: _name.text, withData: _withData));
+  void _submit() =>
+      Navigator.of(context).pop((name: _name.text, withData: _withData));
 
   @override
   Widget build(BuildContext context) {
@@ -870,14 +1036,18 @@ class _NameDialogState extends State<_NameDialog> {
                 dense: true,
                 controlAffinity: ListTileControlAffinity.leading,
                 value: _withData,
-                onChanged: (value) => setState(() => _withData = value ?? false),
+                onChanged: (value) =>
+                    setState(() => _withData = value ?? false),
                 title: const Text('同时复制数据', style: TextStyle(fontSize: 13)),
               ),
           ],
         ),
       ),
       actions: [
-        OutlinedButton(onPressed: () => Navigator.of(context).pop(), child: const Text('取消')),
+        OutlinedButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('取消'),
+        ),
         FilledButton(onPressed: _submit, child: Text(widget.confirm)),
       ],
     );
@@ -925,7 +1095,9 @@ class _CreateDatabaseDialogState extends State<_CreateDatabaseDialog> {
   }
 
   /// 库名原样交给 core，不在这里修剪
-  void _submit() => Navigator.of(context).pop((name: _name.text, charset: _charset, collation: _collation));
+  void _submit() =>
+      Navigator.of(context)
+          .pop((name: _name.text, charset: _charset, collation: _collation));
 
   @override
   Widget build(BuildContext context) {
@@ -956,7 +1128,10 @@ class _CreateDatabaseDialogState extends State<_CreateDatabaseDialog> {
                 child: MacPopupButton<String>(
                   key: const ValueKey('database-charset'),
                   value: _charset,
-                  items: {for (final info in widget.options.charsets) info.name: info.name},
+                  items: {
+                    for (final info in widget.options.charsets)
+                      info.name: info.name,
+                  },
                   onChanged: _changeCharset,
                 ),
               ),
@@ -969,8 +1144,11 @@ class _CreateDatabaseDialogState extends State<_CreateDatabaseDialog> {
                 child: MacPopupButton<String>(
                   key: const ValueKey('database-collation'),
                   value: _collation,
-                  items: {for (final collation in collations) collation: collation},
-                  onChanged: (collation) => setState(() => _collation = collation),
+                  items: {
+                    for (final collation in collations) collation: collation,
+                  },
+                  onChanged: (collation) =>
+                      setState(() => _collation = collation),
                 ),
               ),
             ),
@@ -978,7 +1156,10 @@ class _CreateDatabaseDialogState extends State<_CreateDatabaseDialog> {
         ),
       ),
       actions: [
-        OutlinedButton(onPressed: () => Navigator.of(context).pop(), child: const Text('取消')),
+        OutlinedButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('取消'),
+        ),
         FilledButton(onPressed: _submit, child: const Text('预览')),
       ],
     );

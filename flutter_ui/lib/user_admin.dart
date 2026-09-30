@@ -140,6 +140,26 @@ Widget _tag(String text, Color background, Color foreground) {
   );
 }
 
+Widget _accountInfo(BuildContext context, String label, String value, {bool code = false}) {
+  final scheme = Theme.of(context).colorScheme;
+  return Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Text(label, style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: scheme.onSurfaceVariant)),
+      const SizedBox(height: 4),
+      Text(
+        value,
+        style: TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w600,
+          color: scheme.onSurface,
+          fontFamily: code ? 'Menlo' : null,
+        ),
+      ),
+    ],
+  );
+}
+
 /// 用户与权限面板：左边账号列表，右边选中账号的操作和权限。没有外框和关闭按钮，可以直接嵌进页面。
 ///
 /// 所有改动先预览 Rust 侧生成的语句，确认后才执行；
@@ -287,7 +307,7 @@ class _UserAdminPanelState extends State<UserAdminPanel> {
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                SizedBox(width: 300, child: _userList(admin)),
+                SizedBox(width: 245, child: _userList(admin)),
                 VerticalDivider(width: 1, color: scheme.outlineVariant),
                 Expanded(child: ColoredBox(color: scheme.surface, child: _detail(admin))),
               ],
@@ -297,7 +317,7 @@ class _UserAdminPanelState extends State<UserAdminPanel> {
     );
   }
 
-  /// 账号列表：侧栏灰底，选中行系统蓝；底部一条放「新建用户」，和 macOS 列表下面的 + 一样
+  /// 账号列表：侧栏灰底，选中行用浅蓝底；底部保留新建入口
   Widget _userList(UserAdmin admin) {
     final scheme = Theme.of(context).colorScheme;
     final unavailable = admin.usersUnavailable;
@@ -308,7 +328,7 @@ class _UserAdminPanelState extends State<UserAdminPanel> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(14, 8, 14, 4),
+            padding: const EdgeInsets.fromLTRB(13, 9, 13, 5),
             child: Text(
               unavailable == null ? '账号 ${admin.users.length}' : '账号',
               style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: scheme.onSurfaceVariant),
@@ -349,14 +369,15 @@ class _UserAdminPanelState extends State<UserAdminPanel> {
     final scheme = Theme.of(context).colorScheme;
     final expired = row?.passwordExpired;
     final isCurrent = row?.isCurrent ?? _sameAccount(account, admin.current);
+    final state = row == null ? '未读取到' : row.locked ? '已锁定' : '已启用';
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 1),
       child: Material(
-        color: selected ? scheme.primary : Colors.transparent,
-        borderRadius: BorderRadius.circular(5),
+        color: selected ? scheme.primaryContainer : Colors.transparent,
+        borderRadius: BorderRadius.circular(4),
         child: InkWell(
           key: ValueKey('user-${account.user}@${account.host}'),
-          borderRadius: BorderRadius.circular(5),
+          borderRadius: BorderRadius.circular(4),
           onTap: () => _select(account),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -365,33 +386,36 @@ class _UserAdminPanelState extends State<UserAdminPanel> {
               children: [
                 Row(
                   children: [
-                    Icon(Icons.person_outline, size: 14, color: selected ? scheme.onPrimary : scheme.onSurfaceVariant),
+                    Icon(Icons.person_outline, size: 14, color: scheme.primary),
                     const SizedBox(width: 6),
                     Flexible(
                       child: Text(
-                        _label(account),
+                        account.user,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                          fontSize: 12,
-                          fontFamily: 'Menlo',
-                          color: selected ? scheme.onPrimary : scheme.onSurface,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: selected ? scheme.onPrimaryContainer : scheme.onSurface,
                         ),
                       ),
                     ),
-                    if (isCurrent) _tag('当前登录', scheme.primaryContainer, scheme.onPrimaryContainer),
-                    if (row != null && row.locked) _tag('已锁定', scheme.errorContainer, scheme.onErrorContainer),
+                    if (isCurrent) _tag('当前登录', scheme.surfaceContainerLow, scheme.onSurfaceVariant),
                     if (expired != null)
                       Tooltip(message: expired, child: _tag('密码过期', scheme.errorContainer, scheme.onErrorContainer)),
                   ],
                 ),
-                if (row != null)
-                  Padding(
-                    padding: const EdgeInsets.only(left: 20),
-                    child: Text(
-                      row.plugin,
-                      style: TextStyle(fontSize: 11, color: selected ? Colors.white70 : scheme.onSurfaceVariant),
+                Padding(
+                  padding: const EdgeInsets.only(left: 20),
+                  child: Text(
+                    '${account.host} · $state',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 10,
+                      color: selected ? scheme.onPrimaryContainer.withValues(alpha: 0.8) : scheme.onSurfaceVariant,
                     ),
                   ),
+                ),
               ],
             ),
           ),
@@ -407,15 +431,62 @@ class _UserAdminPanelState extends State<UserAdminPanel> {
     final row = _rowOf(account);
     final actionError = _actionError;
     final locked = row?.locked ?? false;
+    final accountState = row == null ? '未读取到' : row.locked ? '已锁定' : '已启用';
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text(_label(account), style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, fontFamily: 'Menlo')),
+          Row(
+            children: [
+              Container(
+                width: 32,
+                height: 32,
+                decoration: BoxDecoration(color: scheme.primaryContainer, borderRadius: BorderRadius.circular(5)),
+                child: Icon(Icons.person_outline, size: 17, color: scheme.onPrimaryContainer),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(account.user, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: scheme.onSurface)),
+                    const SizedBox(height: 2),
+                    Text('用户详情与权限配置', style: TextStyle(fontSize: 10, color: scheme.onSurfaceVariant)),
+                  ],
+                ),
+              ),
+              _tag(
+                accountState,
+                row != null && row.locked ? scheme.errorContainer : scheme.surfaceContainerLow,
+                row != null && row.locked ? scheme.onErrorContainer : scheme.onSurfaceVariant,
+              ),
+            ],
+          ),
           if (row?.passwordExpired != null)
-            Text('密码：${row!.passwordExpired}', style: TextStyle(fontSize: 12, color: scheme.error)),
-          const SizedBox(height: 8),
+            Padding(
+              padding: const EdgeInsets.only(top: 5),
+              child: Text('密码：${row!.passwordExpired}', style: TextStyle(fontSize: 11, color: scheme.error)),
+            ),
+          Divider(height: 20, color: scheme.outlineVariant),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(child: _accountInfo(context, '用户名', account.user, code: true)),
+              const SizedBox(width: 28),
+              Expanded(child: _accountInfo(context, '允许访问的 Host', account.host, code: true)),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(child: _accountInfo(context, '账号状态', accountState)),
+              const SizedBox(width: 28),
+              Expanded(child: _accountInfo(context, '身份验证', row?.plugin ?? '未读取到', code: true)),
+            ],
+          ),
+          const SizedBox(height: 14),
           Wrap(
             spacing: 6,
             runSpacing: 6,
@@ -480,6 +551,16 @@ class _UserAdminPanelState extends State<UserAdminPanel> {
     final raw = grants.statements.join(';\n');
     return ListView(
       children: [
+        Padding(
+          padding: const EdgeInsets.only(top: 2, bottom: 6),
+          child: Row(
+            children: [
+              Text('已授予的权限', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: scheme.onSurface)),
+              const Spacer(),
+              Text('来源：SHOW GRANTS', style: TextStyle(fontSize: 10, color: scheme.onSurfaceVariant)),
+            ],
+          ),
+        ),
         for (final scope in GrantScope.values)
           if (grants.entries.any((entry) => entry.scope == scope)) ...[
             Padding(

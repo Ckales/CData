@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
 
-/// 应用主题：照 Querious / macOS 原生的样子做，不用 Material 默认的大号控件。
-///
-/// 系统字体、13pt 正文、紧凑密度、系统蓝选中色、浅灰侧栏和工具栏、白色内容区。
+/// 桌面工作区主题：紧凑工具栏、分栏和表格，浅色与暗色使用同一套层级。
 /// 两个平台用同一套（Windows 上字体落到 Segoe UI，其余一样）。
 ThemeData appTheme(Brightness brightness) {
   final dark = brightness == Brightness.dark;
@@ -12,19 +10,23 @@ ThemeData appTheme(Brightness brightness) {
     brightness: brightness,
     primary: mac.accent,
     onPrimary: Colors.white,
-    primaryContainer: dark ? const Color(0xFF16345C) : const Color(0xFFD6E6FF),
-    onPrimaryContainer: dark ? const Color(0xFFD6E6FF) : const Color(0xFF002E6B),
+    primaryContainer: dark ? const Color(0xFF2E4768) : const Color(0xFFD6E4F5),
+    onPrimaryContainer: dark
+        ? const Color(0xFFE8F1FF)
+        : const Color(0xFF215A9E),
     secondary: mac.accent,
     onSecondary: Colors.white,
-    tertiary: dark ? const Color(0xFFFF9F0A) : const Color(0xFFB25000),
+    tertiary: dark ? const Color(0xFFF0C27F) : const Color(0xFFA96D1F),
     onTertiary: Colors.white,
     // 截断提示这类「警告但不是错误」的底色
-    tertiaryContainer: dark ? const Color(0xFF4A3510) : const Color(0xFFFFEFD1),
-    onTertiaryContainer: dark ? const Color(0xFFFFE0A8) : const Color(0xFF5C3300),
-    error: dark ? const Color(0xFFFF453A) : const Color(0xFFD70015),
+    tertiaryContainer: dark ? const Color(0xFF4A3823) : const Color(0xFFFFF3DF),
+    onTertiaryContainer: dark
+        ? const Color(0xFFF0C27F)
+        : const Color(0xFFA96D1F),
+    error: dark ? const Color(0xFFF29B9B) : const Color(0xFFB04C4B),
     onError: Colors.white,
-    errorContainer: dark ? const Color(0xFF4A1512) : const Color(0xFFFFE5E7),
-    onErrorContainer: dark ? const Color(0xFFFFD2CF) : const Color(0xFF7A000C),
+    errorContainer: dark ? const Color(0xFF4B2D33) : const Color(0xFFFFF0EE),
+    onErrorContainer: dark ? const Color(0xFFF29B9B) : const Color(0xFFB04C4B),
     surface: mac.content,
     onSurface: mac.text,
     onSurfaceVariant: mac.secondaryText,
@@ -40,27 +42,44 @@ ThemeData appTheme(Brightness brightness) {
     shadow: Colors.black,
   );
 
-  // 正文 13pt，辅助文字 11pt：和 macOS 的 body / small 一样。Material 默认 14–16pt 太大
+  // 工作区以 12pt 为基线，表格和辅助文字 11pt。
   final base = ThemeData(brightness: brightness).textTheme;
-  final text = base.copyWith(
-    bodyLarge: base.bodyLarge!.copyWith(fontSize: 13),
-    bodyMedium: base.bodyMedium!.copyWith(fontSize: 13),
-    bodySmall: base.bodySmall!.copyWith(fontSize: 11),
-    labelLarge: base.labelLarge!.copyWith(fontSize: 13, fontWeight: FontWeight.w500),
-    labelMedium: base.labelMedium!.copyWith(fontSize: 12),
-    labelSmall: base.labelSmall!.copyWith(fontSize: 11),
-    titleSmall: base.titleSmall!.copyWith(fontSize: 13, fontWeight: FontWeight.w600),
-    titleMedium: base.titleMedium!.copyWith(fontSize: 13, fontWeight: FontWeight.w600),
-    titleLarge: base.titleLarge!.copyWith(fontSize: 15, fontWeight: FontWeight.w600),
-    headlineSmall: base.headlineSmall!.copyWith(fontSize: 15, fontWeight: FontWeight.w600),
-  ).apply(bodyColor: scheme.onSurface, displayColor: scheme.onSurface);
+  final text = base
+      .copyWith(
+        bodyLarge: base.bodyLarge!.copyWith(fontSize: 13),
+        bodyMedium: base.bodyMedium!.copyWith(fontSize: 12),
+        bodySmall: base.bodySmall!.copyWith(fontSize: 11),
+        labelLarge: base.labelLarge!.copyWith(
+          fontSize: 11,
+          fontWeight: FontWeight.w600,
+        ),
+        labelMedium: base.labelMedium!.copyWith(fontSize: 11),
+        labelSmall: base.labelSmall!.copyWith(fontSize: 11),
+        titleSmall: base.titleSmall!.copyWith(
+          fontSize: 13,
+          fontWeight: FontWeight.w600,
+        ),
+        titleMedium: base.titleMedium!.copyWith(
+          fontSize: 13,
+          fontWeight: FontWeight.w600,
+        ),
+        titleLarge: base.titleLarge!.copyWith(
+          fontSize: 15,
+          fontWeight: FontWeight.w600,
+        ),
+        headlineSmall: base.headlineSmall!.copyWith(
+          fontSize: 15,
+          fontWeight: FontWeight.w600,
+        ),
+      )
+      .apply(bodyColor: scheme.onSurface, displayColor: scheme.onSurface);
 
-  const radius = BorderRadius.all(Radius.circular(6));
+  const radius = BorderRadius.all(Radius.circular(4));
   const buttonShape = RoundedRectangleBorder(borderRadius: radius);
-  const buttonPadding = EdgeInsets.symmetric(horizontal: 12, vertical: 4);
+  const buttonPadding = EdgeInsets.symmetric(horizontal: 10, vertical: 3);
   // 按钮固定 24px 高（macOS 普通按钮的高度）。按钮自己用标准密度：全局的 compact 会从最小高度里
   // 再减 8px，按钮就只剩 18px，边框贴着字，很难看
-  const buttonSize = Size(0, 24);
+  const buttonSize = Size(0, 26);
   const buttonDensity = VisualDensity.standard;
   final buttonText = text.labelLarge;
 
@@ -73,7 +92,11 @@ ThemeData appTheme(Brightness brightness) {
     materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
     scaffoldBackgroundColor: mac.content,
     canvasColor: mac.content,
-    dividerTheme: DividerThemeData(color: mac.separator, thickness: 1, space: 1),
+    dividerTheme: DividerThemeData(
+      color: mac.separator,
+      thickness: 1,
+      space: 1,
+    ),
     iconTheme: IconThemeData(size: 16, color: mac.secondaryText),
     // 默认按钮：白底细边框、6px 圆角，和 macOS 的 push button 一样；主按钮是实心系统蓝
     filledButtonTheme: FilledButtonThemeData(
@@ -114,15 +137,15 @@ ThemeData appTheme(Brightness brightness) {
     ),
     iconButtonTheme: IconButtonThemeData(
       style: IconButton.styleFrom(
-        minimumSize: const Size(26, 26),
+        minimumSize: const Size(25, 25),
         padding: const EdgeInsets.all(4),
-        iconSize: 16,
+        iconSize: 15,
         shape: buttonShape,
         foregroundColor: mac.secondaryText,
       ),
     ),
     segmentedButtonTheme: SegmentedButtonThemeData(
-      // macOS 的分段控件：没选中的段是正文色白底，选中的是实心蓝；和普通按钮一样矮
+      // 模式切换保留原生分段控件的浅色选中面。
       style: SegmentedButton.styleFrom(
         minimumSize: const Size(0, 24),
         padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -133,8 +156,8 @@ ThemeData appTheme(Brightness brightness) {
         side: BorderSide(color: mac.controlBorder),
         foregroundColor: mac.text,
         backgroundColor: mac.control,
-        selectedBackgroundColor: mac.accent,
-        selectedForegroundColor: Colors.white,
+        selectedBackgroundColor: dark ? const Color(0xFF455F86) : mac.content,
+        selectedForegroundColor: dark ? const Color(0xFFEDF4FF) : mac.accent,
       ),
     ),
     // 输入框：白底、细边框、5px 圆角，聚焦时一圈系统蓝，像 NSTextField
@@ -143,10 +166,22 @@ ThemeData appTheme(Brightness brightness) {
       filled: true,
       fillColor: mac.control,
       contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
-      border: OutlineInputBorder(borderRadius: const BorderRadius.all(Radius.circular(5)), borderSide: BorderSide(color: mac.controlBorder)),
-      enabledBorder: OutlineInputBorder(borderRadius: const BorderRadius.all(Radius.circular(5)), borderSide: BorderSide(color: mac.controlBorder)),
-      focusedBorder: OutlineInputBorder(borderRadius: const BorderRadius.all(Radius.circular(5)), borderSide: BorderSide(color: mac.accent, width: 2)),
-      disabledBorder: OutlineInputBorder(borderRadius: const BorderRadius.all(Radius.circular(5)), borderSide: BorderSide(color: mac.separator)),
+      border: OutlineInputBorder(
+        borderRadius: radius,
+        borderSide: BorderSide(color: mac.controlBorder),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: radius,
+        borderSide: BorderSide(color: mac.controlBorder),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: radius,
+        borderSide: BorderSide(color: mac.accent, width: 2),
+      ),
+      disabledBorder: OutlineInputBorder(
+        borderRadius: radius,
+        borderSide: BorderSide(color: mac.separator),
+      ),
       labelStyle: TextStyle(fontSize: 12, color: mac.secondaryText),
       floatingLabelBehavior: FloatingLabelBehavior.never,
       // 输入框提示要一眼和真值分开：默认提示色和正文太接近，一排空框看起来像都填了值。
@@ -155,24 +190,39 @@ ThemeData appTheme(Brightness brightness) {
       hintStyle: TextStyle(fontStyle: FontStyle.italic, color: scheme.outline),
     ),
     dialogTheme: DialogThemeData(
-      backgroundColor: mac.window,
+      backgroundColor: mac.content,
       surfaceTintColor: Colors.transparent,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.all(Radius.circular(10))),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.all(Radius.circular(8)),
+      ),
       titleTextStyle: text.titleLarge,
       contentTextStyle: text.bodyMedium,
     ),
     popupMenuTheme: PopupMenuThemeData(
-      color: mac.content,
+      color: mac.control,
       surfaceTintColor: Colors.transparent,
-      textStyle: text.bodyMedium,
-      shape: const RoundedRectangleBorder(borderRadius: radius),
+      textStyle: text.bodyMedium!.copyWith(fontSize: 12),
+      menuPadding: const EdgeInsets.symmetric(vertical: 6),
+      elevation: 8,
+      shadowColor: dark ? const Color(0x8000050C) : const Color(0x26263343),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(7),
+        side: BorderSide(color: mac.controlBorder),
+      ),
     ),
     menuTheme: const MenuThemeData(
-      style: MenuStyle(shape: WidgetStatePropertyAll(RoundedRectangleBorder(borderRadius: radius))),
+      style: MenuStyle(
+        shape: WidgetStatePropertyAll(
+          RoundedRectangleBorder(borderRadius: radius),
+        ),
+      ),
     ),
     tooltipTheme: TooltipThemeData(
       textStyle: const TextStyle(fontSize: 11, color: Colors.white),
-      decoration: BoxDecoration(color: const Color(0xE6333336), borderRadius: BorderRadius.circular(4)),
+      decoration: BoxDecoration(
+        color: const Color(0xE6333336),
+        borderRadius: BorderRadius.circular(4),
+      ),
       waitDuration: const Duration(milliseconds: 500),
     ),
     tabBarTheme: TabBarThemeData(
@@ -185,7 +235,9 @@ ThemeData appTheme(Brightness brightness) {
     ),
     checkboxTheme: CheckboxThemeData(
       visualDensity: VisualDensity.compact,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.all(Radius.circular(3))),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.all(Radius.circular(3)),
+      ),
       side: BorderSide(color: mac.controlBorder),
     ),
     scrollbarTheme: ScrollbarThemeData(
@@ -193,8 +245,15 @@ ThemeData appTheme(Brightness brightness) {
       radius: const Radius.circular(4),
       thumbColor: WidgetStatePropertyAll(mac.text.withValues(alpha: 0.28)),
     ),
-    listTileTheme: ListTileThemeData(dense: true, titleTextStyle: text.bodyMedium, subtitleTextStyle: text.bodySmall),
-    snackBarTheme: SnackBarThemeData(behavior: SnackBarBehavior.floating, contentTextStyle: text.bodyMedium!.copyWith(color: Colors.white)),
+    listTileTheme: ListTileThemeData(
+      dense: true,
+      titleTextStyle: text.bodyMedium,
+      subtitleTextStyle: text.bodySmall,
+    ),
+    snackBarTheme: SnackBarThemeData(
+      behavior: SnackBarBehavior.floating,
+      contentTextStyle: text.bodyMedium!.copyWith(color: Colors.white),
+    ),
   );
 }
 
@@ -230,7 +289,7 @@ class MacColors extends ThemeExtension<MacColors> {
   final Color secondaryText;
   final Color tertiaryText;
 
-  /// 侧栏里表、库的图标颜色（Querious 用的蓝色表格图标）
+  /// 侧栏里表、库的低对比图标色。
   final Color tableIcon;
   final Color databaseIcon;
 
@@ -252,37 +311,37 @@ class MacColors extends ThemeExtension<MacColors> {
   });
 
   static const light = MacColors(
-    window: Color(0xFFECECEC),
-    toolbar: Color(0xFFE3E3E3),
-    sidebar: Color(0xFFE8E8E8),
+    window: Color(0xFFF7F8FA),
+    toolbar: Color(0xFFEBEEF2),
+    sidebar: Color(0xFFE9EAEC),
     content: Color(0xFFFFFFFF),
-    zebra: Color(0xFFF4F5F5),
-    separator: Color(0xFFD9D9DC),
-    accent: Color(0xFF0A64D6),
+    zebra: Color(0xFFF9FAFB),
+    separator: Color(0xFFD5DBE3),
+    accent: Color(0xFF4672C4),
     control: Color(0xFFFFFFFF),
-    controlBorder: Color(0xFFC4C4C8),
-    text: Color(0xFF1D1D1F),
-    secondaryText: Color(0xFF5E5E63),
-    tertiaryText: Color(0xFF8E8E93),
-    tableIcon: Color(0xFF2F7CF6),
-    databaseIcon: Color(0xFF3A8DFF),
+    controlBorder: Color(0xFFCBD3DE),
+    text: Color(0xFF17243B),
+    secondaryText: Color(0xFF5A6B80),
+    tertiaryText: Color(0xFF91A2B8),
+    tableIcon: Color(0xFF91A2B8),
+    databaseIcon: Color(0xFF73869D),
   );
 
   static const dark = MacColors(
-    window: Color(0xFF2A2A2C),
-    toolbar: Color(0xFF323235),
-    sidebar: Color(0xFF28282A),
-    content: Color(0xFF1E1E20),
-    zebra: Color(0xFF252528),
-    separator: Color(0xFF3C3C40),
-    accent: Color(0xFF2F7CF6),
-    control: Color(0xFF2C2C2F),
-    controlBorder: Color(0xFF4A4A4E),
-    text: Color(0xFFECECEE),
-    secondaryText: Color(0xFFA6A6AB),
-    tertiaryText: Color(0xFF7E7E83),
-    tableIcon: Color(0xFF5B9BFF),
-    databaseIcon: Color(0xFF6AA8FF),
+    window: Color(0xFF222B35),
+    toolbar: Color(0xFF29323D),
+    sidebar: Color(0xFF252E39),
+    content: Color(0xFF1B232D),
+    zebra: Color(0xFF202A35),
+    separator: Color(0xFF354150),
+    accent: Color(0xFF638FF0),
+    control: Color(0xFF263442),
+    controlBorder: Color(0xFF46576B),
+    text: Color(0xFFE4EBF4),
+    secondaryText: Color(0xFF9BABBf),
+    tertiaryText: Color(0xFF7F91A6),
+    tableIcon: Color(0xFF8FA5BA),
+    databaseIcon: Color(0xFFA8BDD3),
   );
 
   /// 主题里没挂这组颜色（widget 测试里直接用 MaterialApp 默认主题）时，按亮度给默认的 Mac 配色，

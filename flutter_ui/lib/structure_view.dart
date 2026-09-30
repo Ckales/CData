@@ -5,6 +5,7 @@ import 'data_source.dart';
 import 'mac_widgets.dart';
 import 'src/rust/api/schema.dart';
 import 'structure_editor.dart';
+import 'theme.dart';
 
 /// 表结构对话框：Dialog 里包一个 StructurePanel，外加标题和关闭按钮
 Future<void> showTableStructure(
@@ -48,7 +49,7 @@ Future<void> showTableStructure(
   );
 }
 
-/// 表结构面板：列 / 索引 / 外键 / CHECK / 建表语句五页，右上角「编辑」。
+/// 表结构面板：默认编辑，可切到只读结构查看建表语句。
 /// 没有外框和关闭按钮，可以直接嵌进页面；database / table 变了会重读
 class StructurePanel extends StatefulWidget {
   final SchemaSource source;
@@ -74,6 +75,7 @@ class _StructurePanelState extends State<StructurePanel> {
   TableStructure? _structure;
   String? _error;
   bool _copied = false;
+  bool _editing = true;
 
   @override
   void initState() {
@@ -94,6 +96,7 @@ class _StructurePanelState extends State<StructurePanel> {
       _structure = null;
       _error = null;
       _copied = false;
+      _editing = true;
     });
     _load();
   }
@@ -115,17 +118,7 @@ class _StructurePanelState extends State<StructurePanel> {
   }
 
   /// 改完重读，页面上显示的永远是库里现在的结构
-  Future<void> _edit() async {
-    final structure = _structure;
-    if (structure == null) return;
-    final applied = await showStructureEditor(
-      context,
-      source: widget.source,
-      database: widget.database,
-      table: widget.table,
-      structure: structure,
-    );
-    if (!applied) return;
+  Future<void> _afterApplied() async {
     widget.onAltered?.call();
     if (!mounted) return;
     setState(() {
@@ -138,6 +131,28 @@ class _StructurePanelState extends State<StructurePanel> {
   @override
   Widget build(BuildContext context) {
     final structure = _structure;
+    return IndexedStack(
+      index: structure != null && _editing ? 0 : 1,
+      children: [
+        if (structure != null)
+          StructureEditorPanel(
+            source: widget.source,
+            database: widget.database,
+            table: widget.table,
+            structure: structure,
+            onApplied: _afterApplied,
+            onCancel: () => setState(() => _editing = false),
+          )
+        else
+          const SizedBox.shrink(),
+        _readOnly(structure),
+      ],
+    );
+  }
+
+  Widget _readOnly(TableStructure? structure) {
+    final mac = MacColors.of(context);
+    final scheme = Theme.of(context).colorScheme;
     // 分页控制器放在最外层：换表时停在同一页，像 Querious 一样
     return DefaultTabController(
       length: 5,
@@ -148,14 +163,29 @@ class _StructurePanelState extends State<StructurePanel> {
             children: [
               if (structure != null)
                 Expanded(
-                  child: MacTabBar(
-                    labels: [
-                      '列 ${structure.columns.length}',
-                      '索引 ${structure.indexes.length}',
-                      '外键 ${structure.foreignKeys.length}',
+                  child: TabBar(
+                    isScrollable: true,
+                    tabAlignment: TabAlignment.start,
+                    dividerHeight: 0,
+                    padding: EdgeInsets.zero,
+                    labelPadding: const EdgeInsets.symmetric(horizontal: 8),
+                    indicatorSize: TabBarIndicatorSize.tab,
+                    indicator: BoxDecoration(
+                      border: Border(bottom: BorderSide(color: mac.accent, width: 2)),
+                    ),
+                    overlayColor: const WidgetStatePropertyAll(Colors.transparent),
+                    splashFactory: NoSplash.splashFactory,
+                    labelStyle: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
+                    unselectedLabelStyle: const TextStyle(fontSize: 11),
+                    labelColor: mac.accent,
+                    unselectedLabelColor: scheme.onSurfaceVariant,
+                    tabs: [
+                      Tab(height: 31, text: '列 ${structure.columns.length}'),
+                      Tab(height: 31, text: '索引 ${structure.indexes.length}'),
+                      Tab(height: 31, text: '外键 ${structure.foreignKeys.length}'),
                       // null 是服务器读不了，不是没有，标签上不写 0
-                      structure.checks == null ? 'CHECK' : 'CHECK ${structure.checks!.length}',
-                      '建表语句',
+                      Tab(height: 31, text: structure.checks == null ? 'CHECK' : 'CHECK ${structure.checks!.length}'),
+                      const Tab(height: 31, text: '建表语句'),
                     ],
                   ),
                 )
@@ -163,7 +193,7 @@ class _StructurePanelState extends State<StructurePanel> {
                 const Spacer(),
               if (structure != null)
                 OutlinedButton.icon(
-                  onPressed: _edit,
+                  onPressed: () => setState(() => _editing = true),
                   icon: const Icon(Icons.edit_outlined, size: 14),
                   label: const Text('编辑'),
                 ),
@@ -383,7 +413,7 @@ class _Grid extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Container(
-                  height: 22,
+                  height: 29,
                   decoration: BoxDecoration(
                     color: scheme.surfaceContainerHighest,
                     border: Border(bottom: BorderSide(color: scheme.outlineVariant)),
@@ -394,17 +424,20 @@ class _Grid extends StatelessWidget {
                         header,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: TextStyle(fontSize: 11, fontWeight: FontWeight.w500, color: scheme.onSurfaceVariant),
+                        style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: scheme.onSurfaceVariant),
                       ),
                   ], divider: scheme.outlineVariant),
                 ),
                 Expanded(
                   child: ListView.builder(
                     itemCount: rows.length,
-                    itemExtent: 22,
+                    itemExtent: 29,
                     itemBuilder: (context, index) => ColoredBox(
                       color: index.isOdd ? scheme.surfaceContainerLow : scheme.surface,
-                      child: _cells(rows[index]),
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(border: Border(bottom: BorderSide(color: scheme.outlineVariant))),
+                        child: _cells(rows[index]),
+                      ),
                     ),
                   ),
                 ),
@@ -422,7 +455,7 @@ class _Grid extends StatelessWidget {
         for (var i = 0; i < cells.length; i++)
           Container(
             width: widths[i],
-            padding: const EdgeInsets.symmetric(horizontal: 6),
+            padding: const EdgeInsets.symmetric(horizontal: 10),
             alignment: Alignment.centerLeft,
             decoration: divider == null ? null : BoxDecoration(border: Border(right: BorderSide(color: divider))),
             child: cells[i],

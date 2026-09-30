@@ -148,12 +148,12 @@ void main() {
 
     expect(find.text('用户1'), findsOneWidget);
 
-    // 一行 20px，拖 8000px 约 400 行
+    // 一行 29px，拖 8000px 后应离开初始窗口并取下一段。
     await tester.drag(find.byType(ListView), const Offset(0, -8000));
     await tester.pumpAndSettle();
 
     expect(find.text('用户1'), findsNothing);
-    expect(find.textContaining('用户4'), findsWidgets);
+    expect(find.textContaining('用户2'), findsWidgets);
   });
 
   testWidgets('停在窗口边界后不会在前后两段之间反复加载', (tester) async {
@@ -161,7 +161,7 @@ void main() {
     await pumpGrid(tester, source);
 
     final scrollable = find.descendant(of: find.byType(ListView), matching: find.byType(Scrollable));
-    tester.state<ScrollableState>(scrollable).position.jumpTo(180 * 20);
+    tester.state<ScrollableState>(scrollable).position.jumpTo(180 * 29);
     for (var i = 0; i < 12; i++) {
       await tester.pump(const Duration(milliseconds: 16));
     }

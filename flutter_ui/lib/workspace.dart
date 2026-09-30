@@ -49,11 +49,15 @@ class Workspace {
   /// 补全目录现在装的是哪个库。一个会话只缓存一个库的目录，切到别的库的标签时要重读
   String? catalogDatabase;
 
-  Workspace({required this.id, required this.name, required this.config, required this.schemaId})
-    : schema = RustSchemaSource(schemaId),
-      server = RustServerSource(schemaId),
-      users = RustUserSource(schemaId),
-      imports = RustImportSource(schemaId);
+  Workspace({
+    required this.id,
+    required this.name,
+    required this.config,
+    required this.schemaId,
+  }) : schema = RustSchemaSource(schemaId),
+       server = RustServerSource(schemaId),
+       users = RustUserSource(schemaId),
+       imports = RustImportSource(schemaId);
 
   WorkspaceTab get activeTab => tabs[active];
 
@@ -94,7 +98,12 @@ class WorkspaceTab {
   late final RustQueryRunner contentRunner;
   late final RustQueryRunner queryRunner;
 
-  WorkspaceTab({required this.id, required this.mode, required this.database, this.table}) : visited = {mode};
+  WorkspaceTab({
+    required this.id,
+    required this.mode,
+    required this.database,
+    this.table,
+  }) : visited = {mode};
 
   String get title {
     final table = this.table;
@@ -174,8 +183,17 @@ class WorkspaceViewState extends State<WorkspaceView> {
     super.dispose();
   }
 
-  void _addTab({required String database, String? table, WorkspaceMode mode = WorkspaceMode.content}) {
-    final tab = WorkspaceTab(id: _ws.takeTabNumber(), mode: mode, database: database, table: table);
+  void _addTab({
+    required String database,
+    String? table,
+    WorkspaceMode mode = WorkspaceMode.content,
+  }) {
+    final tab = WorkspaceTab(
+      id: _ws.takeTabNumber(),
+      mode: mode,
+      database: database,
+      table: table,
+    );
     tab.contentRunner = RustQueryRunner(
       readConfig: () => _ws.configFor(tab.database),
       maxRows: widget.maxRows,
@@ -195,7 +213,13 @@ class WorkspaceViewState extends State<WorkspaceView> {
   /// 新标签沿用当前标签的库、表和模式。菜单栏的「新建已连接标签」也调这个
   void duplicateTab() {
     final current = _tab;
-    setState(() => _addTab(database: current.database, table: current.table, mode: current.mode));
+    setState(
+      () => _addTab(
+        database: current.database,
+        table: current.table,
+        mode: current.mode,
+      ),
+    );
   }
 
   /// 关这条连接的最后一个标签就是断开它；整个窗口只剩这一个标签时不给关
@@ -265,7 +289,9 @@ class WorkspaceViewState extends State<WorkspaceView> {
     final tab = _tab;
     setState(() {
       tab.table = table;
-      if (tab.mode == WorkspaceMode.server || tab.mode == WorkspaceMode.query) tab.mode = WorkspaceMode.content;
+      if (tab.mode == WorkspaceMode.server || tab.mode == WorkspaceMode.query) {
+        tab.mode = WorkspaceMode.content;
+      }
       tab.visited.add(tab.mode);
     });
     _loadTable(tab);
@@ -323,7 +349,9 @@ class WorkspaceViewState extends State<WorkspaceView> {
 
   void _retitle(WorkspaceTab tab, String sql) {
     final firstLine = sql.trim().split('\n').first;
-    final title = firstLine.length > 24 ? '${firstLine.substring(0, 24)}…' : firstLine;
+    final title = firstLine.length > 24
+        ? '${firstLine.substring(0, 24)}…'
+        : firstLine;
     setState(() => tab.queryTitle = title.isEmpty ? null : title);
   }
 
@@ -336,7 +364,11 @@ class WorkspaceViewState extends State<WorkspaceView> {
   }
 
   Future<String?> _createTable(String database) async {
-    final created = await showTableCreator(context, source: _ws.schema, database: database);
+    final created = await showTableCreator(
+      context,
+      source: _ws.schema,
+      database: database,
+    );
     if (created == null) return null;
     // ponytail: 建表、改表之后整库重读一遍目录，几万列的大库再改成增量
     await _ensureCatalog(_tab, force: true);
@@ -378,13 +410,27 @@ class WorkspaceViewState extends State<WorkspaceView> {
     ];
     final choice = await showMenu<Object>(
       context: context,
-      position: RelativeRect.fromLTRB(position.dx, position.dy, position.dx, position.dy),
+      position: RelativeRect.fromLTRB(
+        position.dx,
+        position.dy,
+        position.dx,
+        position.dy,
+      ),
+      constraints: const BoxConstraints(minWidth: 250, maxWidth: 300),
       items: [
         for (final other in others)
-          PopupMenuItem(value: other, height: 26, child: Text('切换到 ${other.name}')),
+          desktopMenuItem(
+            value: other,
+            label: '切换到 ${other.name}',
+            icon: Icons.swap_horiz,
+          ),
         if (others.isNotEmpty) const PopupMenuDivider(height: 8),
-        const PopupMenuItem(value: 'new', height: 26, child: Text('新建连接…')),
-        PopupMenuItem(value: 'disconnect', height: 26, child: Text('断开 ${_ws.name}')),
+        desktopMenuItem(value: 'new', label: '新建连接…', icon: Icons.add),
+        desktopMenuItem(
+          value: 'disconnect',
+          label: '断开 ${_ws.name}',
+          icon: Icons.link_off_outlined,
+        ),
       ],
     );
     if (!mounted || choice == null) return;
@@ -410,13 +456,24 @@ class WorkspaceViewState extends State<WorkspaceView> {
     return {
       // 和 Querious 一样：⌘T 开新连接，⇧⌘T 在当前连接上开新标签
       commandKey(LogicalKeyboardKey.keyT): widget.onNewConnection,
-      SingleActivator(LogicalKeyboardKey.keyT, meta: _isMac, control: !_isMac, shift: true): duplicateTab,
+      SingleActivator(
+        LogicalKeyboardKey.keyT,
+        meta: _isMac,
+        control: !_isMac,
+        shift: true,
+      ): duplicateTab,
       commandKey(LogicalKeyboardKey.keyW): () => closeTab(_ws.active),
       commandKey(LogicalKeyboardKey.comma): widget.onPreferences,
-      const SingleActivator(LogicalKeyboardKey.tab, control: true): () => _selectAt((current + 1) % count),
-      const SingleActivator(LogicalKeyboardKey.tab, control: true, shift: true): () =>
+      const SingleActivator(LogicalKeyboardKey.tab, control: true): () =>
+          _selectAt((current + 1) % count),
+      const SingleActivator(
+        LogicalKeyboardKey.tab,
+        control: true,
+        shift: true,
+      ): () =>
           _selectAt((current - 1 + count) % count),
-      for (var i = 0; i < digits.length; i++) commandKey(digits[i]): () => _selectAt(i),
+      for (var i = 0; i < digits.length; i++)
+        commandKey(digits[i]): () => _selectAt(i),
       // 和浏览器一样，9 是最后一个
       commandKey(LogicalKeyboardKey.digit9): () => _selectAt(count - 1),
     };
@@ -437,7 +494,11 @@ class WorkspaceViewState extends State<WorkspaceView> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               _buildToolbar(mac, tab),
-              if (_error != null) _WorkspaceError(message: _error!, onClose: () => setState(() => _error = null)),
+              if (_error != null)
+                _WorkspaceError(
+                  message: _error!,
+                  onClose: () => setState(() => _error = null),
+                ),
               Expanded(
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -450,12 +511,19 @@ class WorkspaceViewState extends State<WorkspaceView> {
                       onTableSelected: _openTable,
                       onShowStructure: _showStructureOf,
                       onCreateTable: _createTable,
-                      onOpenInNewTab: (table) => setState(() => _addTab(database: tab.database, table: table)),
+                      onOpenInNewTab: (table) => setState(
+                        () => _addTab(database: tab.database, table: table),
+                      ),
                       onTableAction: _afterTableAction,
                       onImport: (table) async {
-                        final file = await openFile(acceptedTypeGroups: const [
-                          XTypeGroup(label: 'CSV / SQL', extensions: ['csv', 'tsv', 'txt', 'sql']),
-                        ]);
+                        final file = await openFile(
+                          acceptedTypeGroups: const [
+                            XTypeGroup(
+                              label: 'CSV / SQL',
+                              extensions: ['csv', 'tsv', 'txt', 'sql'],
+                            ),
+                          ],
+                        );
                         if (file == null || !mounted) return false;
 
                         final path = file.path;
@@ -468,8 +536,12 @@ class WorkspaceViewState extends State<WorkspaceView> {
                             database: tab.database,
                             initialPath: path,
                           );
-                          if (changed && mounted) await _ensureCatalog(tab, force: true);
-                        } else if (extension == 'csv' || extension == 'tsv' || extension == 'txt') {
+                          if (changed && mounted) {
+                            await _ensureCatalog(tab, force: true);
+                          }
+                        } else if (extension == 'csv' ||
+                            extension == 'tsv' ||
+                            extension == 'txt') {
                           if (table == null || tab.database.isEmpty) {
                             setState(() => _error = '导入 CSV 请先在左侧右键选择目标表');
                             return false;
@@ -486,7 +558,11 @@ class WorkspaceViewState extends State<WorkspaceView> {
                           setState(() => _error = '只支持 CSV、TSV、TXT 或 SQL 文件');
                           return false;
                         }
-                        if (changed && mounted && tab.mode == WorkspaceMode.content) _loadTable(tab);
+                        if (changed &&
+                            mounted &&
+                            tab.mode == WorkspaceMode.content) {
+                          _loadTable(tab);
+                        }
                         return changed;
                       },
                     ),
@@ -498,22 +574,29 @@ class WorkspaceViewState extends State<WorkspaceView> {
                             tabs: [
                               for (final (workspace, index) in _allTabs)
                                 MacTab(
-                                  key: ValueKey('tab-${workspace.tabs[index].id}'),
+                                  key: ValueKey(
+                                    'tab-${workspace.tabs[index].id}',
+                                  ),
                                   title: workspace.tabs[index].title,
-                                  tooltip: '${workspace.name} · ${workspace.tabs[index].title}',
+                                  tooltip:
+                                      '${workspace.name} · ${workspace.tabs[index].title}',
                                 ),
                             ],
                             active: _allTabs.indexOf((_ws, _ws.active)),
                             onSelect: _selectAt,
                             onClose: _closeAt,
                             onAdd: duplicateTab,
-                            addTooltip: '新标签（${_isMac ? '⇧⌘T' : 'Ctrl+Shift+T'}）',
+                            addTooltip:
+                                '新标签（${_isMac ? '⇧⌘T' : 'Ctrl+Shift+T'}）',
                           ),
                           Expanded(
                             // 不在前台的标签也留着，切回来结果、编辑器内容、滚动位置都还在
                             child: IndexedStack(
                               index: _ws.active,
-                              children: [for (final item in _ws.tabs) _buildTabBody(item)],
+                              children: [
+                                for (final item in _ws.tabs)
+                                  _buildTabBody(item),
+                              ],
                             ),
                           ),
                         ],
@@ -530,69 +613,166 @@ class WorkspaceViewState extends State<WorkspaceView> {
   }
 
   Widget _buildToolbar(MacColors mac, WorkspaceTab tab) {
-    return MacToolbar(
+    return Column(
       children: [
-        ToolbarButton(
-          key: const ValueKey('mode-content'),
-          icon: Icons.grid_on,
-          tooltip: '内容',
-          selected: tab.mode == WorkspaceMode.content,
-          onPressed: () => _setMode(WorkspaceMode.content),
-        ),
-        ToolbarButton(
-          key: const ValueKey('mode-structure'),
-          icon: Icons.construction_outlined,
-          tooltip: '结构',
-          selected: tab.mode == WorkspaceMode.structure,
-          onPressed: () => _setMode(WorkspaceMode.structure),
-        ),
-        ToolbarButton(
-          key: const ValueKey('mode-query'),
-          icon: Icons.manage_search,
-          tooltip: '查询',
-          selected: tab.mode == WorkspaceMode.query,
-          onPressed: () => _setMode(WorkspaceMode.query),
-        ),
-        ToolbarButton(
-          key: const ValueKey('mode-server'),
-          icon: Icons.dns_outlined,
-          tooltip: '服务器：进程、变量、用户',
-          selected: tab.mode == WorkspaceMode.server,
-          onPressed: () => _setMode(WorkspaceMode.server),
-        ),
-        const ToolbarDivider(),
-        // 标题：连接名 + 用户@主机。点一下切换别的连接、新建、断开
-        Builder(
-          builder: (context) => InkWell(
-            key: const ValueKey('connection-title'),
-            borderRadius: BorderRadius.circular(6),
-            // 菜单要从点击的位置弹出：按下时记位置，点完再开（只挂 onTapUp 时 InkWell 不响应点击）
-            onTapDown: (details) => _titleTapPosition = details.globalPosition,
-            onTap: () => _showConnectionMenu(_titleTapPosition),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-              child: Row(
-                children: [
-                  Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(_ws.name, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: mac.text)),
-                      Text(_ws.subtitle, style: TextStyle(fontSize: 11, color: mac.secondaryText)),
-                    ],
-                  ),
-                  const SizedBox(width: 4),
-                  Icon(Icons.expand_more, size: 14, color: mac.secondaryText),
-                ],
+        MacToolbar(
+          children: [
+            Container(
+              width: 19,
+              height: 19,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: mac.accent,
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: const Text(
+                'C',
+                style: TextStyle(
+                  fontSize: 13,
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
             ),
-          ),
+            const SizedBox(width: 7),
+            Text(
+              'CData',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                color: mac.text,
+              ),
+            ),
+            const SizedBox(width: 16),
+            Container(width: 1, height: 17, color: mac.separator),
+            const SizedBox(width: 16),
+            Text(
+              'MySQL',
+              style: TextStyle(fontSize: 11, color: mac.secondaryText),
+            ),
+            const Spacer(),
+            ToolbarButton(
+              icon: Icons.settings_outlined,
+              tooltip: '偏好设置（${commandLabel(',')}）',
+              onPressed: widget.onPreferences,
+            ),
+          ],
         ),
-        const Spacer(),
-        ToolbarButton(
-          icon: Icons.settings_outlined,
-          tooltip: '偏好设置（${commandLabel(',')}）',
-          onPressed: widget.onPreferences,
+        Container(
+          height: 43,
+          padding: const EdgeInsets.symmetric(horizontal: 14),
+          decoration: BoxDecoration(
+            color: mac.window,
+            border: Border(bottom: BorderSide(color: mac.separator)),
+          ),
+          child: Row(
+            children: [
+              // 连接名仍是切换/断开菜单的入口，库和表是当前标签的路径。
+              Expanded(
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Builder(
+                    builder: (context) => InkWell(
+                      key: const ValueKey('connection-title'),
+                      borderRadius: BorderRadius.circular(4),
+                      onTapDown: (details) =>
+                          _titleTapPosition = details.globalPosition,
+                      onTap: () => _showConnectionMenu(_titleTapPosition),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 5,
+                          vertical: 4,
+                        ),
+                        child: Row(
+                          children: [
+                            Text(
+                              _ws.name,
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: mac.secondaryText,
+                              ),
+                            ),
+                            Icon(
+                              Icons.chevron_right,
+                              size: 15,
+                              color: mac.tertiaryText,
+                            ),
+                            if (tab.database.isNotEmpty) ...[
+                              Text(
+                                tab.database,
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: mac.secondaryText,
+                                ),
+                              ),
+                              Icon(
+                                Icons.chevron_right,
+                                size: 15,
+                                color: mac.tertiaryText,
+                              ),
+                            ],
+                            Text(
+                              tab.table ?? tab.title,
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                                color: mac.text,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.all(1),
+                decoration: BoxDecoration(
+                  color: mac.sidebar,
+                  border: Border.all(color: mac.separator),
+                  borderRadius: BorderRadius.circular(5),
+                ),
+                child: Row(
+                  children: [
+                    ToolbarButton(
+                      key: const ValueKey('mode-content'),
+                      icon: Icons.grid_on,
+                      label: '内容',
+                      tooltip: '内容',
+                      selected: tab.mode == WorkspaceMode.content,
+                      onPressed: () => _setMode(WorkspaceMode.content),
+                    ),
+                    ToolbarButton(
+                      key: const ValueKey('mode-structure'),
+                      icon: Icons.view_list_outlined,
+                      label: '结构',
+                      tooltip: '结构',
+                      selected: tab.mode == WorkspaceMode.structure,
+                      onPressed: () => _setMode(WorkspaceMode.structure),
+                    ),
+                    ToolbarButton(
+                      key: const ValueKey('mode-query'),
+                      icon: Icons.code,
+                      label: '查询',
+                      tooltip: '查询',
+                      selected: tab.mode == WorkspaceMode.query,
+                      onPressed: () => _setMode(WorkspaceMode.query),
+                    ),
+                    ToolbarButton(
+                      key: const ValueKey('mode-server'),
+                      icon: Icons.dns_outlined,
+                      label: '服务器',
+                      tooltip: '服务器：进程、变量、用户',
+                      selected: tab.mode == WorkspaceMode.server,
+                      onPressed: () => _setMode(WorkspaceMode.server),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
       ],
     );
@@ -608,42 +788,72 @@ class WorkspaceViewState extends State<WorkspaceView> {
         if (tab.visited.contains(WorkspaceMode.content))
           table == null
               ? const _Hint(text: '在左侧选一张表')
-              : QueryTab(
-                  key: tab.contentKey,
-                  runner: tab.contentRunner,
-                  library: _library,
-                  tokenize: (sql) => tokenizeSql(sql: sql),
-                  onRan: (_) {},
-                  onConnected: () {},
-                  showEditor: false,
-                  editorFontSize: widget.editorFontSize,
+              : Column(
+                  children: [
+                    _SectionHeader(
+                      title: table,
+                      subtitle: '表数据 · ${tab.database}',
+                    ),
+                    Expanded(
+                      child: QueryTab(
+                        key: tab.contentKey,
+                        runner: tab.contentRunner,
+                        library: _library,
+                        tokenize: (sql) => tokenizeSql(sql: sql),
+                        onRan: (_) {},
+                        onConnected: () {},
+                        showEditor: false,
+                        editorFontSize: widget.editorFontSize,
+                      ),
+                    ),
+                  ],
                 )
         else
           const SizedBox.shrink(),
         if (tab.visited.contains(WorkspaceMode.structure))
           table == null
               ? const _Hint(text: '在左侧选一张表看结构')
-              : StructurePanel(
-                  source: _ws.schema,
-                  database: tab.database,
-                  table: table,
-                  // 改表不增删表，侧栏清单不用刷；列变了，补全目录要重读
-                  onAltered: () => _ensureCatalog(tab, force: true),
+              : Column(
+                  children: [
+                    _SectionHeader(
+                      title: table,
+                      subtitle: '表结构 · ${tab.database}',
+                    ),
+                    Expanded(
+                      child: StructurePanel(
+                        source: _ws.schema,
+                        database: tab.database,
+                        table: table,
+                        // 改表不增删表，侧栏清单不用刷；列变了，补全目录要重读
+                        onAltered: () => _ensureCatalog(tab, force: true),
+                      ),
+                    ),
+                  ],
                 )
         else
           const SizedBox.shrink(),
         if (tab.visited.contains(WorkspaceMode.query))
-          QueryTab(
-            key: tab.queryKey,
-            runner: tab.queryRunner,
-            library: _library,
-            tokenize: (sql) => tokenizeSql(sql: sql),
-            onRan: (sql) => _retitle(tab, sql),
-            complete: (sql, cursor) => _complete(tab, sql, cursor),
-            // ponytail: 每次查询成功都整库重读一遍目录（一条 information_schema 查询），
-            // 这样建表、改表之后补全立刻跟上；几万列的大库再改成按需或增量
-            onConnected: () => _ensureCatalog(tab, force: true),
-            editorFontSize: widget.editorFontSize,
+          Column(
+            children: [
+              _SectionHeader(
+                title: tab.title,
+                subtitle: '${tab.database} · 独立会话',
+              ),
+              Expanded(
+                child: QueryTab(
+                  key: tab.queryKey,
+                  runner: tab.queryRunner,
+                  library: _library,
+                  tokenize: (sql) => tokenizeSql(sql: sql),
+                  onRan: (sql) => _retitle(tab, sql),
+                  complete: (sql, cursor) => _complete(tab, sql, cursor),
+                  // ponytail: 每次查询成功都整库重读一遍目录（一条 information_schema 查询），
+                  // 这样建表、改表之后补全立刻跟上；几万列的大库再改成按需或增量
+                  onConnected: () => _ensureCatalog(tab, force: true),
+                  editorFontSize: widget.editorFontSize,
+                ),
+              ),
+            ],
           )
         else
           const SizedBox.shrink(),
@@ -652,6 +862,47 @@ class WorkspaceViewState extends State<WorkspaceView> {
         else
           const SizedBox.shrink(),
       ],
+    );
+  }
+}
+
+class _SectionHeader extends StatelessWidget {
+  final String title;
+  final String subtitle;
+
+  const _SectionHeader({required this.title, required this.subtitle});
+
+  @override
+  Widget build(BuildContext context) {
+    final mac = MacColors.of(context);
+    return Container(
+      height: 52,
+      padding: const EdgeInsets.symmetric(horizontal: 17),
+      decoration: BoxDecoration(
+        color: mac.content,
+        border: Border(bottom: BorderSide(color: mac.separator)),
+      ),
+      child: Row(
+        children: [
+          Flexible(
+            child: Text(
+              title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w700,
+                color: mac.text,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            subtitle,
+            style: TextStyle(fontSize: 10, color: mac.secondaryText),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -676,10 +927,18 @@ class _ServerPageState extends State<_ServerPage> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        _SectionHeader(
+          title: _page == 0 ? '服务器状态' : '用户与权限',
+          subtitle: ws.name,
+        ),
         Container(
-          padding: const EdgeInsets.symmetric(vertical: 8),
-          decoration: BoxDecoration(color: mac.window, border: Border(bottom: BorderSide(color: mac.separator))),
-          alignment: Alignment.center,
+          height: 34,
+          padding: const EdgeInsets.symmetric(horizontal: 17),
+          decoration: BoxDecoration(
+            color: mac.content,
+            border: Border(bottom: BorderSide(color: mac.separator)),
+          ),
+          alignment: Alignment.centerLeft,
           child: SegmentedButton<int>(
             showSelectedIcon: false,
             segments: const [
@@ -687,14 +946,18 @@ class _ServerPageState extends State<_ServerPage> {
               ButtonSegment(value: 1, label: Text('用户与权限')),
             ],
             selected: {_page},
-            onSelectionChanged: (selected) => setState(() => _page = selected.first),
+            onSelectionChanged: (selected) =>
+                setState(() => _page = selected.first),
           ),
         ),
         Expanded(
           child: IndexedStack(
             index: _page,
             children: [
-              ServerStatusPanel(source: ws.server, serverLabel: '${ws.config.host}:${ws.config.port}'),
+              ServerStatusPanel(
+                source: ws.server,
+                serverLabel: '${ws.config.host}:${ws.config.port}',
+              ),
               UserAdminPanel(source: ws.users),
             ],
           ),
@@ -711,7 +974,15 @@ class _Hint extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Center(child: Text(text, style: TextStyle(fontSize: 13, color: MacColors.of(context).tertiaryText)));
+    return Center(
+      child: Text(
+        text,
+        style: TextStyle(
+          fontSize: 13,
+          color: MacColors.of(context).tertiaryText,
+        ),
+      ),
+    );
   }
 }
 
@@ -729,8 +1000,17 @@ class _WorkspaceError extends StatelessWidget {
       padding: const EdgeInsets.only(left: 12),
       child: Row(
         children: [
-          Expanded(child: SelectableText(message, style: TextStyle(fontSize: 12, color: scheme.onErrorContainer))),
-          IconButton(tooltip: '关闭', onPressed: onClose, icon: Icon(Icons.close, size: 14, color: scheme.onErrorContainer)),
+          Expanded(
+            child: SelectableText(
+              message,
+              style: TextStyle(fontSize: 12, color: scheme.onErrorContainer),
+            ),
+          ),
+          IconButton(
+            tooltip: '关闭',
+            onPressed: onClose,
+            icon: Icon(Icons.close, size: 14, color: scheme.onErrorContainer),
+          ),
         ],
       ),
     );

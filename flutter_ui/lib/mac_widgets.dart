@@ -34,7 +34,7 @@ class WindowDragArea extends StatelessWidget {
   }
 }
 
-/// 窗口顶部的工具栏：和标题栏合成一条，52px 高
+/// 窗口顶部的标题栏：macOS 红绿灯与内容共用这一条。
 class MacToolbar extends StatelessWidget {
   final List<Widget> children;
 
@@ -45,7 +45,7 @@ class MacToolbar extends StatelessWidget {
     final mac = MacColors.of(context);
     return WindowDragArea(
       child: Container(
-        height: 52,
+        height: 45,
         padding: EdgeInsets.only(left: 12 + trafficLightInset, right: 12),
         decoration: BoxDecoration(
           color: mac.toolbar,
@@ -60,6 +60,7 @@ class MacToolbar extends StatelessWidget {
 /// 工具栏上的图标按钮。selected 时有一块浅色底，表示当前模式
 class ToolbarButton extends StatelessWidget {
   final IconData icon;
+  final String? label;
   final String tooltip;
   final bool selected;
   final VoidCallback? onPressed;
@@ -67,6 +68,7 @@ class ToolbarButton extends StatelessWidget {
   const ToolbarButton({
     super.key,
     required this.icon,
+    this.label,
     required this.tooltip,
     this.selected = false,
     required this.onPressed,
@@ -81,22 +83,46 @@ class ToolbarButton extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 1),
         child: Material(
-          color: selected ? mac.text.withValues(alpha: 0.12) : Colors.transparent,
-          borderRadius: BorderRadius.circular(6),
+          color: selected
+              ? Theme.of(context).colorScheme.primaryContainer
+              : Colors.transparent,
+          borderRadius: BorderRadius.circular(4),
           child: InkWell(
-            borderRadius: BorderRadius.circular(6),
+            borderRadius: BorderRadius.circular(4),
             onTap: onPressed,
-            child: SizedBox(
-              width: 36,
-              height: 28,
-              child: Icon(
-                icon,
-                size: 18,
-                color: !enabled
-                    ? mac.tertiaryText.withValues(alpha: 0.5)
-                    : selected
-                    ? mac.accent
-                    : mac.secondaryText,
+            child: Container(
+              width: label == null ? 32 : null,
+              height: 26,
+              padding: EdgeInsets.symmetric(horizontal: label == null ? 0 : 9),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    icon,
+                    size: 15,
+                    color: !enabled
+                        ? mac.tertiaryText.withValues(alpha: 0.5)
+                        : selected
+                        ? Theme.of(context).colorScheme.onPrimaryContainer
+                        : mac.secondaryText,
+                  ),
+                  if (label != null) ...[
+                    const SizedBox(width: 5),
+                    Text(
+                      label!,
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: selected
+                            ? FontWeight.w600
+                            : FontWeight.w500,
+                        color: selected
+                            ? Theme.of(context).colorScheme.onPrimaryContainer
+                            : mac.secondaryText,
+                      ),
+                    ),
+                  ],
+                ],
               ),
             ),
           ),
@@ -121,7 +147,56 @@ class ToolbarDivider extends StatelessWidget {
   }
 }
 
-/// 侧栏的一行：图标 + 名字 + 右侧小字。选中时整行系统蓝、白字
+/// 桌面弹出菜单的一行。右键菜单和连接菜单共用同一套图标、尺寸与状态色。
+PopupMenuItem<T> desktopMenuItem<T>({
+  required T value,
+  required String label,
+  required IconData icon,
+  bool enabled = true,
+  bool destructive = false,
+  bool submenu = false,
+}) {
+  return PopupMenuItem<T>(
+    value: value,
+    enabled: enabled,
+    height: 31,
+    padding: const EdgeInsets.symmetric(horizontal: 10),
+    child: Builder(
+      builder: (context) {
+        final mac = MacColors.of(context);
+        final color = !enabled
+            ? mac.tertiaryText
+            : destructive
+            ? Theme.of(context).colorScheme.error
+            : mac.text;
+        return Row(
+          children: [
+            Icon(
+              icon,
+              size: 15,
+              color: enabled
+                  ? (destructive ? color : mac.secondaryText)
+                  : mac.tertiaryText,
+            ),
+            const SizedBox(width: 9),
+            Expanded(
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontSize: 12, color: color),
+              ),
+            ),
+            if (submenu)
+              Icon(Icons.chevron_right, size: 15, color: mac.secondaryText),
+          ],
+        );
+      },
+    ),
+  );
+}
+
+/// 侧栏的一行：图标 + 名字 + 右侧小字，选中时使用低对比蓝底。
 class SidebarItem extends StatelessWidget {
   final IconData icon;
   final Color iconColor;
@@ -151,38 +226,54 @@ class SidebarItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final mac = MacColors.of(context);
-    final foreground = selected ? Colors.white : mac.text;
+    final scheme = Theme.of(context).colorScheme;
+    final foreground = selected ? scheme.onPrimaryContainer : mac.text;
     final secondaryTap = onSecondaryTap;
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 1),
+      padding: const EdgeInsets.symmetric(horizontal: 6),
       child: GestureDetector(
-        onSecondaryTapUp: secondaryTap == null ? null : (details) => secondaryTap(details.globalPosition),
+        onSecondaryTapUp: secondaryTap == null
+            ? null
+            : (details) => secondaryTap(details.globalPosition),
         child: Material(
-          color: selected ? mac.accent : Colors.transparent,
-          borderRadius: BorderRadius.circular(5),
+          color: selected ? scheme.primaryContainer : Colors.transparent,
+          borderRadius: BorderRadius.circular(4),
           child: InkWell(
-            borderRadius: BorderRadius.circular(5),
+            borderRadius: BorderRadius.circular(4),
             onTap: onTap,
             onDoubleTap: onDoubleTap,
             child: Container(
-              height: 24,
+              height: 29,
               padding: EdgeInsets.only(left: 6 + indent, right: 8),
               child: Row(
                 children: [
-                  Icon(icon, size: 16, color: selected ? Colors.white : iconColor),
+                  Icon(
+                    icon,
+                    size: 15,
+                    color: selected ? mac.accent : iconColor,
+                  ),
                   const SizedBox(width: 6),
                   Expanded(
                     child: Text(
                       label,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: TextStyle(fontSize: 13, color: foreground),
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: foreground,
+                        fontWeight: selected ? FontWeight.w600 : null,
+                      ),
                     ),
                   ),
                   if (trailing != null)
                     Text(
                       trailing!,
-                      style: TextStyle(fontSize: 11, color: selected ? Colors.white70 : mac.tertiaryText),
+                      style: TextStyle(
+                        fontSize: 10,
+                        color: selected
+                            ? scheme.onPrimaryContainer
+                            : mac.tertiaryText,
+                      ),
                     ),
                 ],
               ),
@@ -213,17 +304,20 @@ class MacSearchField extends StatelessWidget {
   Widget build(BuildContext context) {
     final mac = MacColors.of(context);
     return SizedBox(
-      height: 26,
+      height: 27,
       child: ListenableBuilder(
         listenable: controller,
         builder: (context, _) => TextField(
           controller: controller,
           onChanged: onChanged,
-          style: const TextStyle(fontSize: 13),
+          style: const TextStyle(fontSize: 12),
           decoration: InputDecoration(
             hintText: hint,
             prefixIcon: Icon(icon, size: 15, color: mac.tertiaryText),
-            prefixIconConstraints: const BoxConstraints(minWidth: 28, minHeight: 24),
+            prefixIconConstraints: const BoxConstraints(
+              minWidth: 28,
+              minHeight: 24,
+            ),
             suffixIcon: controller.text.isEmpty
                 ? null
                 : IconButton(
@@ -234,9 +328,14 @@ class MacSearchField extends StatelessWidget {
                       onChanged?.call('');
                     },
                   ),
-            suffixIconConstraints: const BoxConstraints(minWidth: 26, minHeight: 24),
+            suffixIconConstraints: const BoxConstraints(
+              minWidth: 26,
+              minHeight: 24,
+            ),
             contentPadding: const EdgeInsets.symmetric(vertical: 5),
-            fillColor: mac.text.withValues(alpha: 0.06),
+            fillColor: Theme.of(context).brightness == Brightness.dark
+                ? const Color(0xFF303A46)
+                : const Color(0xFFE1E3E6),
             enabledBorder: OutlineInputBorder(
               borderRadius: const BorderRadius.all(Radius.circular(6)),
               borderSide: BorderSide(color: mac.separator),
@@ -257,7 +356,7 @@ class MacTab {
   const MacTab({required this.key, required this.title, this.tooltip});
 }
 
-/// 等宽的标签条（Safari / Querious 那种）：灰底，当前标签浅色，关闭按钮在标签左边
+/// 工作区标签条：固定宽度，当前标签接内容区，过多时水平滚动。
 class MacTabStrip extends StatelessWidget {
   final List<MacTab> tabs;
   final int active;
@@ -280,31 +379,39 @@ class MacTabStrip extends StatelessWidget {
   Widget build(BuildContext context) {
     final mac = MacColors.of(context);
     return Container(
-      height: 26,
+      height: 32,
       decoration: BoxDecoration(
         color: mac.toolbar,
         border: Border(bottom: BorderSide(color: mac.separator)),
       ),
-      child: Row(
-        children: [
-          for (var i = 0; i < tabs.length; i++)
-            Expanded(
-              child: _TabCell(
-                tab: tabs[i],
-                selected: i == active,
-                // 只有一个标签时不给关，关了就只剩空白
-                onClose: tabs.length > 1 ? () => onClose(i) : null,
-                onTap: () => onSelect(i),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: [
+            for (var i = 0; i < tabs.length; i++)
+              SizedBox(
+                width: 132,
+                child: _TabCell(
+                  tab: tabs[i],
+                  selected: i == active,
+                  // 只有一个标签时不给关，关了就只剩空白
+                  onClose: tabs.length > 1 ? () => onClose(i) : null,
+                  onTap: () => onSelect(i),
+                ),
+              ),
+            Tooltip(
+              message: addTooltip,
+              child: InkWell(
+                onTap: onAdd,
+                child: SizedBox(
+                  width: 32,
+                  height: 32,
+                  child: Icon(Icons.add, size: 15, color: mac.secondaryText),
+                ),
               ),
             ),
-          Tooltip(
-            message: addTooltip,
-            child: InkWell(
-              onTap: onAdd,
-              child: SizedBox(width: 28, height: 26, child: Icon(Icons.add, size: 14, color: mac.secondaryText)),
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -316,7 +423,12 @@ class _TabCell extends StatefulWidget {
   final VoidCallback? onClose;
   final VoidCallback onTap;
 
-  const _TabCell({required this.tab, required this.selected, required this.onClose, required this.onTap});
+  const _TabCell({
+    required this.tab,
+    required this.selected,
+    required this.onClose,
+    required this.onTap,
+  });
 
   @override
   State<_TabCell> createState() => _TabCellState();
@@ -336,22 +448,33 @@ class _TabCellState extends State<_TabCell> {
         key: widget.tab.key,
         onTap: widget.onTap,
         child: Container(
+          height: 32,
           decoration: BoxDecoration(
-            color: widget.selected ? mac.window : Colors.transparent,
-            border: Border(right: BorderSide(color: mac.separator)),
+            color: widget.selected ? mac.content : Colors.transparent,
+            border: Border(
+              right: BorderSide(color: mac.separator),
+              top: BorderSide(
+                color: widget.selected ? mac.accent : Colors.transparent,
+                width: 2,
+              ),
+            ),
           ),
           padding: const EdgeInsets.symmetric(horizontal: 4),
           child: Row(
             children: [
               SizedBox(
-                width: 18,
+                width: 17,
                 child: onClose != null && (_hover || widget.selected)
                     ? InkWell(
                         onTap: onClose,
                         borderRadius: BorderRadius.circular(3),
                         child: Tooltip(
                           message: '关闭标签',
-                          child: Icon(Icons.close, size: 12, color: mac.secondaryText),
+                          child: Icon(
+                            Icons.close,
+                            size: 12,
+                            color: mac.secondaryText,
+                          ),
                         ),
                       )
                     : null,
@@ -359,17 +482,19 @@ class _TabCellState extends State<_TabCell> {
               Expanded(
                 child: Text(
                   widget.tab.title,
-                  textAlign: TextAlign.center,
+                  textAlign: TextAlign.left,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     fontSize: 11,
-                    color: widget.selected ? mac.text : mac.secondaryText,
-                    fontWeight: widget.selected ? FontWeight.w500 : null,
+                    color: widget.selected
+                        ? Theme.of(context).colorScheme.onPrimaryContainer
+                        : mac.secondaryText,
+                    fontWeight: widget.selected ? FontWeight.w600 : null,
                   ),
                 ),
               ),
-              const SizedBox(width: 18),
+              const SizedBox(width: 4),
             ],
           ),
         ),
@@ -377,11 +502,15 @@ class _TabCellState extends State<_TabCell> {
     );
     final tooltip = widget.tab.tooltip;
     if (tooltip == null) return cell;
-    return Tooltip(message: tooltip, waitDuration: const Duration(milliseconds: 700), child: cell);
+    return Tooltip(
+      message: tooltip,
+      waitDuration: const Duration(milliseconds: 700),
+      child: cell,
+    );
   }
 }
 
-/// 窗口底部的状态栏，22px 高
+/// 窗口底部的状态栏。
 class MacStatusBar extends StatelessWidget {
   final List<Widget> children;
 
@@ -391,14 +520,14 @@ class MacStatusBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final mac = MacColors.of(context);
     return Container(
-      height: 22,
+      height: 27,
       padding: const EdgeInsets.symmetric(horizontal: 10),
       decoration: BoxDecoration(
         color: mac.toolbar,
         border: Border(top: BorderSide(color: mac.separator)),
       ),
       child: DefaultTextStyle.merge(
-        style: TextStyle(fontSize: 11, color: mac.secondaryText),
+        style: TextStyle(fontSize: 10, color: mac.secondaryText),
         child: Row(children: children),
       ),
     );
@@ -411,7 +540,12 @@ class FormRow extends StatelessWidget {
   final Widget child;
   final double labelWidth;
 
-  const FormRow({super.key, required this.label, required this.child, this.labelWidth = 110});
+  const FormRow({
+    super.key,
+    required this.label,
+    required this.child,
+    this.labelWidth = 110,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -426,7 +560,7 @@ class FormRow extends StatelessWidget {
               textAlign: TextAlign.right,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 13),
+              style: const TextStyle(fontSize: 11),
             ),
           ),
           const SizedBox(width: 8),
@@ -481,17 +615,31 @@ class MacPopupButton<T> extends StatelessWidget {
       label ?? placeholder,
       maxLines: 1,
       overflow: TextOverflow.ellipsis,
-      style: TextStyle(fontSize: 12, color: enabled && label != null ? mac.text : mac.tertiaryText),
+      style: TextStyle(
+        fontSize: 12,
+        color: enabled && label != null ? mac.text : mac.tertiaryText,
+      ),
     );
     if (!expand) return _menu(context, mac, enabled, text, null);
     // 撑满时菜单至少和按钮一样宽，不然窄菜单挂在宽按钮上很怪
     return LayoutBuilder(
-      builder: (context, constraints) =>
-          _menu(context, mac, enabled, text, BoxConstraints(minWidth: constraints.maxWidth)),
+      builder: (context, constraints) => _menu(
+        context,
+        mac,
+        enabled,
+        text,
+        BoxConstraints(minWidth: constraints.maxWidth),
+      ),
     );
   }
 
-  Widget _menu(BuildContext context, MacColors mac, bool enabled, Text text, BoxConstraints? constraints) {
+  Widget _menu(
+    BuildContext context,
+    MacColors mac,
+    bool enabled,
+    Text text,
+    BoxConstraints? constraints,
+  ) {
     return PopupMenuButton<T>(
       initialValue: value,
       enabled: enabled,
@@ -511,9 +659,16 @@ class MacPopupButton<T> extends StatelessWidget {
               children: [
                 SizedBox(
                   width: 18,
-                  child: entry.key == value ? Icon(Icons.check, size: 13, color: mac.text) : null,
+                  child: entry.key == value
+                      ? Icon(Icons.check, size: 13, color: mac.text)
+                      : null,
                 ),
-                Flexible(child: Text(entry.value, style: const TextStyle(fontSize: 13))),
+                Flexible(
+                  child: Text(
+                    entry.value,
+                    style: const TextStyle(fontSize: 13),
+                  ),
+                ),
               ],
             ),
           ),
@@ -524,7 +679,9 @@ class MacPopupButton<T> extends StatelessWidget {
         padding: const EdgeInsets.only(left: 8, right: 4),
         decoration: BoxDecoration(
           color: enabled ? mac.control : mac.window,
-          border: Border.all(color: enabled ? mac.controlBorder : mac.separator),
+          border: Border.all(
+            color: enabled ? mac.controlBorder : mac.separator,
+          ),
           borderRadius: BorderRadius.circular(5),
         ),
         child: Row(
@@ -533,7 +690,11 @@ class MacPopupButton<T> extends StatelessWidget {
             if (leading != null) ...[leading!, const SizedBox(width: 5)],
             if (expand) Expanded(child: text) else Flexible(child: text),
             const SizedBox(width: 4),
-            Icon(Icons.unfold_more, size: 14, color: enabled ? mac.secondaryText : mac.tertiaryText),
+            Icon(
+              Icons.unfold_more,
+              size: 14,
+              color: enabled ? mac.secondaryText : mac.tertiaryText,
+            ),
           ],
         ),
       ),
@@ -541,7 +702,7 @@ class MacPopupButton<T> extends StatelessWidget {
   }
 }
 
-/// 面板顶上的一条细工具栏：窗口灰底、底部一条分隔线，放分页和操作按钮。
+/// 面板顶上的一条细工具栏，放分页和操作按钮。
 ///
 /// 只用 colorScheme（appTheme 里 surfaceContainer 就是窗口灰），没套 appTheme 的测试里也能用
 class MacPanelBar extends StatelessWidget {
@@ -556,7 +717,7 @@ class MacPanelBar extends StatelessWidget {
       height: 32,
       padding: const EdgeInsets.symmetric(horizontal: 8),
       decoration: BoxDecoration(
-        color: scheme.surfaceContainer,
+        color: scheme.surface,
         border: Border(bottom: BorderSide(color: scheme.outlineVariant)),
       ),
       child: Row(children: children),
@@ -564,7 +725,7 @@ class MacPanelBar extends StatelessWidget {
   }
 }
 
-/// 分页标签：选中项一块浅灰圆角底，像 Xcode / Querious 的分段切换，不用 Material 的下划线。
+/// 分页标签：选中项以底部蓝线与内容区连接。
 /// 要放在 DefaultTabController 里面。和 MacPanelBar 一样只用 colorScheme
 class MacTabBar extends StatelessWidget {
   final List<String> labels;
@@ -581,18 +742,23 @@ class MacTabBar extends StatelessWidget {
       padding: EdgeInsets.zero,
       labelPadding: const EdgeInsets.symmetric(horizontal: 2),
       indicatorSize: TabBarIndicatorSize.tab,
-      indicator: BoxDecoration(color: scheme.onSurface.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(5)),
+      indicator: UnderlineTabIndicator(
+        borderSide: BorderSide(color: scheme.primary, width: 2),
+      ),
       overlayColor: const WidgetStatePropertyAll(Colors.transparent),
       splashFactory: NoSplash.splashFactory,
       labelStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
       unselectedLabelStyle: const TextStyle(fontSize: 12),
-      labelColor: scheme.onSurface,
+      labelColor: scheme.primary,
       unselectedLabelColor: scheme.onSurfaceVariant,
       tabs: [
         for (final label in labels)
           Tab(
-            height: 22,
-            child: Padding(padding: const EdgeInsets.symmetric(horizontal: 8), child: Text(label)),
+            height: 30,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              child: Text(label),
+            ),
           ),
       ],
     );

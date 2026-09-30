@@ -59,7 +59,7 @@ TableStructure sampleStructure() {
   );
 }
 
-Future<void> pumpStructure(WidgetTester tester, FakeSchemaSource source, String table) async {
+Future<void> pumpStructure(WidgetTester tester, FakeSchemaSource source, String table, {bool editable = false}) async {
   tester.view.physicalSize = const Size(2000, 1400);
   tester.view.devicePixelRatio = 1.0;
   addTearDown(tester.view.resetPhysicalSize);
@@ -78,9 +78,23 @@ Future<void> pumpStructure(WidgetTester tester, FakeSchemaSource source, String 
   ));
   await tester.tap(find.text('打开'));
   await tester.pumpAndSettle();
+  if (!editable && find.text('查看').evaluate().isNotEmpty) {
+    await tester.tap(find.text('查看'));
+    await tester.pumpAndSettle();
+  }
 }
 
 void main() {
+  testWidgets('打开结构后直接可编辑，无需再点编辑', (tester) async {
+    final source = FakeSchemaSource.simple()..structures['posts'] = sampleStructure();
+    await pumpStructure(tester, source, 'posts', editable: true);
+
+    expect(find.byKey(const ValueKey('column-name-1')), findsOneWidget);
+    expect(tester.widget<TextField>(find.byKey(const ValueKey('column-name-1'))).enabled, isTrue);
+    expect(find.text('预览 DDL'), findsOneWidget);
+    expect(find.byType(Dialog), findsOneWidget, reason: '编辑控件就在结构页里，不另开弹窗');
+  });
+
   testWidgets('四种默认值显示得能区分开', (tester) async {
     final source = FakeSchemaSource.simple()..structures['posts'] = sampleStructure();
     await pumpStructure(tester, source, 'posts');
@@ -174,6 +188,9 @@ void main() {
 
     await tester.pumpWidget(page('posts'));
     await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('column-name-1')), findsOneWidget, reason: '嵌入页也默认可编辑');
+    await tester.tap(find.text('查看'));
+    await tester.pumpAndSettle();
     expect(find.text('列 4'), findsOneWidget);
     expect(find.text('编辑'), findsOneWidget);
     expect(find.byTooltip('关闭'), findsNothing);
@@ -186,6 +203,9 @@ void main() {
     await tester.pumpWidget(page('tags'));
     await tester.pumpAndSettle();
     expect(source.structureLoads, 2, reason: '换表要重读');
+    expect(find.byKey(const ValueKey('column-name-0')), findsOneWidget, reason: '换表后默认进入编辑');
+    await tester.tap(find.text('查看'));
+    await tester.pumpAndSettle();
     expect(find.text('列 1'), findsOneWidget);
     expect(find.text('没有索引'), findsOneWidget, reason: '停在索引页，内容是新表的');
     expect(find.text('title(10)'), findsNothing);

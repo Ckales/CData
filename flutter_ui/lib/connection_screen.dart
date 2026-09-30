@@ -13,7 +13,8 @@ import 'theme.dart';
 /// 连上之后由外面开工作区。已经有打开的连接时可以点「返回」回去。
 class ConnectionScreen extends StatefulWidget {
   /// 按表单去连。成功返回 null，失败返回原因，显示在表单里
-  final Future<String?> Function(ConnectionConfig config, String name) onConnect;
+  final Future<String?> Function(ConnectionConfig config, String name)
+  onConnect;
 
   /// 已经有打开的连接时才有，回到那个工作区
   final VoidCallback? onCancel;
@@ -66,7 +67,14 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
 
   @override
   void dispose() {
-    for (final controller in [_name, _host, _port, _user, _password, _database]) {
+    for (final controller in [
+      _name,
+      _host,
+      _port,
+      _user,
+      _password,
+      _database,
+    ]) {
       controller.dispose();
     }
     super.dispose();
@@ -135,7 +143,9 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
   /// 走 SSH 时 host 往往是隧道那头的 127.0.0.1，id 里带上第一跳，不同服务器才不会互相覆盖
   String get _connectionId {
     final hops = _options.ssh.hops;
-    final via = hops.isEmpty ? '' : ' via ${hops.first.user}@${hops.first.host}';
+    final via = hops.isEmpty
+        ? ''
+        : ' via ${hops.first.user}@${hops.first.host}';
     return '${_user.text.trim()}@${_host.text.trim()}:${_port.text.trim()}$via';
   }
 
@@ -192,9 +202,14 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
         title: const Text('删除收藏的连接'),
         content: Text('删除「${connection.name}」？钥匙串里保存的密码会一起删掉。'),
         actions: [
-          TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('取消')),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('取消'),
+          ),
           FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: Theme.of(context).colorScheme.error),
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(context).colorScheme.error,
+            ),
             onPressed: () => Navigator.of(context).pop(true),
             child: const Text('删除'),
           ),
@@ -274,19 +289,37 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
           MacToolbar(
             children: [
               if (onCancel != null) ...[
-                ToolbarButton(icon: Icons.chevron_left, tooltip: '返回已打开的连接', onPressed: onCancel),
+                ToolbarButton(
+                  icon: Icons.chevron_left,
+                  tooltip: '返回已打开的连接',
+                  onPressed: onCancel,
+                ),
                 const SizedBox(width: 6),
               ],
               Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('连接', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: mac.text)),
-                  Text('选一条收藏的连接，或者新建一条', style: TextStyle(fontSize: 11, color: mac.secondaryText)),
+                  Text(
+                    '连接',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: mac.text,
+                    ),
+                  ),
+                  Text(
+                    '选一条收藏的连接，或者新建一条',
+                    style: TextStyle(fontSize: 11, color: mac.secondaryText),
+                  ),
                 ],
               ),
               const Spacer(),
-              ToolbarButton(icon: Icons.settings_outlined, tooltip: '偏好设置', onPressed: widget.onPreferences),
+              ToolbarButton(
+                icon: Icons.settings_outlined,
+                tooltip: '偏好设置',
+                onPressed: widget.onPreferences,
+              ),
             ],
           ),
           Expanded(
@@ -312,36 +345,96 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
 
   Widget _buildForm(MacColors mac) {
     final summary = _optionsSummary(_options);
-    return Center(
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.all(24),
-        child: SizedBox(
-          width: 460,
+    final scheme = Theme.of(context).colorScheme;
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(34, 28, 24, 24),
+      child: Align(
+        alignment: Alignment.topLeft,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 600),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Text(
-                _savedId == null ? '新建连接' : _displayName,
-                style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: mac.text),
+                '连接设置',
+                style: TextStyle(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w600,
+                  color: mac.text,
+                ),
               ),
-              const SizedBox(height: 14),
-              FormRow(label: '名称', child: _field('conn-name', _name, hint: '留空用主机名')),
-              FormRow(label: '主机', child: _field('conn-host', _host)),
-              FormRow(label: '端口', child: SizedBox(width: 90, child: _field('conn-port', _port))),
-              FormRow(label: '用户', child: _field('conn-user', _user)),
-              FormRow(label: '密码', child: _field('conn-password', _password, obscure: true, hint: '收藏的连接从钥匙串取')),
-              FormRow(label: '数据库', child: _field('conn-database', _database, hint: '可选')),
+              const SizedBox(height: 5),
+              Text(
+                _savedId == null ? '配置一条新的 MySQL 连接' : _displayName,
+                style: TextStyle(fontSize: 11, color: mac.secondaryText),
+              ),
+              const SizedBox(height: 22),
+              Text(
+                '基本信息',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  color: mac.tertiaryText,
+                ),
+              ),
+              const SizedBox(height: 8),
               FormRow(
-                label: '高级',
+                label: '名称',
+                labelWidth: 101,
+                child: _field('conn-name', _name, hint: '留空用主机名'),
+              ),
+              FormRow(
+                label: '主机地址',
+                labelWidth: 101,
+                child: _field('conn-host', _host),
+              ),
+              FormRow(
+                label: '端口',
+                labelWidth: 101,
+                child: _field('conn-port', _port),
+              ),
+              FormRow(
+                label: '用户名',
+                labelWidth: 101,
+                child: _field('conn-user', _user),
+              ),
+              FormRow(
+                label: '密码',
+                labelWidth: 101,
+                child: _field(
+                  'conn-password',
+                  _password,
+                  obscure: true,
+                  hint: '收藏的连接从钥匙串取',
+                ),
+              ),
+              FormRow(
+                label: '数据库',
+                labelWidth: 101,
+                child: _field('conn-database', _database, hint: '连接后选择数据库（可选）'),
+              ),
+              FormRow(
+                label: '高级选项',
+                labelWidth: 101,
                 child: Row(
                   children: [
                     OutlinedButton(
                       key: const ValueKey('conn-options'),
                       onPressed: _editOptions,
-                      child: const Text('SSL、SSH、超时…'),
+                      child: const Text('查看设置…'),
                     ),
                     const SizedBox(width: 8),
-                    Text(summary.isEmpty ? '直连，不加密' : summary, style: TextStyle(fontSize: 12, color: mac.secondaryText)),
+                    Expanded(
+                      child: Text(
+                        summary.isEmpty ? 'SSL、SSH 与超时设置' : summary,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: mac.secondaryText,
+                        ),
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -350,28 +443,41 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
                 Container(
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.errorContainer,
+                    color: scheme.errorContainer,
                     borderRadius: BorderRadius.circular(6),
                   ),
                   child: SelectableText(
                     _error!,
-                    style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onErrorContainer),
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: scheme.onErrorContainer,
+                    ),
                   ),
                 ),
               ],
-              const SizedBox(height: 16),
-              Row(
-                children: [
-                  Text('密码只存在系统钥匙串里', style: TextStyle(fontSize: 11, color: mac.tertiaryText)),
-                  const Spacer(),
-                  OutlinedButton(onPressed: _save, child: Text(_savedId == null ? '加入收藏' : '保存')),
-                  const SizedBox(width: 8),
-                  FilledButton(
-                    key: const ValueKey('conn-connect'),
-                    onPressed: _connecting ? null : _connect,
-                    child: Text(_connecting ? '连接中…' : '连接'),
-                  ),
-                ],
+              const SizedBox(height: 18),
+              Padding(
+                padding: const EdgeInsets.only(left: 109),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        '密码保存在系统钥匙串中',
+                        style: TextStyle(fontSize: 10, color: mac.tertiaryText),
+                      ),
+                    ),
+                    OutlinedButton(
+                      onPressed: _save,
+                      child: Text(_savedId == null ? '保存到收藏' : '保存'),
+                    ),
+                    const SizedBox(width: 8),
+                    FilledButton(
+                      key: const ValueKey('conn-connect'),
+                      onPressed: _connecting ? null : _connect,
+                      child: Text(_connecting ? '连接中…' : '连接数据库　→'),
+                    ),
+                  ],
+                ),
               ),
             ],
           ),
@@ -380,15 +486,26 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
     );
   }
 
-  Widget _field(String key, TextEditingController controller, {bool obscure = false, String? hint}) {
+  Widget _field(
+    String key,
+    TextEditingController controller, {
+    bool obscure = false,
+    String? hint,
+  }) {
     return SizedBox(
-      height: 26,
+      height: 28,
       child: TextField(
         key: ValueKey(key),
         controller: controller,
         obscureText: obscure,
         style: const TextStyle(fontSize: 13),
-        decoration: InputDecoration(hintText: hint, contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6)),
+        decoration: InputDecoration(
+          hintText: hint,
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 8,
+            vertical: 6,
+          ),
+        ),
         onSubmitted: (_) => _connect(),
       ),
     );
@@ -398,9 +515,13 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
 /// 高级选项的一句话摘要，比如「SSH · SSL」；什么都没开是空串
 String _optionsSummary(ConnectionOptions options) {
   final parts = <String>[];
-  if (options.ssh.hops.isNotEmpty) parts.add('SSH（${options.ssh.hops.length} 跳）');
+  if (options.ssh.hops.isNotEmpty) {
+    parts.add('SSH（${options.ssh.hops.length} 跳）');
+  }
   if (options.ssl.mode != SslMode.disabled) parts.add('SSL');
-  if (options.timeouts.querySecs != null) parts.add('查询超时 ${options.timeouts.querySecs} 秒');
+  if (options.timeouts.querySecs != null) {
+    parts.add('查询超时 ${options.timeouts.querySecs} 秒');
+  }
   return parts.join(' · ');
 }
 
@@ -424,82 +545,155 @@ class _FavoriteList extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final mac = MacColors.of(context);
+    final scheme = Theme.of(context).colorScheme;
     SavedConnection? selected;
     for (final connection in saved) {
       if (connection.id == selectedId) selected = connection;
     }
     return Container(
-      width: 240,
-      decoration: BoxDecoration(color: mac.sidebar, border: Border(right: BorderSide(color: mac.separator))),
+      width: 255,
+      decoration: BoxDecoration(
+        color: mac.sidebar,
+        border: Border(right: BorderSide(color: mac.separator)),
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 10, 16, 4),
-            child: Text('收藏', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: mac.tertiaryText)),
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+            child: Text(
+              '已保存连接',
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                color: mac.secondaryText,
+              ),
+            ),
           ),
           Expanded(
             child: saved.isEmpty
                 ? Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Text('还没有收藏的连接。填好右边的表单，点「加入收藏」', style: TextStyle(fontSize: 12, color: mac.secondaryText)),
+                    padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+                    child: Text(
+                      '还没有保存的连接。填好右侧表单后可以加入收藏。',
+                      style: TextStyle(fontSize: 11, color: mac.secondaryText),
+                    ),
                   )
-                : ListView(
-                    children: [
-                      for (final connection in saved)
-                        SidebarItem(
-                          key: ValueKey('saved-${connection.id}'),
-                          icon: Icons.dns_outlined,
-                          iconColor: mac.databaseIcon,
-                          label: connection.name,
-                          selected: connection.id == selectedId,
-                          onTap: () => onPick(connection),
-                          onDoubleTap: () => onOpen(connection),
+                : ListView.builder(
+                    itemCount: saved.length,
+                    itemBuilder: (context, index) {
+                      final connection = saved[index];
+                      final isSelected = connection.id == selectedId;
+                      final foreground = isSelected
+                          ? scheme.onPrimaryContainer
+                          : mac.text;
+                      final secondary = isSelected
+                          ? scheme.onPrimaryContainer.withValues(alpha: 0.72)
+                          : mac.secondaryText;
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 4,
+                          vertical: 1,
                         ),
-                    ],
+                        child: Material(
+                          color: isSelected
+                              ? scheme.primaryContainer
+                              : Colors.transparent,
+                          borderRadius: BorderRadius.circular(4),
+                          child: InkWell(
+                            key: ValueKey('saved-${connection.id}'),
+                            borderRadius: BorderRadius.circular(4),
+                            onTap: () => onPick(connection),
+                            onDoubleTap: () => onOpen(connection),
+                            child: SizedBox(
+                              height: 48,
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                ),
+                                child: Row(
+                                  children: [
+                                    Container(
+                                      width: 24,
+                                      height: 24,
+                                      decoration: BoxDecoration(
+                                        color: scheme.primary.withValues(
+                                          alpha: isSelected ? 0.18 : 0.1,
+                                        ),
+                                        borderRadius: BorderRadius.circular(4),
+                                      ),
+                                      child: Icon(
+                                        Icons.dns_outlined,
+                                        size: 14,
+                                        color: scheme.primary,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Column(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.center,
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            connection.name,
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: TextStyle(
+                                              fontSize: 11,
+                                              fontWeight: FontWeight.w600,
+                                              color: foreground,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 2),
+                                          Text(
+                                            '${connection.host}:${connection.port}',
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: TextStyle(
+                                              fontSize: 9,
+                                              color: secondary,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      );
+                    },
                   ),
           ),
           Container(
-            height: 24,
-            padding: const EdgeInsets.symmetric(horizontal: 4),
-            decoration: BoxDecoration(border: Border(top: BorderSide(color: mac.separator))),
+            height: 32,
+            padding: const EdgeInsets.symmetric(horizontal: 5),
+            decoration: BoxDecoration(
+              border: Border(top: BorderSide(color: mac.separator)),
+            ),
             child: Row(
               children: [
-                _FooterButton(icon: Icons.add, tooltip: '新建连接', onPressed: onNew),
-                _FooterButton(
-                  icon: Icons.remove,
+                TextButton.icon(
+                  onPressed: onNew,
+                  icon: const Icon(Icons.add, size: 15),
+                  label: const Text('新建连接'),
+                ),
+                const Spacer(),
+                IconButton(
                   tooltip: '删除选中的收藏',
-                  onPressed: selected == null ? null : () => onDelete(selected!),
+                  onPressed: selected == null
+                      ? null
+                      : () => onDelete(selected!),
+                  icon: const Icon(Icons.remove_circle_outline, size: 15),
                 ),
               ],
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _FooterButton extends StatelessWidget {
-  final IconData icon;
-  final String tooltip;
-  final VoidCallback? onPressed;
-
-  const _FooterButton({required this.icon, required this.tooltip, required this.onPressed});
-
-  @override
-  Widget build(BuildContext context) {
-    final mac = MacColors.of(context);
-    return Tooltip(
-      message: tooltip,
-      child: InkWell(
-        onTap: onPressed,
-        borderRadius: BorderRadius.circular(4),
-        child: SizedBox(
-          width: 24,
-          height: 20,
-          child: Icon(icon, size: 14, color: onPressed == null ? mac.tertiaryText.withValues(alpha: 0.5) : mac.secondaryText),
-        ),
       ),
     );
   }

@@ -238,7 +238,7 @@ void main() {
     await tester.tap(find.text('运行'));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('筛选'));
+    await tester.tap(find.byKey(const ValueKey('filter-edit')));
     await tester.pumpAndSettle();
     await tester.enterText(find.byKey(const ValueKey('filter-value-0')), '1');
     await tester.tap(find.byKey(const ValueKey('filter-add-group')));
