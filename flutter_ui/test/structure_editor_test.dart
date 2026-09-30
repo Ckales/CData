@@ -5,6 +5,7 @@ import 'package:cdata_flutter/src/rust/api/schema.dart';
 import 'package:cdata_flutter/structure_editor.dart';
 import 'package:cdata_flutter/structure_view.dart';
 import 'package:cdata_flutter/theme.dart';
+import 'package:flutter/gestures.dart' show kSecondaryButton;
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -65,6 +66,22 @@ Future<void> settle(WidgetTester tester) async {
   }
 }
 
+Future<void> doubleTapCell(WidgetTester tester, Finder finder) async {
+  await tester.ensureVisible(finder);
+  await tester.pump();
+  final point = tester.getCenter(finder);
+  await tester.tapAt(point);
+  await tester.pump(const Duration(milliseconds: 50));
+  await tester.tapAt(point);
+  await tester.pump(const Duration(milliseconds: 50));
+}
+
+Future<void> editColumnText(WidgetTester tester, String field, int row, String value) async {
+  await doubleTapCell(tester, find.byKey(ValueKey('column-$field-display-$row')));
+  await tester.enterText(find.byKey(ValueKey('column-$field-$row')), value);
+  await settle(tester);
+}
+
 Future<FakeSchemaSource> openEditor(WidgetTester tester, {VoidCallback? onAltered}) async {
   tester.view.physicalSize = const Size(2000, 1400);
   tester.view.devicePixelRatio = 1.0;
@@ -95,14 +112,26 @@ Future<FakeSchemaSource> openEditor(WidgetTester tester, {VoidCallback? onAltere
 }
 
 void main() {
+  testWidgets('结构列超宽时显示可拖动的底部横向滚动条', (tester) async {
+    await openEditor(tester);
+
+    final scrollbar = tester.widget<Scrollbar>(find.byWidgetPredicate(
+      (widget) => widget is Scrollbar && widget.scrollbarOrientation == ScrollbarOrientation.bottom,
+    ));
+    expect(scrollbar.thumbVisibility, isTrue);
+    expect(scrollbar.interactive, isTrue);
+    expect(scrollbar.controller!.position.maxScrollExtent, greaterThan(0));
+  });
+
   testWidgets('改列名后索引跟着改名，预览、执行后结构页重读', (tester) async {
     var altered = 0;
     final source = await openEditor(tester, onAltered: () => altered++);
-    expect(find.byKey(const ValueKey('column-name-1')), findsOneWidget);
+    expect(find.byKey(const ValueKey('column-name-display-1')), findsOneWidget);
+    expect(find.byKey(const ValueKey('column-name-1')), findsNothing, reason: '双击前不显示输入框');
     final loadsBefore = source.structureLoads;
 
-    await tester.enterText(find.byKey(const ValueKey('column-name-1')), 'headline');
-    await tester.enterText(find.byKey(const ValueKey('column-comment-1')), '标题');
+    await editColumnText(tester, 'name', 1, 'headline');
+    await editColumnText(tester, 'comment', 1, '标题');
     await settle(tester);
 
     source.plan = const AlterPlan(
@@ -131,7 +160,7 @@ void main() {
     await settle(tester);
     expect(source.applied.single, source.plan.statements);
     expect(find.text('确认要执行的 DDL'), findsNothing);
-    expect(find.byKey(const ValueKey('column-name-1')), findsOneWidget);
+    expect(find.byKey(const ValueKey('column-name-display-1')), findsOneWidget);
     expect(source.structureLoads, loadsBefore + 1, reason: '执行后结构页重读');
     expect(altered, 1, reason: '执行成功要通知外面刷新补全目录');
   });
@@ -142,14 +171,57 @@ void main() {
     expect(find.text('CURRENT_TIMESTAMP'), findsNothing, reason: '没设 ON UPDATE 的列不能显示得像设了一样');
   });
 
+  testWidgets('类型下拉按类别显示、能筛选，选择后把完整类型交给草稿', (tester) async {
+    final source = await openEditor(tester);
+    expect(find.byKey(const ValueKey('column-type-1')), findsNothing);
+
+    await tester.tap(find.byKey(const ValueKey('column-type-picker-1')));
+    await tester.pumpAndSettle();
+    expect(find.text('Numeric'), findsOneWidget);
+    await tester.enterText(find.byKey(const ValueKey('column-type-filter-1')), 'date');
+    await tester.pump();
+    expect(find.text('Date and Time'), findsOneWidget);
+    await tester.enterText(find.byKey(const ValueKey('column-type-filter-1')), 'small');
+    await tester.pump();
+    expect(find.text('smallint'), findsOneWidget);
+    expect(find.text('varchar'), findsNothing);
+    await tester.tap(find.text('smallint'));
+    await tester.pump();
+
+    await tester.tap(find.text('预览 DDL'));
+    await settle(tester);
+    expect(source.previews.single.columns[1].columnType, 'smallint');
+  });
+
+  testWidgets('只打开类型下拉不改已有完整类型', (tester) async {
+    final source = await openEditor(tester);
+    await tester.tap(find.byKey(const ValueKey('column-type-picker-1')));
+    await tester.pumpAndSettle();
+    expect(find.text('当前：varchar(100)'), findsOneWidget);
+    await tester.tap(find.text('预览 DDL'));
+    await settle(tester);
+    expect(source.previews.single.columns[1].columnType, 'varchar(100)');
+  });
+
+  testWidgets('双击类型后可输入精确长度、精度和修饰符', (tester) async {
+    final source = await openEditor(tester);
+    await doubleTapCell(tester, find.byKey(const ValueKey('column-type-display-1')));
+    await tester.enterText(find.byKey(const ValueKey('column-type-1')), 'decimal(12,2) unsigned');
+    await tester.tap(find.text('预览 DDL'));
+    await settle(tester);
+    expect(source.previews.single.columns[1].columnType, 'decimal(12,2) unsigned');
+  });
+
   testWidgets('删列会把它从索引里拿掉，加列默认可空、默认 NULL', (tester) async {
     final source = await openEditor(tester);
 
-    await tester.tap(find.byKey(const ValueKey('column-delete-1')));
+    await tester.tap(find.byKey(const ValueKey('column-row-1')), buttons: kSecondaryButton);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('删除列'));
     await settle(tester);
     await tester.tap(find.byKey(const ValueKey('add-column')));
     await settle(tester);
-    await tester.enterText(find.byKey(const ValueKey('column-name-2')), 'summary');
+    await editColumnText(tester, 'name', 2, 'summary');
     await settle(tester);
 
     await tester.tap(find.text('预览 DDL'));
@@ -161,6 +233,37 @@ void main() {
     expect(added.nullable, isTrue);
     expect(added.default_, const DefaultValue.null_());
     expect(draft.indexes[1].parts, isEmpty, reason: '拿空的索引留给 core 报错，界面不偷偷删索引');
+  });
+
+  testWidgets('右键复制列插在原列后，保留完整类型但作为新列提交', (tester) async {
+    final source = await openEditor(tester);
+    await tester.tap(find.byKey(const ValueKey('column-row-1')), buttons: kSecondaryButton);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('复制列'));
+    await settle(tester);
+
+    await tester.tap(find.text('预览 DDL'));
+    await settle(tester);
+    final draft = source.previews.single;
+    expect([for (final column in draft.columns) column.name], ['id', 'title', 'title_copy', 'body']);
+    expect(draft.columns[2].originalName, isNull);
+    expect(draft.columns[2].columnType, 'varchar(100)');
+    expect(draft.columns[2].default_, const DefaultValue.literal(''));
+    expect(draft.indexes[1].parts.single.column, 'title', reason: '复制列不复制旧列的索引引用');
+  });
+
+  testWidgets('右键上移只改变列顺序', (tester) async {
+    final source = await openEditor(tester);
+    await tester.tap(find.byKey(const ValueKey('column-row-2')), buttons: kSecondaryButton);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('上移'));
+    await settle(tester);
+
+    await tester.tap(find.text('预览 DDL'));
+    await settle(tester);
+    final draft = source.previews.single;
+    expect([for (final column in draft.columns) column.name], ['id', 'body', 'title']);
+    expect(draft.indexes[1].parts.single.column, 'title');
   });
 
   testWidgets('预览失败时显示 core 给的原因，不弹预览', (tester) async {
@@ -249,12 +352,12 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byKey(const ValueKey('column-locked-1')), findsOneWidget);
-    final type = tester.widget<TextField>(find.byKey(const ValueKey('column-type-1')));
-    expect(type.enabled, isFalse);
+    expect(find.byKey(const ValueKey('column-type-picker-1')), findsNothing, reason: '锁住的列不给类型选单');
+    await doubleTapCell(tester, find.byKey(const ValueKey('column-type-display-1')));
+    expect(find.byKey(const ValueKey('column-type-1')), findsNothing, reason: '锁住的列不进入类型编辑');
+    await doubleTapCell(tester, find.byKey(const ValueKey('column-name-display-1')));
     final name = tester.widget<TextField>(find.byKey(const ValueKey('column-name-1')));
     expect(name.enabled, isTrue);
-    final otherType = tester.widget<TextField>(find.byKey(const ValueKey('column-type-2')));
-    expect(otherType.enabled, isTrue);
   });
 
   testWidgets('已有的 CHECK 只能删，表选项和新 CHECK 拼进草稿', (tester) async {
@@ -341,7 +444,7 @@ void main() {
     await tester.enterText(find.byKey(const ValueKey('table-name')), 'tags');
     await tester.tap(find.byKey(const ValueKey('add-column')));
     await settle(tester);
-    await tester.enterText(find.byKey(const ValueKey('column-name-1')), 'label');
+    await editColumnText(tester, 'name', 1, 'label');
     await settle(tester);
 
     source.plan = const AlterPlan(

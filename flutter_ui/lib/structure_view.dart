@@ -386,7 +386,7 @@ class _StructurePanelState extends State<StructurePanel> {
 
 /// 固定列宽的列表，像 NSTableView：灰底表头带竖分隔，行 22px 隔行变色，横竖都能滚。
 /// 结构页的行数有限，不用虚拟滚动
-class _Grid extends StatelessWidget {
+class _Grid extends StatefulWidget {
   final List<String> headers;
   final List<double> widths;
   final List<List<Widget>> rows;
@@ -394,54 +394,74 @@ class _Grid extends StatelessWidget {
   const _Grid({required this.headers, required this.widths, required this.rows});
 
   @override
+  State<_Grid> createState() => _GridState();
+}
+
+class _GridState extends State<_Grid> {
+  final _hScroll = ScrollController();
+
+  @override
+  void dispose() {
+    _hScroll.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     var totalWidth = 0.0;
-    for (final width in widths) {
+    for (final width in widget.widths) {
       totalWidth += width;
     }
 
     return ColoredBox(
       color: scheme.surface,
       child: LayoutBuilder(
-        builder: (context, constraints) => SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: SizedBox(
-            // 比面板窄时撑满，最后一列后面的空白也画出表头和隔行底色
-            width: totalWidth > constraints.maxWidth ? totalWidth : constraints.maxWidth,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Container(
-                  height: 29,
-                  decoration: BoxDecoration(
-                    color: scheme.surfaceContainerHighest,
-                    border: Border(bottom: BorderSide(color: scheme.outlineVariant)),
+        builder: (context, constraints) => Scrollbar(
+          controller: _hScroll,
+          thumbVisibility: true,
+          interactive: true,
+          scrollbarOrientation: ScrollbarOrientation.bottom,
+          child: SingleChildScrollView(
+            controller: _hScroll,
+            scrollDirection: Axis.horizontal,
+            child: SizedBox(
+              // 比面板窄时撑满，最后一列后面的空白也画出表头和隔行底色
+              width: totalWidth > constraints.maxWidth ? totalWidth : constraints.maxWidth,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Container(
+                    height: 29,
+                    decoration: BoxDecoration(
+                      color: scheme.surfaceContainerHighest,
+                      border: Border(bottom: BorderSide(color: scheme.outlineVariant)),
+                    ),
+                    child: _cells([
+                      for (final header in widget.headers)
+                        Text(
+                          header,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: scheme.onSurfaceVariant),
+                        ),
+                    ], divider: scheme.outlineVariant),
                   ),
-                  child: _cells([
-                    for (final header in headers)
-                      Text(
-                        header,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: scheme.onSurfaceVariant),
-                      ),
-                  ], divider: scheme.outlineVariant),
-                ),
-                Expanded(
-                  child: ListView.builder(
-                    itemCount: rows.length,
-                    itemExtent: 29,
-                    itemBuilder: (context, index) => ColoredBox(
-                      color: index.isOdd ? scheme.surfaceContainerLow : scheme.surface,
-                      child: DecoratedBox(
-                        decoration: BoxDecoration(border: Border(bottom: BorderSide(color: scheme.outlineVariant))),
-                        child: _cells(rows[index]),
+                  Expanded(
+                    child: ListView.builder(
+                      itemCount: widget.rows.length,
+                      itemExtent: 29,
+                      itemBuilder: (context, index) => ColoredBox(
+                        color: index.isOdd ? scheme.surfaceContainerLow : scheme.surface,
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(border: Border(bottom: BorderSide(color: scheme.outlineVariant))),
+                          child: _cells(widget.rows[index]),
+                        ),
                       ),
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),
@@ -454,7 +474,7 @@ class _Grid extends StatelessWidget {
       children: [
         for (var i = 0; i < cells.length; i++)
           Container(
-            width: widths[i],
+            width: widget.widths[i],
             padding: const EdgeInsets.symmetric(horizontal: 10),
             alignment: Alignment.centerLeft,
             decoration: divider == null ? null : BoxDecoration(border: Border(right: BorderSide(color: divider))),

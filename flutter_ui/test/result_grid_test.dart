@@ -972,6 +972,40 @@ void main() {
       expect(tester.getRect(find.byKey(const ValueKey('row-number-0'))).left, 0, reason: '回到第一列时行号也露出来');
     });
 
+    testWidgets('内容超宽时横向滚动条可拖动，未超宽时没有滚动范围', (tester) async {
+      await pumpGrid(tester, FakeGridSource.rows(1));
+      final horizontalScrollbar = find.ancestor(
+        of: find.byType(SingleChildScrollView),
+        matching: find.byType(Scrollbar),
+      );
+      final fittingScrollbar = tester.widget<Scrollbar>(horizontalScrollbar);
+      expect(fittingScrollbar.controller!.position.maxScrollExtent, 0);
+
+      final columns = [for (var i = 0; i < 8; i++) column('c$i')];
+      final source = FakeGridSource(
+        summary: summaryOf(columns: columns, totalRows: 1),
+        rows: [
+          [for (var i = 0; i < 8; i++) CellValue.text('v$i')],
+        ],
+      );
+      await pumpGrid(tester, source);
+
+      final scrollbar = tester.widget<Scrollbar>(horizontalScrollbar);
+      expect(scrollbar.thumbVisibility, isTrue);
+      expect(scrollbar.interactive, isTrue);
+      expect(scrollbar.scrollbarOrientation, ScrollbarOrientation.bottom);
+      expect(scrollbar.controller!.position.maxScrollExtent, greaterThan(0));
+
+      final bounds = tester.getRect(horizontalScrollbar);
+      await tester.dragFrom(
+        Offset(bounds.left + bounds.width * 0.25, bounds.bottom - 4),
+        Offset(bounds.width, 0),
+      );
+      await tester.pumpAndSettle();
+
+      expect(tester.getRect(cell(0, 7)).right, lessThanOrEqualTo(bounds.right));
+    });
+
     testWidgets('按住拖动选出区域', (tester) async {
       await pumpGrid(tester, FakeGridSource.rows(3));
       final gesture = await tester.startGesture(tester.getCenter(cell(0, 0)), kind: PointerDeviceKind.mouse);

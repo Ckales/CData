@@ -85,11 +85,29 @@ Future<void> pumpStructure(WidgetTester tester, FakeSchemaSource source, String 
 }
 
 void main() {
+  testWidgets('只读结构超宽时显示可拖动的底部横向滚动条', (tester) async {
+    final source = FakeSchemaSource.simple()..structures['posts'] = sampleStructure();
+    await pumpStructure(tester, source, 'posts');
+
+    final scrollbar = tester.widget<Scrollbar>(find.byWidgetPredicate(
+      (widget) => widget is Scrollbar && widget.scrollbarOrientation == ScrollbarOrientation.bottom,
+    ));
+    expect(scrollbar.thumbVisibility, isTrue);
+    expect(scrollbar.interactive, isTrue);
+    expect(scrollbar.controller!.position.maxScrollExtent, greaterThan(0));
+  });
+
   testWidgets('打开结构后直接可编辑，无需再点编辑', (tester) async {
     final source = FakeSchemaSource.simple()..structures['posts'] = sampleStructure();
     await pumpStructure(tester, source, 'posts', editable: true);
 
-    expect(find.byKey(const ValueKey('column-name-1')), findsOneWidget);
+    expect(find.byKey(const ValueKey('column-name-display-1')), findsOneWidget);
+    expect(find.byKey(const ValueKey('column-name-1')), findsNothing, reason: '未双击时只有表格文字');
+    final point = tester.getCenter(find.byKey(const ValueKey('column-name-display-1')));
+    await tester.tapAt(point);
+    await tester.pump(const Duration(milliseconds: 50));
+    await tester.tapAt(point);
+    await tester.pump(const Duration(milliseconds: 50));
     expect(tester.widget<TextField>(find.byKey(const ValueKey('column-name-1'))).enabled, isTrue);
     expect(find.text('预览 DDL'), findsOneWidget);
     expect(find.byType(Dialog), findsOneWidget, reason: '编辑控件就在结构页里，不另开弹窗');
@@ -188,7 +206,7 @@ void main() {
 
     await tester.pumpWidget(page('posts'));
     await tester.pumpAndSettle();
-    expect(find.byKey(const ValueKey('column-name-1')), findsOneWidget, reason: '嵌入页也默认可编辑');
+    expect(find.byKey(const ValueKey('column-name-display-1')), findsOneWidget, reason: '嵌入页默认显示可双击编辑的表格');
     await tester.tap(find.text('查看'));
     await tester.pumpAndSettle();
     expect(find.text('列 4'), findsOneWidget);
@@ -203,7 +221,7 @@ void main() {
     await tester.pumpWidget(page('tags'));
     await tester.pumpAndSettle();
     expect(source.structureLoads, 2, reason: '换表要重读');
-    expect(find.byKey(const ValueKey('column-name-0')), findsOneWidget, reason: '换表后默认进入编辑');
+    expect(find.byKey(const ValueKey('column-name-display-0')), findsOneWidget, reason: '换表后默认进入表格式编辑页');
     await tester.tap(find.text('查看'));
     await tester.pumpAndSettle();
     expect(find.text('列 1'), findsOneWidget);

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'data_source.dart';
 import 'mac_widgets.dart';
@@ -54,6 +55,44 @@ const _indexKindLabels = {
 
 const _foreignKeyActions = ['RESTRICT', 'CASCADE', 'SET NULL', 'NO ACTION', 'SET DEFAULT'];
 
+// 下拉只提供常用类型模板；列里仍保存完整的 COLUMN_TYPE 文本，用户可双击直接编辑精度和修饰符。
+const _columnTypeGroups = <String, Map<String, String>>{
+  'Numeric': {
+    'tinyint': 'tinyint',
+    'smallint': 'smallint',
+    'mediumint': 'mediumint',
+    'int': 'int',
+    'bigint': 'bigint',
+    'float': 'float',
+    'double': 'double',
+    'decimal': 'decimal(10,2)',
+  },
+  'Date and Time': {
+    'date': 'date',
+    'datetime': 'datetime',
+    'timestamp': 'timestamp',
+    'time': 'time',
+    'year': 'year',
+  },
+  'String': {
+    'char': 'char(1)',
+    'varchar': 'varchar(255)',
+    'tinytext': 'tinytext',
+    'text': 'text',
+    'mediumtext': 'mediumtext',
+    'longtext': 'longtext',
+  },
+  'Binary': {
+    'binary': 'binary(1)',
+    'varbinary': 'varbinary(255)',
+    'tinyblob': 'tinyblob',
+    'blob': 'blob',
+    'mediumblob': 'mediumblob',
+    'longblob': 'longblob',
+  },
+  'Other': {'json': 'json', 'geometry': 'geometry'},
+};
+
 /// 一列的编辑状态。索引和外键引用的是这个对象而不是列名，改名时自然跟着走
 class _ColumnRow {
   final String? originalName;
@@ -103,6 +142,322 @@ class _ColumnRow {
     for (final controller in [name, type, defaultText, onUpdate, collation, comment]) {
       controller.dispose();
     }
+  }
+}
+
+/// 列单元格先显示文本，双击才放入输入框；失焦或回车后回到表格状态。
+class _InlineTextCell extends StatefulWidget {
+  final TextEditingController controller;
+  final Key displayKey;
+  final Key inputKey;
+  final bool enabled;
+  final String? hint;
+  final ValueChanged<String>? onChanged;
+
+  const _InlineTextCell({
+    super.key,
+    required this.controller,
+    required this.displayKey,
+    required this.inputKey,
+    required this.enabled,
+    this.hint,
+    this.onChanged,
+  });
+
+  @override
+  State<_InlineTextCell> createState() => _InlineTextCellState();
+}
+
+class _InlineTextCellState extends State<_InlineTextCell> {
+  bool _editing = false;
+
+  void _stop() {
+    if (_editing && mounted) setState(() => _editing = false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    if (_editing && widget.enabled) {
+      return Focus(
+        onKeyEvent: (_, event) {
+          if (event is KeyDownEvent && event.logicalKey == LogicalKeyboardKey.escape) {
+            _stop();
+            return KeyEventResult.handled;
+          }
+          return KeyEventResult.ignored;
+        },
+        child: TextField(
+          key: widget.inputKey,
+          controller: widget.controller,
+          enabled: widget.enabled,
+          autofocus: true,
+          style: const TextStyle(fontSize: 12, fontFamily: 'Menlo'),
+          decoration: const InputDecoration(contentPadding: EdgeInsets.symmetric(horizontal: 5, vertical: 3)),
+          onChanged: widget.onChanged,
+          onSubmitted: (_) => _stop(),
+          onTapOutside: (_) => _stop(),
+        ),
+      );
+    }
+
+    final value = widget.controller.text;
+    final empty = value.isEmpty;
+    return GestureDetector(
+      key: widget.displayKey,
+      behavior: HitTestBehavior.opaque,
+      onDoubleTap: widget.enabled ? () => setState(() => _editing = true) : null,
+      child: SizedBox(
+        height: 25,
+        child: Align(
+          alignment: Alignment.centerLeft,
+          child: Text(
+            empty ? widget.hint ?? '' : value,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: 12,
+              fontFamily: 'Menlo',
+              color: empty ? scheme.outline : scheme.onSurface,
+              fontStyle: empty ? FontStyle.italic : null,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 类型单元格保持完整原文；单击选常用类型，双击可输入完整类型定义。
+class _ColumnTypeCell extends StatefulWidget {
+  final TextEditingController controller;
+  final int row;
+  final bool enabled;
+  final VoidCallback onChanged;
+
+  const _ColumnTypeCell({super.key, required this.controller, required this.row, required this.enabled, required this.onChanged});
+
+  @override
+  State<_ColumnTypeCell> createState() => _ColumnTypeCellState();
+}
+
+class _ColumnTypeCellState extends State<_ColumnTypeCell> {
+  final _portal = OverlayPortalController();
+  final _link = LayerLink();
+  final _filter = TextEditingController();
+  final _filterFocus = FocusNode();
+  final _tapGroup = Object();
+  bool _editing = false;
+  bool _above = false;
+
+  @override
+  void dispose() {
+    _filter.dispose();
+    _filterFocus.dispose();
+    super.dispose();
+  }
+
+  void _open() {
+    if (!widget.enabled) return;
+    if (_portal.isShowing) {
+      _close();
+      return;
+    }
+    final box = context.findRenderObject() as RenderBox;
+    final top = box.localToGlobal(Offset.zero).dy;
+    _above = MediaQuery.sizeOf(context).height - top < 330 && top > 330;
+    _filter.clear();
+    _portal.show();
+    setState(() {});
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _filterFocus.requestFocus();
+    });
+  }
+
+  void _close() {
+    if (_portal.isShowing) _portal.hide();
+    if (mounted) setState(() {});
+  }
+
+  void _select(String type) {
+    widget.controller.text = type;
+    widget.onChanged();
+    _close();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final menuTheme = Theme.of(context).popupMenuTheme;
+    final keyword = _filter.text.trim().toLowerCase();
+    bool matches(MapEntry<String, String> item) =>
+        item.key.contains(keyword) || item.value.contains(keyword);
+
+    return OverlayPortal(
+      controller: _portal,
+      overlayChildBuilder: (context) => CompositedTransformFollower(
+        link: _link,
+        showWhenUnlinked: false,
+        targetAnchor: _above ? Alignment.topLeft : Alignment.bottomLeft,
+        followerAnchor: _above ? Alignment.bottomLeft : Alignment.topLeft,
+        offset: Offset(0, _above ? -2 : 2),
+        child: Align(
+          alignment: Alignment.topLeft,
+          child: TapRegion(
+            groupId: _tapGroup,
+            onTapOutside: (_) => _close(),
+            child: Material(
+              color: menuTheme.color ?? scheme.surface,
+              elevation: menuTheme.elevation ?? 8,
+              shadowColor: menuTheme.shadowColor,
+              shape: menuTheme.shape ?? RoundedRectangleBorder(borderRadius: BorderRadius.circular(7)),
+              clipBehavior: Clip.antiAlias,
+              child: SizedBox(
+                width: 240,
+                height: 318,
+                child: Column(
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.all(7),
+                      child: TextField(
+                        key: ValueKey('column-type-filter-${widget.row}'),
+                        controller: _filter,
+                        focusNode: _filterFocus,
+                        style: const TextStyle(fontSize: 12),
+                        decoration: const InputDecoration(
+                          hintText: '筛选类型',
+                          prefixIcon: Icon(Icons.search, size: 15),
+                          prefixIconConstraints: BoxConstraints(minWidth: 27, minHeight: 25),
+                          contentPadding: EdgeInsets.symmetric(vertical: 5),
+                        ),
+                        onChanged: (_) => setState(() {}),
+                      ),
+                    ),
+                    Divider(height: 1, color: scheme.outlineVariant),
+                    Expanded(
+                      child: ListView(
+                        padding: const EdgeInsets.symmetric(vertical: 3),
+                        children: [
+                          if (keyword.isEmpty)
+                            Padding(
+                              padding: const EdgeInsets.fromLTRB(13, 5, 10, 8),
+                              child: Text(
+                                '当前：${widget.controller.text}',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(fontSize: 10, color: scheme.onSurfaceVariant),
+                              ),
+                            ),
+                          for (final group in _columnTypeGroups.entries)
+                            if (group.value.entries.any(matches)) ...[
+                              Padding(
+                                padding: const EdgeInsets.fromLTRB(13, 8, 10, 3),
+                                child: Text(group.key, style: TextStyle(fontSize: 10, color: scheme.outline)),
+                              ),
+                              for (final type in group.value.entries)
+                                if (matches(type))
+                                  InkWell(
+                                    onTap: () => _select(type.value),
+                                    child: SizedBox(
+                                      height: 27,
+                                      child: Row(
+                                        children: [
+                                          SizedBox(
+                                            width: 27,
+                                            child: widget.controller.text.toLowerCase() == type.value
+                                                ? Icon(Icons.check, size: 14, color: scheme.onSurface)
+                                                : null,
+                                          ),
+                                          Text(type.key, style: TextStyle(fontSize: 12, color: scheme.onSurface)),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                            ],
+                          if (!_columnTypeGroups.values.any((group) => group.entries.any(matches)))
+                            Padding(
+                              padding: const EdgeInsets.all(12),
+                              child: Text('没有匹配的类型', style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant)),
+                            ),
+                        ],
+                      ),
+                    ),
+                    Divider(height: 1, color: scheme.outlineVariant),
+                    InkWell(
+                      onTap: () {
+                        _close();
+                        setState(() => _editing = true);
+                      },
+                      child: const SizedBox(
+                        height: 29,
+                        child: Row(children: [SizedBox(width: 27), Text('自定义类型…', style: TextStyle(fontSize: 12))]),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+      child: CompositedTransformTarget(
+        link: _link,
+        child: TapRegion(
+          groupId: _tapGroup,
+          child: _editing && widget.enabled
+              ? TextField(
+                  key: ValueKey('column-type-${widget.row}'),
+                  controller: widget.controller,
+                  enabled: widget.enabled,
+                  autofocus: true,
+                  style: const TextStyle(fontSize: 12, fontFamily: 'Menlo'),
+                  decoration: InputDecoration(
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 5, vertical: 3),
+                    suffixIcon: IconButton(
+                      key: ValueKey('column-type-picker-${widget.row}'),
+                      onPressed: _open,
+                      icon: const Icon(Icons.arrow_drop_down, size: 16),
+                    ),
+                    suffixIconConstraints: const BoxConstraints(minWidth: 25, minHeight: 25),
+                  ),
+                  onChanged: (_) => widget.onChanged(),
+                  onSubmitted: (_) => setState(() => _editing = false),
+                  onTapOutside: (_) => setState(() => _editing = false),
+                )
+              : SizedBox(
+                  height: 25,
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: GestureDetector(
+                          key: ValueKey('column-type-display-${widget.row}'),
+                          behavior: HitTestBehavior.opaque,
+                          onDoubleTap: widget.enabled ? () => setState(() => _editing = true) : null,
+                          child: Align(
+                            alignment: Alignment.centerLeft,
+                            child: Text(
+                              widget.controller.text,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(fontSize: 12, fontFamily: 'Menlo', color: scheme.onSurface),
+                            ),
+                          ),
+                        ),
+                      ),
+                      if (widget.enabled)
+                        IconButton(
+                          key: ValueKey('column-type-picker-${widget.row}'),
+                          onPressed: _open,
+                          icon: Icon(Icons.arrow_drop_down, size: 15, color: scheme.onSurfaceVariant),
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints.tightFor(width: 23, height: 23),
+                        ),
+                    ],
+                  ),
+                ),
+        ),
+      ),
+    );
   }
 }
 
@@ -445,15 +800,43 @@ class _StructureEditorPanelState extends State<StructureEditorPanel> {
     }
   }
 
-  void _addColumn() {
+  void _addColumn({int? after}) {
     setState(() {
-      _columns.add(_ColumnRow(const ColumnDraft(
+      final column = _ColumnRow(const ColumnDraft(
         name: '',
         columnType: 'varchar(255)',
         nullable: true,
         default_: DefaultValue.null_(),
         autoIncrement: false,
         comment: '',
+      ));
+      if (after == null) {
+        _columns.add(column);
+      } else {
+        _columns.insert(after + 1, column);
+      }
+    });
+  }
+
+  void _duplicateColumn(int index) {
+    final source = _columns[index];
+    final names = {for (final column in _columns) column.name.text};
+    final base = source.name.text.isEmpty ? 'column' : source.name.text;
+    var name = '${base}_copy';
+    for (var suffix = 2; names.contains(name); suffix++) {
+      name = '${base}_copy$suffix';
+    }
+    setState(() {
+      _columns.insert(index + 1, _ColumnRow(ColumnDraft(
+        name: name,
+        columnType: source.type.text,
+        nullable: source.nullable,
+        default_: source.defaultValue,
+        // 一张表不能自动产生第二个自增列；其余列属性仍从源列复制。
+        autoIncrement: false,
+        onUpdate: _optional(source.onUpdate.text),
+        comment: source.comment.text,
+        collation: _optional(source.collation.text),
       )));
     });
   }
@@ -475,6 +858,34 @@ class _StructureEditorPanelState extends State<StructureEditorPanel> {
   void _moveColumn(int from, int to) {
     if (to < 0 || to >= _columns.length) return;
     setState(() => _columns.insert(to, _columns.removeAt(from)));
+  }
+
+  Future<void> _showColumnMenu(int index, Offset position) async {
+    final column = _columns[index];
+    final choice = await showMenu<String>(
+      context: context,
+      position: RelativeRect.fromLTRB(position.dx, position.dy, position.dx, position.dy),
+      constraints: const BoxConstraints(minWidth: 210, maxWidth: 260),
+      items: [
+        desktopMenuItem(value: 'add', label: '添加列', icon: Icons.add),
+        desktopMenuItem(value: 'duplicate', label: '复制列', icon: Icons.copy_all_outlined, enabled: column.locked == null),
+        const PopupMenuDivider(height: 8),
+        desktopMenuItem(value: 'up', label: '上移', icon: Icons.arrow_upward, enabled: index > 0),
+        desktopMenuItem(value: 'down', label: '下移', icon: Icons.arrow_downward, enabled: index < _columns.length - 1),
+        const PopupMenuDivider(height: 8),
+        desktopMenuItem(value: 'delete', label: '删除列', icon: Icons.delete_outline, destructive: true),
+      ],
+    );
+    if (!mounted || choice == null) return;
+    final current = _columns.indexOf(column);
+    if (current < 0) return;
+    switch (choice) {
+      case 'add': _addColumn(after: current);
+      case 'duplicate': _duplicateColumn(current);
+      case 'up': _moveColumn(current, current - 1);
+      case 'down': _moveColumn(current, current + 1);
+      case 'delete': _removeColumn(column);
+    }
   }
 
   @override
@@ -577,8 +988,7 @@ class _StructureEditorPanelState extends State<StructureEditorPanel> {
 
   // ---- 列 ----
 
-  // 操作按钮放第一列：表比对话框宽，放最后要横着滚才看得到删除
-  static const _columnWidths = [96.0, 150.0, 160.0, 40.0, 110.0, 150.0, 40.0, 170.0, 150.0, 180.0];
+  static const _columnWidths = [175.0, 180.0, 40.0, 110.0, 150.0, 40.0, 170.0, 190.0, 180.0];
 
   Widget _columnsTab() {
     return Column(
@@ -587,13 +997,16 @@ class _StructureEditorPanelState extends State<StructureEditorPanel> {
         Expanded(
           child: _Table(
             widths: _columnWidths,
-            headers: const ['', '列名', '类型', '可空', '默认值', '', '自增', 'ON UPDATE', '排序规则', '注释'],
+            headers: const ['列名', '类型', '可空', '默认值', '', '自增', 'ON UPDATE', '排序规则', '注释'],
             rows: [for (var i = 0; i < _columns.length; i++) _columnRow(i)],
+            headerHeight: 29,
+            rowHeight: 29,
+            onRowSecondaryTap: _showColumnMenu,
           ),
         ),
         _addBar(TextButton.icon(
           key: const ValueKey('add-column'),
-          onPressed: _addColumn,
+          onPressed: () => _addColumn(),
           icon: const Icon(Icons.add, size: 14),
           label: const Text('添加列'),
         )),
@@ -607,29 +1020,21 @@ class _StructureEditorPanelState extends State<StructureEditorPanel> {
     final hasDefaultText = column.defaultKind == _DefaultKind.literal || column.defaultKind == _DefaultKind.expression;
     return [
       Row(
-        mainAxisSize: MainAxisSize.min,
         children: [
-          SizedBox(
-            width: 18,
-            child: editable
-                ? null
-                : Tooltip(
-                    message: column.locked!,
-                    child: Icon(
-                      Icons.lock_outline,
-                      key: ValueKey('column-locked-$i'),
-                      size: 13,
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-          ),
-          _iconButton(Icons.arrow_upward, '上移', () => _moveColumn(i, i - 1)),
-          _iconButton(Icons.arrow_downward, '下移', () => _moveColumn(i, i + 1)),
-          _iconButton(Icons.delete_outline, '删除列', () => _removeColumn(column), key: ValueKey('column-delete-$i')),
+          Expanded(child: _columnTextCell(column.name, i, 'name', hint: '双击输入列名', rebuildOnChange: true)),
+          if (!editable)
+            Tooltip(
+              message: column.locked!,
+              child: Icon(
+                Icons.lock_outline,
+                key: ValueKey('column-locked-$i'),
+                size: 13,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            ),
         ],
       ),
-      _field(column.name, key: ValueKey('column-name-$i')),
-      _field(column.type, enabled: editable, key: ValueKey('column-type-$i')),
+      _ColumnTypeCell(key: ObjectKey(column.type), controller: column.type, row: i, enabled: editable, onChanged: () => setState(() {})),
       _checkbox(
         column.nullable,
         editable ? (value) => setState(() => column.nullable = value) : null,
@@ -642,17 +1047,34 @@ class _StructureEditorPanelState extends State<StructureEditorPanel> {
         onChanged: editable ? (value) => setState(() => column.defaultKind = value) : null,
         items: {for (final kind in _DefaultKind.values) kind: _defaultKindLabels[kind]!},
       ),
-      _field(column.defaultText, enabled: editable && hasDefaultText, key: ValueKey('column-default-$i')),
+      _columnTextCell(column.defaultText, i, 'default', enabled: editable && hasDefaultText),
       _checkbox(
         column.autoIncrement,
         editable ? (value) => setState(() => column.autoIncrement = value) : null,
       ),
       // 空着就是没有 ON UPDATE。提示写成例子的话，一排空框看起来像每列都设了 CURRENT_TIMESTAMP
-      _field(column.onUpdate, enabled: editable, hint: '无'),
-      _field(column.collation, enabled: editable, hint: '表默认'),
-      _field(column.comment, enabled: editable, key: ValueKey('column-comment-$i')),
+      _columnTextCell(column.onUpdate, i, 'on-update', enabled: editable, hint: '无'),
+      _columnTextCell(column.collation, i, 'collation', enabled: editable, hint: '表默认'),
+      _columnTextCell(column.comment, i, 'comment', enabled: editable),
     ];
   }
+
+  Widget _columnTextCell(
+    TextEditingController controller,
+    int index,
+    String field, {
+    bool enabled = true,
+    String? hint,
+    bool rebuildOnChange = false,
+  }) => _InlineTextCell(
+    key: ObjectKey(controller),
+    controller: controller,
+    displayKey: ValueKey('column-$field-display-$index'),
+    inputKey: ValueKey('column-$field-$index'),
+    enabled: enabled,
+    hint: hint,
+    onChanged: rebuildOnChange ? (_) => setState(() {}) : null,
+  );
 
   // ---- 索引 ----
 
@@ -1068,57 +1490,102 @@ class _StructureEditorPanelState extends State<StructureEditorPanel> {
 }
 
 /// 固定列宽的表格，横竖都能滚
-class _Table extends StatelessWidget {
+class _Table extends StatefulWidget {
   final List<double> widths;
   final List<String> headers;
   final List<List<Widget>> rows;
+  final double headerHeight;
+  final double? rowHeight;
+  final Future<void> Function(int row, Offset position)? onRowSecondaryTap;
 
-  const _Table({required this.widths, required this.headers, required this.rows});
+  const _Table({
+    required this.widths,
+    required this.headers,
+    required this.rows,
+    this.headerHeight = 22,
+    this.rowHeight,
+    this.onRowSecondaryTap,
+  });
+
+  @override
+  State<_Table> createState() => _TableState();
+}
+
+class _TableState extends State<_Table> {
+  final _hScroll = ScrollController();
+  int? _menuRow;
+
+  @override
+  void dispose() {
+    _hScroll.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     var totalWidth = 0.0;
-    for (final width in widths) {
+    for (final width in widget.widths) {
       totalWidth += width;
     }
     final scheme = Theme.of(context).colorScheme;
     return LayoutBuilder(
-      builder: (context, constraints) => SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: SizedBox(
-          // 比对话框窄时撑满，表头和隔行底色一直画到右边
-          width: totalWidth > constraints.maxWidth ? totalWidth : constraints.maxWidth,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Container(
-                height: 22,
-                decoration: BoxDecoration(
-                  color: scheme.surfaceContainerHighest,
-                  border: Border(bottom: BorderSide(color: scheme.outlineVariant)),
-                ),
-                child: _cells([
-                  for (final header in headers)
-                    Text(
-                      header,
-                      maxLines: 1,
-                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.w500, color: scheme.onSurfaceVariant),
-                    ),
-                ], divider: scheme.outlineVariant),
-              ),
-              Expanded(
-                child: ListView(
-                  children: [
-                    for (var i = 0; i < rows.length; i++)
-                      Container(
-                        color: i.isOdd ? scheme.surfaceContainerLow : scheme.surface,
-                        padding: const EdgeInsets.symmetric(vertical: 2),
-                        child: _cells(rows[i]),
+      builder: (context, constraints) => Scrollbar(
+        controller: _hScroll,
+        thumbVisibility: true,
+        interactive: true,
+        scrollbarOrientation: ScrollbarOrientation.bottom,
+        child: SingleChildScrollView(
+          controller: _hScroll,
+          scrollDirection: Axis.horizontal,
+          child: SizedBox(
+            // 比对话框窄时撑满，表头和隔行底色一直画到右边
+            width: totalWidth > constraints.maxWidth ? totalWidth : constraints.maxWidth,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Container(
+                  height: widget.headerHeight,
+                  decoration: BoxDecoration(
+                    color: scheme.surfaceContainerHighest,
+                    border: Border(bottom: BorderSide(color: scheme.outlineVariant)),
+                  ),
+                  child: _cells([
+                    for (final header in widget.headers)
+                      Text(
+                        header,
+                        maxLines: 1,
+                        style: TextStyle(fontSize: 11, fontWeight: FontWeight.w500, color: scheme.onSurfaceVariant),
                       ),
-                  ],
+                  ], divider: scheme.outlineVariant),
                 ),
-              ),
-            ],
+                Expanded(
+                  child: ListView(
+                    children: [
+                      for (var i = 0; i < widget.rows.length; i++)
+                        GestureDetector(
+                          key: widget.onRowSecondaryTap == null ? null : ValueKey('column-row-$i'),
+                          behavior: HitTestBehavior.opaque,
+                          onSecondaryTapUp: widget.onRowSecondaryTap == null
+                              ? null
+                              : (details) async {
+                                  setState(() => _menuRow = i);
+                                  await widget.onRowSecondaryTap!(i, details.globalPosition);
+                                  if (mounted) setState(() => _menuRow = null);
+                                },
+                          child: Container(
+                            height: widget.rowHeight,
+                            color: _menuRow == i
+                                ? scheme.primaryContainer
+                                : i.isOdd ? scheme.surfaceContainerLow : scheme.surface,
+                            padding: widget.rowHeight == null ? const EdgeInsets.symmetric(vertical: 2) : null,
+                            child: _cells(widget.rows[i]),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -1130,8 +1597,8 @@ class _Table extends StatelessWidget {
       children: [
         for (var i = 0; i < cells.length; i++)
           Container(
-            width: widths[i],
-            padding: const EdgeInsets.symmetric(horizontal: 3),
+            width: widget.widths[i],
+            padding: EdgeInsets.symmetric(horizontal: widget.widths[i] <= 40 ? 4 : 10),
             alignment: Alignment.centerLeft,
             decoration: divider == null ? null : BoxDecoration(border: Border(right: BorderSide(color: divider))),
             child: cells[i],
