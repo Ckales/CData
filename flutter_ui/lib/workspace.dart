@@ -33,6 +33,7 @@ class Workspace {
   final String name;
   final ConnectionConfig config;
   final BigInt schemaId;
+  final String? initialTable;
 
   // 数据源随会话建一次，每次重绘都新建的话侧栏会以为换了库，重读一遍
   final RustSchemaSource schema;
@@ -54,6 +55,7 @@ class Workspace {
     required this.name,
     required this.config,
     required this.schemaId,
+    this.initialTable,
   }) : schema = RustSchemaSource(schemaId),
        server = RustServerSource(schemaId),
        users = RustUserSource(schemaId),
@@ -133,6 +135,7 @@ class WorkspaceView extends StatefulWidget {
   final void Function(Workspace workspace, int tab) onCloseTab;
   final VoidCallback onNewConnection;
   final VoidCallback onDisconnect;
+  final VoidCallback onSelectionChanged;
   final VoidCallback onPreferences;
 
   final BigInt Function() maxRows;
@@ -147,6 +150,7 @@ class WorkspaceView extends StatefulWidget {
     required this.onCloseTab,
     required this.onNewConnection,
     required this.onDisconnect,
+    required this.onSelectionChanged,
     required this.onPreferences,
     required this.maxRows,
     required this.editorFontSize,
@@ -173,7 +177,9 @@ class WorkspaceViewState extends State<WorkspaceView> {
   @override
   void initState() {
     super.initState();
-    if (_ws.tabs.isEmpty) _addTab(database: _ws.config.database ?? '');
+    if (_ws.tabs.isEmpty) {
+      _addTab(database: _ws.config.database ?? '', table: _ws.initialTable);
+    }
     _ensureCatalog(_tab);
   }
 
@@ -220,6 +226,7 @@ class WorkspaceViewState extends State<WorkspaceView> {
         mode: current.mode,
       ),
     );
+    widget.onSelectionChanged();
   }
 
   /// 关这条连接的最后一个标签就是断开它；整个窗口只剩这一个标签时不给关
@@ -233,6 +240,7 @@ class WorkspaceViewState extends State<WorkspaceView> {
       _ws.tabs.removeAt(index);
       _ws.active = _ws.active.clamp(0, _ws.tabs.length - 1);
     });
+    widget.onSelectionChanged();
     _keepShortcutsAlive();
     await tab.close();
   }
@@ -240,6 +248,7 @@ class WorkspaceViewState extends State<WorkspaceView> {
   void selectTab(int index) {
     if (index < 0 || index >= _ws.tabs.length) return;
     setState(() => _ws.active = index);
+    widget.onSelectionChanged();
     _keepShortcutsAlive();
     _ensureCatalog(_tab);
   }
@@ -294,6 +303,7 @@ class WorkspaceViewState extends State<WorkspaceView> {
       }
       tab.visited.add(tab.mode);
     });
+    widget.onSelectionChanged();
     _loadTable(tab);
   }
 
@@ -315,6 +325,7 @@ class WorkspaceViewState extends State<WorkspaceView> {
       tab.database = database;
       tab.table = null;
     });
+    widget.onSelectionChanged();
     await tab.contentKey.currentState?.reset();
     await tab.queryKey.currentState?.reset();
     await tab.contentRunner.close();
@@ -361,6 +372,7 @@ class WorkspaceViewState extends State<WorkspaceView> {
       _tab.mode = WorkspaceMode.structure;
       _tab.visited.add(WorkspaceMode.structure);
     });
+    widget.onSelectionChanged();
   }
 
   Future<String?> _createTable(String database) async {
@@ -397,6 +409,7 @@ class WorkspaceViewState extends State<WorkspaceView> {
         }
       }
     });
+    widget.onSelectionChanged();
     for (final tab in reload) {
       _loadTable(tab);
     }
@@ -511,9 +524,12 @@ class WorkspaceViewState extends State<WorkspaceView> {
                       onTableSelected: _openTable,
                       onShowStructure: _showStructureOf,
                       onCreateTable: _createTable,
-                      onOpenInNewTab: (table) => setState(
-                        () => _addTab(database: tab.database, table: table),
-                      ),
+                      onOpenInNewTab: (table) {
+                        setState(
+                          () => _addTab(database: tab.database, table: table),
+                        );
+                        widget.onSelectionChanged();
+                      },
                       onTableAction: _afterTableAction,
                       onImport: (table) async {
                         final file = await openFile(

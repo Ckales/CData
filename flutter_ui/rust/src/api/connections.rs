@@ -5,7 +5,7 @@
 
 use flutter_rust_bridge::frb;
 
-pub use cdata_core::connections::SavedConnection;
+pub use cdata_core::connections::{OpenConnectionState, SavedConnection};
 
 use crate::api::db::Result;
 use crate::api::options::{ConnectionOptions, SshHop};
@@ -21,6 +21,14 @@ pub struct _SavedConnection {
     pub options: ConnectionOptions,
 }
 
+#[frb(mirror(OpenConnectionState))]
+pub struct _OpenConnectionState {
+    pub id: String,
+    pub database: Option<String>,
+    pub table: Option<String>,
+    pub active: bool,
+}
+
 fn to_message(err: cdata_core::connections::Error) -> String {
     err.to_string()
 }
@@ -30,12 +38,12 @@ pub fn list_connections() -> Result<Vec<SavedConnection>> {
     cdata_core::connections::list().map_err(to_message)
 }
 
-pub fn open_connection_ids() -> Result<Vec<String>> {
-    cdata_core::connections::open_connection_ids().map_err(to_message)
+pub fn open_connections() -> Result<Vec<OpenConnectionState>> {
+    cdata_core::connections::open_connections().map_err(to_message)
 }
 
-pub fn save_open_connection_ids(ids: Vec<String>) -> Result<()> {
-    cdata_core::connections::save_open_connection_ids(&ids).map_err(to_message)
+pub fn save_open_connections(connections: Vec<OpenConnectionState>) -> Result<()> {
+    cdata_core::connections::save_open_connections(&connections).map_err(to_message)
 }
 
 /// 新增或更新。password 为 None 表示保留钥匙串里已有的那份

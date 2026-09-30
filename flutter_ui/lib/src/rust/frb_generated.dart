@@ -79,7 +79,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.13.0';
 
   @override
-  int get rustContentHash => 935839389;
+  int get rustContentHash => -579192586;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -330,7 +330,7 @@ abstract class RustLibApi extends BaseApi {
 
   TableDraft crateApiSchemaNewTableDraft();
 
-  Future<List<String>> crateApiConnectionsOpenConnectionIds();
+  Future<List<OpenConnectionState>> crateApiConnectionsOpenConnections();
 
   Future<BigInt> crateApiDbOpenSession({required ConnectionConfig config});
 
@@ -430,8 +430,8 @@ abstract class RustLibApi extends BaseApi {
     required List<ColumnLayout> columns,
   });
 
-  Future<void> crateApiConnectionsSaveOpenConnectionIds({
-    required List<String> ids,
+  Future<void> crateApiConnectionsSaveOpenConnections({
+    required List<OpenConnectionState> connections,
   });
 
   Future<void> crateApiPreferencesSavePreferences({
@@ -2317,7 +2317,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(debugName: "new_table_draft", argNames: []);
 
   @override
-  Future<List<String>> crateApiConnectionsOpenConnectionIds() {
+  Future<List<OpenConnectionState>> crateApiConnectionsOpenConnections() {
     return handler.executeNormal(
       NormalTask(
         callFfi: (port_) {
@@ -2330,18 +2330,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           );
         },
         codec: SseCodec(
-          decodeSuccessData: sse_decode_list_String,
+          decodeSuccessData: sse_decode_list_open_connection_state,
           decodeErrorData: sse_decode_String,
         ),
-        constMeta: kCrateApiConnectionsOpenConnectionIdsConstMeta,
+        constMeta: kCrateApiConnectionsOpenConnectionsConstMeta,
         argValues: [],
         apiImpl: this,
       ),
     );
   }
 
-  TaskConstMeta get kCrateApiConnectionsOpenConnectionIdsConstMeta =>
-      const TaskConstMeta(debugName: "open_connection_ids", argNames: []);
+  TaskConstMeta get kCrateApiConnectionsOpenConnectionsConstMeta =>
+      const TaskConstMeta(debugName: "open_connections", argNames: []);
 
   @override
   Future<BigInt> crateApiDbOpenSession({required ConnectionConfig config}) {
@@ -2956,14 +2956,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   );
 
   @override
-  Future<void> crateApiConnectionsSaveOpenConnectionIds({
-    required List<String> ids,
+  Future<void> crateApiConnectionsSaveOpenConnections({
+    required List<OpenConnectionState> connections,
   }) {
     return handler.executeNormal(
       NormalTask(
         callFfi: (port_) {
           final serializer = SseSerializer(generalizedFrbRustBinding);
-          sse_encode_list_String(ids, serializer);
+          sse_encode_list_open_connection_state(connections, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
@@ -2975,17 +2975,17 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeSuccessData: sse_decode_unit,
           decodeErrorData: sse_decode_String,
         ),
-        constMeta: kCrateApiConnectionsSaveOpenConnectionIdsConstMeta,
-        argValues: [ids],
+        constMeta: kCrateApiConnectionsSaveOpenConnectionsConstMeta,
+        argValues: [connections],
         apiImpl: this,
       ),
     );
   }
 
-  TaskConstMeta get kCrateApiConnectionsSaveOpenConnectionIdsConstMeta =>
+  TaskConstMeta get kCrateApiConnectionsSaveOpenConnectionsConstMeta =>
       const TaskConstMeta(
-        debugName: "save_open_connection_ids",
-        argNames: ["ids"],
+        debugName: "save_open_connections",
+        argNames: ["connections"],
       );
 
   @override
@@ -4469,6 +4469,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  List<OpenConnectionState> dco_decode_list_open_connection_state(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>)
+        .map(dco_decode_open_connection_state)
+        .toList();
+  }
+
+  @protected
   List<String?> dco_decode_list_opt_String(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return (raw as List<dynamic>).map(dco_decode_opt_String).toList();
@@ -4612,6 +4620,20 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   OnError dco_decode_on_error(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return OnError.values[raw as int];
+  }
+
+  @protected
+  OpenConnectionState dco_decode_open_connection_state(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 4)
+      throw Exception('unexpected arr length: expect 4 but see ${arr.length}');
+    return OpenConnectionState(
+      id: dco_decode_String(arr[0]),
+      database: dco_decode_opt_String(arr[1]),
+      table: dco_decode_opt_String(arr[2]),
+      active: dco_decode_bool(arr[3]),
+    );
   }
 
   @protected
@@ -6562,6 +6584,20 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  List<OpenConnectionState> sse_decode_list_open_connection_state(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <OpenConnectionState>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_open_connection_state(deserializer));
+    }
+    return ans_;
+  }
+
+  @protected
   List<String?> sse_decode_list_opt_String(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
 
@@ -6817,6 +6853,23 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var inner = sse_decode_i_32(deserializer);
     return OnError.values[inner];
+  }
+
+  @protected
+  OpenConnectionState sse_decode_open_connection_state(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_id = sse_decode_String(deserializer);
+    var var_database = sse_decode_opt_String(deserializer);
+    var var_table = sse_decode_opt_String(deserializer);
+    var var_active = sse_decode_bool(deserializer);
+    return OpenConnectionState(
+      id: var_id,
+      database: var_database,
+      table: var_table,
+      active: var_active,
+    );
   }
 
   @protected
@@ -8673,6 +8726,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_list_open_connection_state(
+    List<OpenConnectionState> self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_open_connection_state(item, serializer);
+    }
+  }
+
+  @protected
   void sse_encode_list_opt_String(
     List<String?> self,
     SseSerializer serializer,
@@ -8917,6 +8982,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   void sse_encode_on_error(OnError self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_i_32(self.index, serializer);
+  }
+
+  @protected
+  void sse_encode_open_connection_state(
+    OpenConnectionState self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.id, serializer);
+    sse_encode_opt_String(self.database, serializer);
+    sse_encode_opt_String(self.table, serializer);
+    sse_encode_bool(self.active, serializer);
   }
 
   @protected

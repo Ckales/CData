@@ -58,6 +58,17 @@ pub struct SavedConnection {
     pub options: ConnectionOptions,
 }
 
+/// 上次打开的收藏连接及当前标签的库、表；不含连接参数或凭据。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct OpenConnectionState {
+    pub id: String,
+    /// None 只用于旧版 ID 列表，表示沿用收藏连接的默认库。
+    pub database: Option<String>,
+    pub table: Option<String>,
+    #[serde(default)]
+    pub active: bool,
+}
+
 impl SavedConnection {
     /// 配上密码变成可以直接连的配置。SSH 的密码 / 口令连接时按 saved_id 去钥匙串取
     pub fn with_password(&self, password: String) -> ConnectionConfig {
@@ -121,7 +132,7 @@ pub fn list() -> Result<Vec<SavedConnection>> {
     serde_json::from_str(&text).map_err(|e| Error::Parse(e.to_string()))
 }
 
-/// 上次打开的收藏连接 ID。只保存 ID，不保存连接参数或凭据。
+/// 旧版及安装版读取的连接 ID 文件，格式保持为字符串数组。
 pub fn open_connection_ids() -> Result<Vec<String>> {
     let path = data_file("CDATA_OPEN_CONNECTIONS_PATH", "open_connections.json")?;
     if !path.exists() {
@@ -138,6 +149,34 @@ pub fn save_open_connection_ids(ids: &[String]) -> Result<()> {
     }
     let text = serde_json::to_string_pretty(ids).map_err(|e| Error::Parse(e.to_string()))?;
     fs::write(path, text).map_err(|e| Error::Io(e.to_string()))
+}
+
+/// 连接 ID 沿用旧文件；当前库、表放单独文件，旧版应用仍能恢复连接。
+pub fn open_connections() -> Result<Vec<OpenConnectionState>> {
+    let ids = open_connection_ids()?;
+    let path = data_file("CDATA_OPEN_SELECTIONS_PATH", "open_selections.json")?;
+    let selections: Vec<OpenConnectionState> = if path.exists() {
+        let text = fs::read_to_string(&path).map_err(|e| Error::Io(e.to_string()))?;
+        serde_json::from_str(&text).map_err(|e| Error::Parse(e.to_string()))?
+    } else {
+        Vec::new()
+    };
+    Ok(ids.into_iter().map(|id| {
+        selections.iter().find(|state| state.id == id).cloned().unwrap_or(
+            OpenConnectionState { id, database: None, table: None, active: false }
+        )
+    }).collect())
+}
+
+pub fn save_open_connections(connections: &[OpenConnectionState]) -> Result<()> {
+    let path = data_file("CDATA_OPEN_SELECTIONS_PATH", "open_selections.json")?;
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|e| Error::Io(e.to_string()))?;
+    }
+    let text = serde_json::to_string_pretty(connections).map_err(|e| Error::Parse(e.to_string()))?;
+    fs::write(path, text).map_err(|e| Error::Io(e.to_string()))?;
+    let ids = connections.iter().map(|state| state.id.clone()).collect::<Vec<_>>();
+    save_open_connection_ids(&ids)
 }
 
 /// 新增或更新一条连接。密码为 None 表示不动钥匙串里已有的那份
@@ -234,19 +273,36 @@ mod tests {
     }
 
     #[test]
-    fn open_connection_ids_store_only_ids() {
+    fn open_connection_state_round_trip() {
         let dir = std::env::temp_dir().join(format!("cdata-open-ids-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("open_connections.json");
+        let selections_path = dir.join("open_selections.json");
         unsafe { std::env::set_var("CDATA_OPEN_CONNECTIONS_PATH", &path) };
+        unsafe { std::env::set_var("CDATA_OPEN_SELECTIONS_PATH", &selections_path) };
 
-        assert!(open_connection_ids().unwrap().is_empty());
-        let ids = vec!["one".to_string(), "two".to_string()];
-        save_open_connection_ids(&ids).unwrap();
-        assert_eq!(open_connection_ids().unwrap(), ids);
+        assert!(open_connections().unwrap().is_empty());
+        let connections = vec![
+            OpenConnectionState { id: "one".into(), database: Some("shop".into()), table: Some("orders".into()), active: true },
+            OpenConnectionState { id: "two".into(), database: Some("".into()), table: None, active: false },
+        ];
+        save_open_connections(&connections).unwrap();
+        assert_eq!(open_connections().unwrap(), connections);
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "[\n  \"one\",\n  \"two\"\n]");
 
+        // 早期的库表选择文件没有 active 字段，沿用旧的最后连接优先行为。
+        std::fs::write(&selections_path, r#"[{"id":"one","database":"shop","table":"orders"}]"#).unwrap();
+        assert_eq!(open_connections().unwrap()[0].active, false);
+
+        // 旧版本只有 ID 文件；读出后仍可用收藏连接里的默认库。
+        std::fs::remove_file(&selections_path).unwrap();
+        assert_eq!(open_connections().unwrap(), vec![
+            OpenConnectionState { id: "one".into(), database: None, table: None, active: false },
+            OpenConnectionState { id: "two".into(), database: None, table: None, active: false },
+        ]);
+
         unsafe { std::env::remove_var("CDATA_OPEN_CONNECTIONS_PATH") };
+        unsafe { std::env::remove_var("CDATA_OPEN_SELECTIONS_PATH") };
         std::fs::remove_dir_all(&dir).unwrap();
     }
 

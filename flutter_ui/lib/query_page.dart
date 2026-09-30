@@ -44,6 +44,9 @@ class _QueryPageState extends State<QueryPage> {
   final List<Workspace> _workspaces = [];
   // 菜单栏的「新建已连接标签」要找到当前工作区的状态
   final Map<Workspace, GlobalKey<WorkspaceViewState>> _workspaceKeys = {};
+  Future<void> _pendingSave = Future.value();
+  bool _restoringConnections = false;
+  bool _selectionChangedDuringRestore = false;
   int _active = 0;
   int _nextWorkspaceId = 1;
 
@@ -61,16 +64,20 @@ class _QueryPageState extends State<QueryPage> {
   }
 
   Future<void> _restoreConnections() async {
+    _restoringConnections = true;
+    final failed = <OpenConnectionState>[];
     try {
-      final ids = await openConnectionIds();
+      final opened = await openConnections();
       final saved = await listConnections();
       final byId = {for (final connection in saved) connection.id: connection};
       final errors = <String>[];
-      for (final id in ids) {
+      int? activeIndex;
+      for (final state in opened) {
         if (!mounted) return;
-        final connection = byId[id];
+        final connection = byId[state.id];
         if (connection == null) {
-          errors.add('找不到收藏的连接 $id');
+          failed.add(state);
+          errors.add('找不到收藏的连接 ${state.id}');
           continue;
         }
         final config = ConnectionConfig(
@@ -78,17 +85,32 @@ class _QueryPageState extends State<QueryPage> {
           port: connection.port,
           user: connection.user,
           password: '',
-          database: connection.database,
+          database: state.database ?? connection.database,
           options: connection.options,
           sshSecrets: const [],
           savedId: connection.id,
         );
-        final error = await _openConnection(config, connection.name, remember: false);
-        if (error != null) errors.add('${connection.name}：$error');
+        final error = await _openConnection(config, connection.name, remember: false, initialTable: state.table);
+        if (error != null) {
+          failed.add(state);
+          errors.add('${connection.name}：$error');
+        }
+        if (error == null && state.active) activeIndex = _workspaces.length - 1;
       }
-      if (mounted && errors.isNotEmpty) _showError('恢复连接失败：${errors.join('；')}');
+      if (mounted && activeIndex != null && !_selectionChangedDuringRestore) {
+        setState(() => _active = activeIndex!);
+      }
+      if (mounted && errors.isNotEmpty) {
+        _showError('恢复连接失败：${errors.join('；')}');
+      }
     } catch (e) {
       if (mounted) _showError('恢复连接失败：$e');
+    } finally {
+      _restoringConnections = false;
+      if (mounted && _selectionChangedDuringRestore) {
+        _selectionChangedDuringRestore = false;
+        await _rememberConnections(preserve: failed);
+      }
     }
   }
 
@@ -96,18 +118,50 @@ class _QueryPageState extends State<QueryPage> {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
   }
 
-  Future<void> _rememberConnections() async {
+  Future<void> _rememberConnections({List<OpenConnectionState> preserve = const []}) async {
     if (!widget.rememberOpenConnections) return;
-    final ids = <String>[];
+    if (_restoringConnections) {
+      _selectionChangedDuringRestore = true;
+      return;
+    }
+    final opened = <OpenConnectionState>[];
     for (final workspace in _workspaces) {
       final id = workspace.config.savedId;
-      if (id != null && !ids.contains(id)) ids.add(id);
+      if (id == null) continue;
+      final tab = workspace.tabs.isEmpty ? null : workspace.activeTab;
+      var database = workspace.config.database ?? '';
+      if (tab != null) database = tab.database;
+      final state = OpenConnectionState(
+        id: id,
+        database: database,
+        table: tab?.table,
+        active: workspace == _workspaces[_active],
+      );
+      final existing = opened.indexWhere((item) => item.id == id);
+      if (existing < 0) {
+        opened.add(state);
+      } else if (state.active) {
+        opened[existing] = state;
+      }
     }
-    try {
-      await saveOpenConnectionIds(ids: ids);
-    } catch (e) {
-      if (mounted) _showError('记录打开的连接失败：$e');
+    for (final state in preserve) {
+      if (opened.any((item) => item.id == state.id)) continue;
+      opened.add(OpenConnectionState(
+        id: state.id,
+        database: state.database,
+        table: state.table,
+        active: false,
+      ));
     }
+    // 选库、选表可能连续触发，按触发顺序写，避免旧状态最后落盘。
+    _pendingSave = _pendingSave.then((_) async {
+      try {
+        await saveOpenConnections(connections: opened);
+      } catch (e) {
+        if (mounted) _showError('记录打开的连接失败：$e');
+      }
+    });
+    await _pendingSave;
   }
 
   @override
@@ -121,7 +175,12 @@ class _QueryPageState extends State<QueryPage> {
   /// 连上一条新连接：开侧栏会话，列一次库确认真的连得上，再开工作区。失败返回原因
   Future<String?> _connect(ConnectionConfig config, String name) => _openConnection(config, name, remember: true);
 
-  Future<String?> _openConnection(ConnectionConfig config, String name, {required bool remember}) async {
+  Future<String?> _openConnection(
+    ConnectionConfig config,
+    String name, {
+    required bool remember,
+    String? initialTable,
+  }) async {
     final BigInt sessionId;
     try {
       sessionId = await openSessionTrusting(config, _confirmHostKey);
@@ -140,7 +199,9 @@ class _QueryPageState extends State<QueryPage> {
       return null;
     }
     setState(() {
-      _workspaces.add(Workspace(id: _nextWorkspaceId++, name: name, config: config, schemaId: sessionId));
+      _workspaces.add(
+        Workspace(id: _nextWorkspaceId++, name: name, config: config, schemaId: sessionId, initialTable: initialTable),
+      );
       _active = _workspaces.length - 1;
       _connecting = false;
     });
@@ -159,6 +220,7 @@ class _QueryPageState extends State<QueryPage> {
   void _switchTo(Workspace workspace, int tab) {
     _workspaceKeys[workspace]?.currentState?.selectTab(tab);
     setState(() => _active = _workspaces.indexOf(workspace));
+    _rememberConnections();
   }
 
   Future<void> _disconnect(Workspace workspace) async {
@@ -328,6 +390,7 @@ class _QueryPageState extends State<QueryPage> {
             },
             onNewConnection: () => setState(() => _connecting = true),
             onDisconnect: () => _disconnect(workspace),
+            onSelectionChanged: _rememberConnections,
             onPreferences: _editPreferences,
             maxRows: () => widget.preferences.maxRows,
             editorFontSize: widget.preferences.editorFontSize.toDouble(),

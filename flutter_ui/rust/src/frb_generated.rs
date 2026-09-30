@@ -39,7 +39,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.13.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 935839389;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -579192586;
 
 // Section: executor
 
@@ -2099,7 +2099,7 @@ fn wire__crate__api__schema__new_table_draft_impl(
         },
     )
 }
-fn wire__crate__api__connections__open_connection_ids_impl(
+fn wire__crate__api__connections__open_connections_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
     rust_vec_len_: i32,
@@ -2107,7 +2107,7 @@ fn wire__crate__api__connections__open_connection_ids_impl(
 ) {
     FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
         flutter_rust_bridge::for_generated::TaskInfo {
-            debug_name: "open_connection_ids",
+            debug_name: "open_connections",
             port: Some(port_),
             mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
         },
@@ -2124,7 +2124,7 @@ fn wire__crate__api__connections__open_connection_ids_impl(
             deserializer.end();
             move |context| {
                 transform_result_sse::<_, String>((move || {
-                    let output_ok = crate::api::connections::open_connection_ids()?;
+                    let output_ok = crate::api::connections::open_connections()?;
                     std::result::Result::Ok(output_ok)
                 })())
             }
@@ -2817,7 +2817,7 @@ fn wire__crate__api__layouts__save_layout_impl(
         },
     )
 }
-fn wire__crate__api__connections__save_open_connection_ids_impl(
+fn wire__crate__api__connections__save_open_connections_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
     rust_vec_len_: i32,
@@ -2825,7 +2825,7 @@ fn wire__crate__api__connections__save_open_connection_ids_impl(
 ) {
     FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
         flutter_rust_bridge::for_generated::TaskInfo {
-            debug_name: "save_open_connection_ids",
+            debug_name: "save_open_connections",
             port: Some(port_),
             mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
         },
@@ -2839,11 +2839,13 @@ fn wire__crate__api__connections__save_open_connection_ids_impl(
             };
             let mut deserializer =
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
-            let api_ids = <Vec<String>>::sse_decode(&mut deserializer);
+            let api_connections =
+                <Vec<crate::api::connections::OpenConnectionState>>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
                 transform_result_sse::<_, String>((move || {
-                    let output_ok = crate::api::connections::save_open_connection_ids(api_ids)?;
+                    let output_ok =
+                        crate::api::connections::save_open_connections(api_connections)?;
                     std::result::Result::Ok(output_ok)
                 })())
             }
@@ -3704,6 +3706,13 @@ const _: fn() = || {
         let MaintenanceMessage = None::<crate::api::schema::MaintenanceMessage>.unwrap();
         let _: String = MaintenanceMessage.msg_type;
         let _: String = MaintenanceMessage.text;
+    }
+    {
+        let OpenConnectionState = None::<crate::api::connections::OpenConnectionState>.unwrap();
+        let _: String = OpenConnectionState.id;
+        let _: Option<String> = OpenConnectionState.database;
+        let _: Option<String> = OpenConnectionState.table;
+        let _: bool = OpenConnectionState.active;
     }
     {
         let Preferences = None::<crate::api::preferences::Preferences>.unwrap();
@@ -5264,6 +5273,20 @@ impl SseDecode for Vec<crate::api::schema::MaintenanceMessage> {
     }
 }
 
+impl SseDecode for Vec<crate::api::connections::OpenConnectionState> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<crate::api::connections::OpenConnectionState>::sse_decode(
+                deserializer,
+            ));
+        }
+        return ans_;
+    }
+}
+
 impl SseDecode for Vec<Option<String>> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -5538,6 +5561,22 @@ impl SseDecode for crate::api::csv_import::OnError {
             0 => crate::api::csv_import::OnError::RollbackAll,
             1 => crate::api::csv_import::OnError::SkipRow,
             _ => unreachable!("Invalid variant for OnError: {}", inner),
+        };
+    }
+}
+
+impl SseDecode for crate::api::connections::OpenConnectionState {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_id = <String>::sse_decode(deserializer);
+        let mut var_database = <Option<String>>::sse_decode(deserializer);
+        let mut var_table = <Option<String>>::sse_decode(deserializer);
+        let mut var_active = <bool>::sse_decode(deserializer);
+        return crate::api::connections::OpenConnectionState {
+            id: var_id,
+            database: var_database,
+            table: var_table,
+            active: var_active,
         };
     }
 }
@@ -6508,12 +6547,9 @@ fn pde_ffi_dispatcher_primary_impl(
             wire__crate__api__preferences__load_preferences_impl(port, ptr, rust_vec_len, data_len)
         }
         54 => wire__crate__api__users__load_user_admin_impl(port, ptr, rust_vec_len, data_len),
-        56 => wire__crate__api__connections__open_connection_ids_impl(
-            port,
-            ptr,
-            rust_vec_len,
-            data_len,
-        ),
+        56 => {
+            wire__crate__api__connections__open_connections_impl(port, ptr, rust_vec_len, data_len)
+        }
         57 => wire__crate__api__db__open_session_impl(port, ptr, rust_vec_len, data_len),
         58 => wire__crate__api__db__parse_clipboard_impl(port, ptr, rust_vec_len, data_len),
         59 => wire__crate__api__db__paste_cells_impl(port, ptr, rust_vec_len, data_len),
@@ -6544,7 +6580,7 @@ fn pde_ffi_dispatcher_primary_impl(
             wire__crate__api__csv_import__save_import_errors_impl(port, ptr, rust_vec_len, data_len)
         }
         73 => wire__crate__api__layouts__save_layout_impl(port, ptr, rust_vec_len, data_len),
-        74 => wire__crate__api__connections__save_open_connection_ids_impl(
+        74 => wire__crate__api__connections__save_open_connections_impl(
             port,
             ptr,
             rust_vec_len,
@@ -7945,6 +7981,29 @@ impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<crate::api::csv_import::OnErro
     for crate::api::csv_import::OnError
 {
     fn into_into_dart(self) -> FrbWrapper<crate::api::csv_import::OnError> {
+        self.into()
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::connections::OpenConnectionState> {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.0.id.into_into_dart().into_dart(),
+            self.0.database.into_into_dart().into_dart(),
+            self.0.table.into_into_dart().into_dart(),
+            self.0.active.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for FrbWrapper<crate::api::connections::OpenConnectionState>
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<crate::api::connections::OpenConnectionState>>
+    for crate::api::connections::OpenConnectionState
+{
+    fn into_into_dart(self) -> FrbWrapper<crate::api::connections::OpenConnectionState> {
         self.into()
     }
 }
@@ -9909,6 +9968,16 @@ impl SseEncode for Vec<crate::api::schema::MaintenanceMessage> {
     }
 }
 
+impl SseEncode for Vec<crate::api::connections::OpenConnectionState> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::api::connections::OpenConnectionState>::sse_encode(item, serializer);
+        }
+    }
+}
+
 impl SseEncode for Vec<Option<String>> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -10138,6 +10207,16 @@ impl SseEncode for crate::api::csv_import::OnError {
             },
             serializer,
         );
+    }
+}
+
+impl SseEncode for crate::api::connections::OpenConnectionState {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.id, serializer);
+        <Option<String>>::sse_encode(self.database, serializer);
+        <Option<String>>::sse_encode(self.table, serializer);
+        <bool>::sse_encode(self.active, serializer);
     }
 }
 

@@ -14,11 +14,14 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 Future<List<SavedConnection>> listConnections() =>
     RustLib.instance.api.crateApiConnectionsListConnections();
 
-Future<List<String>> openConnectionIds() =>
-    RustLib.instance.api.crateApiConnectionsOpenConnectionIds();
+Future<List<OpenConnectionState>> openConnections() =>
+    RustLib.instance.api.crateApiConnectionsOpenConnections();
 
-Future<void> saveOpenConnectionIds({required List<String> ids}) =>
-    RustLib.instance.api.crateApiConnectionsSaveOpenConnectionIds(ids: ids);
+Future<void> saveOpenConnections({
+  required List<OpenConnectionState> connections,
+}) => RustLib.instance.api.crateApiConnectionsSaveOpenConnections(
+  connections: connections,
+);
 
 /// 新增或更新。password 为 None 表示保留钥匙串里已有的那份
 Future<void> saveConnection({
@@ -48,6 +51,34 @@ Future<void> saveSshSecret({
   hop: hop,
   secret: secret,
 );
+
+class OpenConnectionState {
+  final String id;
+  final String? database;
+  final String? table;
+  final bool active;
+
+  const OpenConnectionState({
+    required this.id,
+    this.database,
+    this.table,
+    required this.active,
+  });
+
+  @override
+  int get hashCode =>
+      id.hashCode ^ database.hashCode ^ table.hashCode ^ active.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is OpenConnectionState &&
+          runtimeType == other.runtimeType &&
+          id == other.id &&
+          database == other.database &&
+          table == other.table &&
+          active == other.active;
+}
 
 class SavedConnection {
   final String id;

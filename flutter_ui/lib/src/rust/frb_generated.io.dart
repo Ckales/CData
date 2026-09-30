@@ -356,6 +356,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<MaintenanceMessage> dco_decode_list_maintenance_message(dynamic raw);
 
   @protected
+  List<OpenConnectionState> dco_decode_list_open_connection_state(dynamic raw);
+
+  @protected
   List<String?> dco_decode_list_opt_String(dynamic raw);
 
   @protected
@@ -423,6 +426,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   OnError dco_decode_on_error(dynamic raw);
+
+  @protected
+  OpenConnectionState dco_decode_open_connection_state(dynamic raw);
 
   @protected
   OpenSessionError dco_decode_open_session_error(dynamic raw);
@@ -961,6 +967,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  List<OpenConnectionState> sse_decode_list_open_connection_state(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   List<String?> sse_decode_list_opt_String(SseDeserializer deserializer);
 
   @protected
@@ -1042,6 +1053,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   OnError sse_decode_on_error(SseDeserializer deserializer);
+
+  @protected
+  OpenConnectionState sse_decode_open_connection_state(
+    SseDeserializer deserializer,
+  );
 
   @protected
   OpenSessionError sse_decode_open_session_error(SseDeserializer deserializer);
@@ -1706,6 +1722,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_list_open_connection_state(
+    List<OpenConnectionState> self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_list_opt_String(List<String?> self, SseSerializer serializer);
 
   @protected
@@ -1815,6 +1837,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_on_error(OnError self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_open_connection_state(
+    OpenConnectionState self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_open_session_error(
