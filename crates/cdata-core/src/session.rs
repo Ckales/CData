@@ -222,7 +222,10 @@ pub async fn execute_script(session_id: u64, sql: &str, max_rows: usize) -> Resu
 
     drop_child_results(session_id)?;
     let (pool, server) = session_pool(session_id)?;
-    let run = run_script(&pool, &statements, max_rows).await?;
+    // 每条都在服务端截断。SELECT 多要 1 行判断后面还有没有；
+    // 非查询语句的 LIMIT 包在不会执行的派生表里，服务器不看
+    let limited: Vec<String> = statements.iter().map(|sql| crate::sql::limit_query(sql, probe_limit(max_rows))).collect();
+    let run = run_script(&pool, &limited, max_rows).await?;
 
     let mut outcomes = Vec::with_capacity(run.results.len());
     for (index, result) in run.results.into_iter().enumerate() {
@@ -349,6 +352,11 @@ pub async fn execute_view(
     execute_statement(session_id, &statement.sql, statement.params, max_rows).await
 }
 
+/// 比上限多要 1 行。多出来的这一行不进结果，只用来把 truncated 标上
+fn probe_limit(max_rows: usize) -> u64 {
+    (max_rows as u64).saturating_add(1)
+}
+
 async fn execute_statement(
     session_id: u64,
     sql: &str,
@@ -358,7 +366,10 @@ async fn execute_statement(
     // 先把池克隆出来再释放锁，避免把锁持过 await
     let (pool, server) = session_pool(session_id)?;
 
-    let result = run_query_with_params(&pool, sql, params, max_rows).await?;
+    // 服务端停在上限 + 1。不包这一层的话，SELECT * 要等 MySQL 生成完全表结果，
+    // 客户端读到上限才停，大表打开会卡很久
+    let limited = crate::sql::limit_query(sql, probe_limit(max_rows));
+    let result = run_query_with_params(&pool, &limited, params, max_rows).await?;
     let (summary, editability) = summarize(&pool, &server, &result).await;
 
     let mut guard = store().lock().unwrap();

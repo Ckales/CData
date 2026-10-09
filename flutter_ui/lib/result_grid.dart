@@ -1274,6 +1274,7 @@ class _ResultGridState extends State<ResultGrid> {
         ),
         _StatusBar(
           totalRows: _totalRows,
+          truncated: widget.summary.truncated,
           loading: _loading,
           editability: widget.summary.editability,
           refusal: _refusal,
@@ -1660,6 +1661,9 @@ class _CellText extends StatelessWidget {
 
 class _StatusBar extends StatelessWidget {
   final int totalRows;
+
+  /// 后面还有没取回的行。行数显示成「1000+」，不在这里跑 COUNT(*)
+  final bool truncated;
   final bool loading;
   final Editability editability;
   final String? refusal;
@@ -1672,6 +1676,7 @@ class _StatusBar extends StatelessWidget {
 
   const _StatusBar({
     required this.totalRows,
+    required this.truncated,
     required this.loading,
     required this.editability,
     required this.refusal,
@@ -1694,7 +1699,7 @@ class _StatusBar extends StatelessWidget {
 
     return MacStatusBar(
       children: [
-        Text('$totalRows 行'),
+        Text(truncated ? '$totalRows+ 行' : '$totalRows 行'),
         const SizedBox(width: 12),
         Expanded(
           child: Text(

@@ -551,6 +551,8 @@ pub(crate) async fn read_result(
 
     while let Some(row) = result.next().await? {
         if rows.len() >= max_rows {
+            // 服务端 LIMIT 多要的那一行，或客户端停读前已经到了的下一行。
+            // 只用来标记后面还有数据，不放进结果
             truncated = true;
             break;
         }

@@ -15,9 +15,24 @@ pub fn quote_ident(name: &str) -> String {
     format!("`{}`", name.replace('`', "``"))
 }
 
-/// 浏览整张表
+/// 浏览整张表。行数上限由执行时包一层 LIMIT，不写在这里
 pub fn browse_table(table: &str) -> String {
     format!("SELECT * FROM {}", quote_ident(table))
+}
+
+/// 给一条查询包上服务端行数上限。
+///
+/// 多要 1 行只用来判断后面还有没有数据，调用方读到这一行就停、不留在结果里。
+/// 包成派生表而不是改原 SQL：原句可能已有 LIMIT、UNION、ORDER BY，插错位置会改语义。
+/// MySQL 会把这层合并掉，列元数据里的原始表还在。
+///
+/// 原句末尾的分号留着会让子查询语法错。换行包住，行尾 `-- 注释` 不会吞掉右括号。
+pub fn limit_query(sql: &str, limit: u64) -> String {
+    format!(
+        "SELECT * FROM (\n{}\n) AS cdata_limit LIMIT {}",
+        sql.trim().trim_end_matches(';'),
+        limit
+    )
 }
 
 /// 筛选运算符。值一律按字符串绑定，由 MySQL 按列类型转换
@@ -269,6 +284,19 @@ mod tests {
     #[test]
     fn browse_table_quotes_the_name() {
         assert_eq!(browse_table("big_rows"), "SELECT * FROM `big_rows`");
+    }
+
+    #[test]
+    fn limit_wraps_without_touching_the_original() {
+        assert_eq!(
+            limit_query("SELECT * FROM `big_rows`", 1001),
+            "SELECT * FROM (\nSELECT * FROM `big_rows`\n) AS cdata_limit LIMIT 1001"
+        );
+        // 原句自己的 LIMIT 留在子查询里；末尾分号去掉，否则子查询语法错
+        let wrapped = limit_query("SELECT * FROM t ORDER BY id LIMIT 10;", 5);
+        assert!(wrapped.contains("ORDER BY id LIMIT 10\n)"), "{wrapped}");
+        assert!(wrapped.ends_with("AS cdata_limit LIMIT 5"), "{wrapped}");
+        assert!(!wrapped.contains(';'), "{wrapped}");
     }
 
     #[test]

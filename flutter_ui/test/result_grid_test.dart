@@ -186,6 +186,7 @@ void main() {
     await pumpGrid(tester, source);
 
     expect(find.textContaining('已截断'), findsNothing);
+    expect(find.text('2+ 行'), findsOneWidget);
     expect(find.text('a'), findsOneWidget);
   });
 

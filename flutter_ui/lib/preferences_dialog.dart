@@ -274,7 +274,7 @@ class _PreferencesDialogState extends State<_PreferencesDialog> {
             ),
           ),
         ),
-        _note('一次查询最多取回这么多行，默认 1000，最大 100000。超过的行不会取回'),
+        _note('一次查询在服务端最多取回这么多行，默认 1000，最大 100000。超过的不取回'),
       ],
     );
   }

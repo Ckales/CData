@@ -181,6 +181,31 @@ async fn session_keeps_rows_and_serves_windows() {
     assert!(cdata_core::session::fetch_window(id, 0, 10).is_err());
 }
 
+/// 浏览查询在服务端截断：上限以内的行都在，多出来的那一行只用来标记后面还有
+#[tokio::test]
+async fn browse_stops_on_the_server_and_marks_truncation() {
+    let Some(config) = config_from_env() else {
+        eprintln!("跳过：未配置 CDATA_TEST_* 环境变量");
+        return;
+    };
+
+    let id = cdata_core::session::open_session(&config).await.unwrap();
+    let summary = cdata_core::session::execute(id, "SELECT * FROM big_rows", 1_000)
+        .await
+        .expect("查询失败");
+
+    assert_eq!(summary.total_rows, 1_000);
+    assert!(summary.truncated, "表不止 1000 行，必须标成截断");
+    // 派生表被合并后，原始表名还在，结果照样能编辑
+    assert!(matches!(summary.editability, cdata_core::edit::Editability::Editable(_)), "{:?}", summary.editability);
+
+    let first = cdata_core::session::fetch_window(id, 0, 1).expect("取窗口失败");
+    assert_eq!(first.len(), 1);
+    assert_eq!(first[0].len(), summary.columns.len());
+
+    cdata_core::session::close_session(id).await.expect("关闭失败");
+}
+
 /// 编辑测试会改数据，各自用独立的表，避免并行跑的时候互相干扰
 #[tokio::test]
 async fn editing_a_cell_writes_back_and_updates_cache() {
