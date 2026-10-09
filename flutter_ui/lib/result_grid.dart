@@ -50,6 +50,9 @@ class ResultGrid extends StatefulWidget {
   /// 右键「加入筛选」：带着列名和这一格的原始值交给查询页。null 表示这个结果集不能筛选
   final void Function(String column, CellValue value)? onAddToSearch;
 
+  /// 状态栏「筛选」。没条件时用它打开筛选框，不另起一行。null 表示这个结果集不能筛选
+  final VoidCallback? onEditFilter;
+
   /// 右键「刷新全部行」：重新执行查询。null 表示这个结果集不能单独重跑（脚本结果、执行计划）
   final VoidCallback? onRefreshAll;
 
@@ -62,6 +65,7 @@ class ResultGrid extends StatefulWidget {
     this.pickSavePath,
     this.checkTime,
     this.onAddToSearch,
+    this.onEditFilter,
     this.onRefreshAll,
   });
 
@@ -1188,7 +1192,6 @@ class _ResultGridState extends State<ResultGrid> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (widget.summary.truncated) const _TruncationBanner(),
         Expanded(
           child: Focus(
             focusNode: _gridFocus,
@@ -1279,36 +1282,9 @@ class _ResultGridState extends State<ResultGrid> {
           onInsert: _insertRow,
           onExport: _export,
           onDeleteSelected: () => _deleteRows(_selected.toList()..sort()),
+          onEditFilter: widget.onEditFilter,
         ),
       ],
-    );
-  }
-}
-
-class _TruncationBanner extends StatelessWidget {
-  const _TruncationBanner();
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Container(
-      width: double.infinity,
-      // 截断是警告不是错误，要和 errorContainer 的错误横幅分得开，所以用琥珀色，
-      // 按比例叠在 surface 上适配深浅两种背景
-      color: Color.alphaBlend(Colors.amber.withValues(alpha: 0.3), scheme.surface),
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      child: Row(
-        children: [
-          Icon(Icons.warning_amber_rounded, size: 14, color: scheme.onSurface),
-          const SizedBox(width: 6),
-          Expanded(
-            child: Text(
-              '结果已截断：实际行数超过上限，下面显示的不是全部数据。请加 LIMIT 或缩小条件。',
-              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: scheme.onSurface),
-            ),
-          ),
-        ],
-      ),
     );
   }
 }
@@ -1692,6 +1668,7 @@ class _StatusBar extends StatelessWidget {
   final VoidCallback onInsert;
   final VoidCallback onDeleteSelected;
   final VoidCallback onExport;
+  final VoidCallback? onEditFilter;
 
   const _StatusBar({
     required this.totalRows,
@@ -1703,6 +1680,7 @@ class _StatusBar extends StatelessWidget {
     required this.onInsert,
     required this.onDeleteSelected,
     required this.onExport,
+    required this.onEditFilter,
   });
 
   @override
@@ -1735,6 +1713,13 @@ class _StatusBar extends StatelessWidget {
         // 刻意不用 CircularProgressIndicator：它是无限动画，会让 pumpAndSettle
         // 永远等不到"稳定"，测试直接挂死。静态文字一样能表达状态
         if (loading) const Text('加载中…'),
+        if (onEditFilter != null)
+          _BarButton(
+            key: const ValueKey('filter-edit'),
+            icon: Icons.filter_alt_outlined,
+            label: '筛选',
+            onPressed: onEditFilter!,
+          ),
         _BarButton(icon: Icons.ios_share, label: '导出', onPressed: onExport),
         // 只读结果集不给增删入口，原因已经显示在左边
         if (readOnlyReason == null) ...[
@@ -1759,7 +1744,7 @@ class _BarButton extends StatelessWidget {
   final Color? color;
   final VoidCallback onPressed;
 
-  const _BarButton({required this.icon, required this.label, required this.onPressed, this.color});
+  const _BarButton({super.key, required this.icon, required this.label, required this.onPressed, this.color});
 
   @override
   Widget build(BuildContext context) {

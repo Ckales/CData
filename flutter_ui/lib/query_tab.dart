@@ -64,7 +64,7 @@ class RustQueryRunner implements QueryRunner {
   /// 连接参数由页面上的连接栏提供，开会话时才读，改了参数要先 close
   final ConnectionConfig Function() readConfig;
 
-  /// 行数上限，来自偏好设置。超过就截断并在界面上显著提示，不静默丢行
+  /// 行数上限，来自偏好设置。超过就截断，不静默多读。浏览网格不挂横幅
   final BigInt Function() maxRows;
 
   /// SSH 主机没见过时问用户要不要信任
@@ -152,8 +152,8 @@ class QueryTab extends StatefulWidget {
 
   final double editorFontSize;
 
-  /// false 时只有筛选条和结果（内容模式：侧栏点表后浏览数据），SQL 编辑器藏起来；
-  /// 编辑器还在，runSql 照常能跑
+  /// false 时只有结果（内容模式：侧栏点表后浏览数据），有筛选条件才显示筛选条。
+  /// SQL 编辑器藏起来，但还在，runSql 照常能跑
   final bool showEditor;
 
   const QueryTab({
@@ -498,8 +498,11 @@ class QueryTabState extends State<QueryTab> {
             onExplain: _busy ? null : _explain,
             fontSize: widget.editorFontSize,
           ),
-        // 筛选只作用在单条语句的结果上，看脚本结果和执行计划时不显示
-        if (_columns.isNotEmpty && (views.isEmpty || showingMain))
+        // 没条件时不挂筛选条：它比结果晚一帧出现，会把表格往下顶。
+        // 只在已经有条件时显示，入口改到结果状态栏，高度不变。
+        // 筛选只作用在单条语句的结果上，看脚本结果和执行计划时不显示。
+        // 筛选出错时 _source 是 null，靠上次成功的列名把条留着，才能改掉或清掉。
+        if (_columns.isNotEmpty && (views.isEmpty || showingMain) && _filter.items.isNotEmpty)
           FilterBar(
             filter: _filter,
             onEdit: _busy ? null : _editFilter,
@@ -541,6 +544,10 @@ class QueryTabState extends State<QueryTab> {
                         sortAscending: _sortAscending,
                         pickSavePath: widget.pickSavePath,
                         onAddToSearch: view.isMain && !_busy ? _addToSearch : null,
+                        // 有条件时上面的筛选条已经是入口，这里不再放一个，避免两个「筛选」
+                        onEditFilter: view.isMain && !_busy && _columns.isNotEmpty && _filter.items.isEmpty
+                            ? _editFilter
+                            : null,
                         // 按当前的 SQL + 筛选 + 排序重跑一次，拿库里最新的数据
                         onRefreshAll: view.isMain && !_busy ? _runView : null,
                       ),

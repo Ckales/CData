@@ -467,6 +467,8 @@ void main() {
     await tester.tap(find.text('运行'));
     await tester.pumpAndSettle();
     expect(find.text('筛选'), findsOneWidget);
+    expect(find.text('未筛选'), findsNothing, reason: '没条件时不挂筛选条，避免切表把表格往下顶');
+    expect(find.text('添加条件'), findsNothing);
 
     await tester.tap(find.widgetWithText(OutlinedButton, '执行计划'));
     await tester.pumpAndSettle();

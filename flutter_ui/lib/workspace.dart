@@ -800,7 +800,7 @@ class WorkspaceViewState extends State<WorkspaceView> {
     return IndexedStack(
       index: modes.indexOf(tab.mode),
       children: [
-        // 内容：只有筛选条和网格，SQL 编辑器藏起来
+        // 内容：网格，有筛选条件才显示筛选条。SQL 编辑器藏起来
         if (tab.visited.contains(WorkspaceMode.content))
           table == null
               ? const _Hint(text: '在左侧选一张表')

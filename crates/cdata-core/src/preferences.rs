@@ -7,6 +7,9 @@ use serde::{Deserialize, Serialize};
 use crate::connections::{Error, Result};
 use crate::history::data_file;
 
+/// 一次查询默认最多取多少行。十万行打开表太重，默认收到一千
+pub const DEFAULT_MAX_ROWS: u64 = 1_000;
+
 /// 结果集行数上限的上限。十万行是定下来的取舍（见 ROADMAP），偏好只能往小调
 pub const MAX_ROWS_LIMIT: u64 = 100_000;
 pub const MAX_HISTORY_LIMIT: u32 = 500;
@@ -31,7 +34,7 @@ pub struct Preferences {
     pub theme: ThemeMode,
     /// SQL 编辑器字号
     pub editor_font_size: u32,
-    /// 一次查询最多取多少行，超过截断并提示
+    /// 一次查询最多取多少行。超过就截断，不静默多读。浏览网格不展示横幅
     pub max_rows: u64,
     pub restore_connections: bool,
     pub transcript_history_limit: u32,
@@ -44,7 +47,7 @@ impl Default for Preferences {
         Preferences {
             theme: ThemeMode::System,
             editor_font_size: 13,
-            max_rows: MAX_ROWS_LIMIT,
+            max_rows: DEFAULT_MAX_ROWS,
             restore_connections: true,
             transcript_history_limit: 50,
             query_history_limit: 25,
@@ -133,7 +136,8 @@ mod tests {
     fn missing_fields_take_defaults() {
         let preferences: Preferences = serde_json::from_str(r#"{"theme":"Dark"}"#).unwrap();
         assert_eq!(preferences.theme, ThemeMode::Dark);
-        assert_eq!(preferences.max_rows, MAX_ROWS_LIMIT);
+        assert_eq!(preferences.max_rows, 1_000);
+        assert_eq!(Preferences::default().max_rows, DEFAULT_MAX_ROWS);
         assert_eq!(preferences.transcript_history_limit, 50);
         assert_eq!(preferences.query_history_limit, 25);
         assert!(preferences.restore_connections);

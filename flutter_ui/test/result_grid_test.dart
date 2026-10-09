@@ -171,7 +171,7 @@ void main() {
     expect(source.windowStarts.length, lessThanOrEqualTo(3), reason: '停住后窗口请求应该收敛');
   });
 
-  testWidgets('截断时显著提示，不静默丢数据', (tester) async {
+  testWidgets('截断不在网格上挂横幅', (tester) async {
     final source = FakeGridSource(
       summary: summaryOf(
         columns: [column('id'), column('name')],
@@ -185,7 +185,8 @@ void main() {
     );
     await pumpGrid(tester, source);
 
-    expect(find.textContaining('已截断'), findsOneWidget);
+    expect(find.textContaining('已截断'), findsNothing);
+    expect(find.text('a'), findsOneWidget);
   });
 
   testWidgets('NULL 和二进制有可辨认的占位，不显示成空白', (tester) async {

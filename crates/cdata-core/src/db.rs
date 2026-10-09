@@ -95,7 +95,7 @@ pub enum ColumnKind {
 pub struct ResultSet {
     pub columns: Vec<ColumnMeta>,
     pub rows: Vec<Vec<CellValue>>,
-    /// 达到 max_rows 被截断。界面必须显式提示，不能静默丢数据
+    /// 达到 max_rows 被截断。不能静默多读。浏览网格不展示横幅；导出时必须说明文件不完整
     pub truncated: bool,
     /// INSERT / UPDATE / DELETE 等影响的行数。截断时没读到结尾，是 0
     pub affected_rows: u64,

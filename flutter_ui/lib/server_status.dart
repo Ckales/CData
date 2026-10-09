@@ -176,7 +176,7 @@ class _Banner extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    // 警告沿用截断提示的琥珀色：这套 seed 的 tertiaryContainer 是粉色，和 errorContainer 分不开
+    // 警告用琥珀色：这套 seed 的 tertiaryContainer 是粉色，和 errorContainer 分不开
     final (background, foreground) = switch (kind) {
       _BannerKind.info => (scheme.surfaceContainerHighest, scheme.onSurface),
       _BannerKind.warning => (Color.alphaBlend(Colors.amber.withValues(alpha: 0.3), scheme.surface), scheme.onSurface),

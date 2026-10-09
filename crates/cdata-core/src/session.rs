@@ -122,7 +122,7 @@ pub type Result<T> = std::result::Result<T, Error>;
 pub struct QuerySummary {
     pub columns: Vec<ColumnMeta>,
     pub total_rows: u64,
-    /// 达到上限被截断，界面必须显式提示
+    /// 达到上限被截断。浏览网格不展示横幅；导出时必须说明文件不完整
     pub truncated: bool,
     /// 能不能编辑。不能的话带着原因，界面要显示出来而不是闷着禁用
     pub editability: Editability,

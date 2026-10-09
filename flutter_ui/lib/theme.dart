@@ -18,7 +18,7 @@ ThemeData appTheme(Brightness brightness) {
     onSecondary: Colors.white,
     tertiary: dark ? const Color(0xFFF0C27F) : const Color(0xFFA96D1F),
     onTertiary: Colors.white,
-    // 截断提示这类「警告但不是错误」的底色
+    // 警告但不是错误的底色。indigo 种子的 tertiaryContainer 是粉色，这里改成琥珀
     tertiaryContainer: dark ? const Color(0xFF4A3823) : const Color(0xFFFFF3DF),
     onTertiaryContainer: dark
         ? const Color(0xFFF0C27F)

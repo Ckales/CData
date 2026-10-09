@@ -30,7 +30,7 @@ double contrast(Color foreground, Color background) {
 void main() {
   final dark = appTheme(Brightness.dark).colorScheme;
 
-  testWidgets('深色主题下 NULL、二进制、解码失败、空字符串、截断、只读原因都能一眼区分', (tester) async {
+  testWidgets('深色主题下 NULL、二进制、解码失败、空字符串、只读原因都能一眼区分', (tester) async {
     final source = FakeGridSource(
       summary: summaryOf(
         columns: [column('a'), column('b'), column('c'), column('d'), column('e')],
@@ -74,12 +74,7 @@ void main() {
       findsOneWidget,
     );
 
-    // 截断提示：底色不能和错误横幅撞色，文字在底色上要清楚
-    final banner = tester.widget<Container>(
-      find.ancestor(of: find.textContaining('已截断'), matching: find.byType(Container)).first,
-    );
-    expect(banner.color, isNot(dark.errorContainer));
-    expect(contrast(paintedColor(tester, find.textContaining('已截断'))!, banner.color!), greaterThanOrEqualTo(4.5));
+    expect(find.textContaining('已截断'), findsNothing, reason: '浏览结果不挂截断横幅');
 
     expect(
       paintedColor(tester, find.textContaining('没有主键')),
