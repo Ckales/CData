@@ -356,14 +356,25 @@ class MacTab {
   const MacTab({required this.key, required this.title, this.tooltip});
 }
 
+/// 一个标签的固定宽度
+const _tabWidth = 132.0;
+
 /// 工作区标签条：固定宽度，当前标签接内容区，过多时水平滚动。
-class MacTabStrip extends StatelessWidget {
+///
+/// 按住标签左右拖可以换位置，[canReorder] 为 false 的标签不能拖动或接收落点。
+class MacTabStrip extends StatefulWidget {
   final List<MacTab> tabs;
   final int active;
   final void Function(int index) onSelect;
   final void Function(int index) onClose;
   final VoidCallback onAdd;
   final String addTooltip;
+
+  /// 拖动换位。from、to 都是源标签还占着原位时的下标，to 是指针落下的那个槽位
+  final void Function(int from, int to)? onReorder;
+
+  /// 这个标签能不能被拖、能不能作为插入点。null 表示全部可以
+  final bool Function(int index)? canReorder;
 
   const MacTabStrip({
     super.key,
@@ -373,11 +384,43 @@ class MacTabStrip extends StatelessWidget {
     required this.onClose,
     required this.onAdd,
     required this.addTooltip,
+    this.onReorder,
+    this.canReorder,
   });
+
+  @override
+  State<MacTabStrip> createState() => _MacTabStripState();
+}
+
+class _MacTabStripState extends State<MacTabStrip> {
+  final _scroll = ScrollController();
+
+  @override
+  void dispose() {
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  /// 拖到标签条左右边缘时跟着滚，不然够不着屏幕外的标签
+  void _scrollWithDrag(DragUpdateDetails details) {
+    final box = context.findRenderObject() as RenderBox?;
+    if (box == null || !box.hasSize || !_scroll.hasClients) return;
+    final local = box.globalToLocal(details.globalPosition).dx;
+    final max = _scroll.position.maxScrollExtent;
+    var target = _scroll.offset;
+    if (local < 28) target -= 14;
+    if (local > box.size.width - 28) target += 14;
+    target = target.clamp(0.0, max);
+    if (target == _scroll.offset) return;
+    _scroll.jumpTo(target);
+  }
 
   @override
   Widget build(BuildContext context) {
     final mac = MacColors.of(context);
+    final tabs = widget.tabs;
+    final onReorder = widget.onReorder;
+    final canReorder = widget.canReorder;
     return Container(
       height: 32,
       decoration: BoxDecoration(
@@ -385,24 +428,36 @@ class MacTabStrip extends StatelessWidget {
         border: Border(bottom: BorderSide(color: mac.separator)),
       ),
       child: SingleChildScrollView(
+        controller: _scroll,
         scrollDirection: Axis.horizontal,
         child: Row(
           children: [
-            for (var i = 0; i < tabs.length; i++)
+            for (var i = 0; i < tabs.length; i++) ...[
               SizedBox(
-                width: 132,
+                key: tabs[i].key,
+                width: _tabWidth,
                 child: _TabCell(
                   tab: tabs[i],
-                  selected: i == active,
+                  index: i,
+                  selected: i == widget.active,
                   // 只有一个标签时不给关，关了就只剩空白
-                  onClose: tabs.length > 1 ? () => onClose(i) : null,
-                  onTap: () => onSelect(i),
+                  onClose: tabs.length > 1 ? () => widget.onClose(i) : null,
+                  onTap: () => widget.onSelect(i),
+                  onReorder: onReorder,
+                  onDragUpdate: onReorder == null ? null : _scrollWithDrag,
+                  canReorder: canReorder?.call(i) ?? onReorder != null,
                 ),
               ),
+              // 可拖动区末尾留一个落点，方便拖到最后一格的右侧
+              if (onReorder != null &&
+                  (canReorder?.call(i) ?? true) &&
+                  (i + 1 == tabs.length || !(canReorder?.call(i + 1) ?? true)))
+                _TabDropTail(index: i, onReorder: onReorder),
+            ],
             Tooltip(
-              message: addTooltip,
+              message: widget.addTooltip,
               child: InkWell(
-                onTap: onAdd,
+                onTap: widget.onAdd,
                 child: SizedBox(
                   width: 32,
                   height: 32,
@@ -417,17 +472,54 @@ class MacTabStrip extends StatelessWidget {
   }
 }
 
+/// 一组标签末尾的落点。拖到这里表示插到这组最后一个的位置上
+class _TabDropTail extends StatelessWidget {
+  final int index;
+  final void Function(int from, int to) onReorder;
+
+  const _TabDropTail({required this.index, required this.onReorder});
+
+  @override
+  Widget build(BuildContext context) {
+    final mac = MacColors.of(context);
+    return DragTarget<int>(
+      onWillAcceptWithDetails: (details) => details.data != index,
+      onAcceptWithDetails: (details) => onReorder(details.data, index),
+      builder: (context, candidates, _) => SizedBox(
+        width: 8,
+        height: 32,
+        child: candidates.isEmpty
+            ? null
+            : Align(
+                alignment: Alignment.centerLeft,
+                child: Container(width: 2, height: 24, color: mac.accent),
+              ),
+      ),
+    );
+  }
+}
+
 class _TabCell extends StatefulWidget {
   final MacTab tab;
+  final int index;
   final bool selected;
   final VoidCallback? onClose;
   final VoidCallback onTap;
+  final void Function(int from, int to)? onReorder;
+  final void Function(DragUpdateDetails details)? onDragUpdate;
+
+  /// 这个标签能不能拖动、能不能接收落点
+  final bool canReorder;
 
   const _TabCell({
     required this.tab,
+    required this.index,
     required this.selected,
     required this.onClose,
     required this.onTap,
+    required this.onReorder,
+    required this.onDragUpdate,
+    required this.canReorder,
   });
 
   @override
@@ -441,11 +533,24 @@ class _TabCellState extends State<_TabCell> {
   Widget build(BuildContext context) {
     final mac = MacColors.of(context);
     final onClose = widget.onClose;
+    final label = Text(
+      widget.tab.title,
+      textAlign: TextAlign.left,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: TextStyle(
+        fontSize: 11,
+        color: widget.selected
+            ? Theme.of(context).colorScheme.onPrimaryContainer
+            : mac.secondaryText,
+        fontWeight: widget.selected ? FontWeight.w600 : null,
+      ),
+    );
     final cell = MouseRegion(
+      cursor: widget.canReorder ? SystemMouseCursors.grab : MouseCursor.defer,
       onEnter: (_) => setState(() => _hover = true),
       onExit: (_) => setState(() => _hover = false),
       child: InkWell(
-        key: widget.tab.key,
         onTap: widget.onTap,
         child: Container(
           height: 32,
@@ -479,33 +584,57 @@ class _TabCellState extends State<_TabCell> {
                       )
                     : null,
               ),
-              Expanded(
-                child: Text(
-                  widget.tab.title,
-                  textAlign: TextAlign.left,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: widget.selected
-                        ? Theme.of(context).colorScheme.onPrimaryContainer
-                        : mac.secondaryText,
-                    fontWeight: widget.selected ? FontWeight.w600 : null,
-                  ),
-                ),
-              ),
+              Expanded(child: label),
               const SizedBox(width: 4),
             ],
           ),
         ),
       ),
     );
+
+    Widget tab = cell;
     final tooltip = widget.tab.tooltip;
-    if (tooltip == null) return cell;
-    return Tooltip(
-      message: tooltip,
-      waitDuration: const Duration(milliseconds: 700),
-      child: cell,
+    if (tooltip != null) {
+      tab = Tooltip(
+        message: tooltip,
+        waitDuration: const Duration(milliseconds: 700),
+        child: tab,
+      );
+    }
+    final onReorder = widget.onReorder;
+    if (onReorder == null || !widget.canReorder) return tab;
+
+    return DragTarget<int>(
+      onWillAcceptWithDetails: (details) => details.data != widget.index,
+      // DragTarget 已按鼠标位置命中；details.offset 是反馈左上角，不能用来重算落点。
+      onAcceptWithDetails: (details) => onReorder(details.data, widget.index),
+      builder: (context, candidates, _) {
+        final insertAfter =
+            candidates.isNotEmpty && candidates.first! < widget.index;
+        return Stack(
+          children: [
+            Draggable<int>(
+              data: widget.index,
+              axis: Axis.horizontal,
+              onDragUpdate: widget.onDragUpdate,
+              feedback: Material(
+                elevation: 4,
+                child: SizedBox(width: _tabWidth, child: cell),
+              ),
+              childWhenDragging: Opacity(opacity: 0.4, child: tab),
+              child: tab,
+            ),
+            if (candidates.isNotEmpty)
+              Positioned(
+                left: insertAfter ? null : 0,
+                right: insertAfter ? 0 : null,
+                top: 4,
+                bottom: 4,
+                child: Container(width: 2, color: mac.accent),
+              ),
+          ],
+        );
+      },
     );
   }
 }

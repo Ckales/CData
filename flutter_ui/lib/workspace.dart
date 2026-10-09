@@ -85,6 +85,9 @@ class Workspace {
 /// 一个标签：自己的模式、自己选的库和表。内容模式和查询模式各有一个会话，一个会话只放一份结果
 class WorkspaceTab {
   final int id;
+
+  /// 标签栏的全局显示顺序，与所属连接内的内容索引分开
+  int order;
   WorkspaceMode mode;
   String database;
   String? table;
@@ -105,7 +108,8 @@ class WorkspaceTab {
     required this.mode,
     required this.database,
     this.table,
-  }) : visited = {mode};
+  }) : order = id,
+       visited = {mode};
 
   String get title {
     final table = this.table;
@@ -125,7 +129,7 @@ class WorkspaceTab {
 class WorkspaceView extends StatefulWidget {
   final Workspace workspace;
 
-  /// 窗口里全部连接，按顺序，包括自己。标签栏把它们的标签排成一排，和 Querious 一样一个标签一条连接
+  /// 窗口里全部连接，包括自己；每个标签保留所属连接，显示顺序由标签记录
   final List<Workspace> all;
 
   /// 切到别的连接的某个标签
@@ -254,10 +258,16 @@ class WorkspaceViewState extends State<WorkspaceView> {
   }
 
   /// 标签栏上的全部标签：（连接，这条连接里的第几个标签）
-  List<(Workspace, int)> get _allTabs => [
-    for (final workspace in widget.all)
-      for (var i = 0; i < workspace.tabs.length; i++) (workspace, i),
-  ];
+  List<(Workspace, int)> get _allTabs {
+    final entries = [
+      for (final workspace in widget.all)
+        for (var i = 0; i < workspace.tabs.length; i++) (workspace, i),
+    ];
+    entries.sort(
+      (a, b) => a.$1.tabs[a.$2].order.compareTo(b.$1.tabs[b.$2].order),
+    );
+    return entries;
+  }
 
   void _selectAt(int index) {
     final entries = _allTabs;
@@ -277,6 +287,26 @@ class WorkspaceViewState extends State<WorkspaceView> {
     } else {
       widget.onCloseTab(workspace, tab);
     }
+  }
+
+  /// 调整标签栏顺序，连接归属和各连接内的当前标签不变
+  void _reorderAt(int from, int to) {
+    final entries = _allTabs;
+    if (from == to ||
+        from < 0 ||
+        to < 0 ||
+        from >= entries.length ||
+        to >= entries.length) {
+      return;
+    }
+    final entry = entries.removeAt(from);
+    entries.insert(to, entry);
+    setState(() {
+      for (var i = 0; i < entries.length; i++) {
+        final (workspace, tab) = entries[i];
+        workspace.tabs[tab].order = i;
+      }
+    });
   }
 
   /// 等这一帧把旧标签设成不可聚焦之后再收回焦点
@@ -601,6 +631,7 @@ class WorkspaceViewState extends State<WorkspaceView> {
                             active: _allTabs.indexOf((_ws, _ws.active)),
                             onSelect: _selectAt,
                             onClose: _closeAt,
+                            onReorder: _reorderAt,
                             onAdd: duplicateTab,
                             addTooltip:
                                 '新标签（${_isMac ? '⇧⌘T' : 'Ctrl+Shift+T'}）',
