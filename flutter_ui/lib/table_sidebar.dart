@@ -303,7 +303,7 @@ class _TableSidebarState extends State<TableSidebar> {
         actions: [
           FilledButton(
             onPressed: () => Navigator.of(context).pop(),
-            child: const Text('好'),
+            child: const Text('确定'),
           ),
         ],
       ),
