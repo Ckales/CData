@@ -530,6 +530,17 @@ class FakeSchemaSource implements SchemaSource {
     return 5000;
   }
 
+  /// SQL 多表导出的调用记录
+  final List<({String database, List<String> tables, String path, SqlDumpOptions options})> sqlDumps = [];
+
+  @override
+  Future<int> exportSqlDump(String database, List<String> tables, String path, SqlDumpOptions options) async {
+    final error = exportError;
+    if (error != null) throw error;
+    sqlDumps.add((database: database, tables: tables, path: path, options: options));
+    return 5000;
+  }
+
   DatabaseOptions databaseOptionsValue = const DatabaseOptions(
     charsets: [
       CharsetInfo(name: 'latin1', defaultCollation: 'latin1_swedish_ci', collations: ['latin1_bin', 'latin1_swedish_ci']),

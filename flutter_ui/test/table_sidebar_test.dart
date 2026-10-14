@@ -1,6 +1,5 @@
 // 侧栏的 widget 测试。内存数据，不起 app、不连库。
 
-import 'package:cdata_flutter/src/rust/api/db.dart' show ExportFormat;
 import 'package:cdata_flutter/src/rust/api/schema.dart';
 import 'package:cdata_flutter/table_sidebar.dart';
 import 'package:flutter/gestures.dart' show kSecondaryButton;
@@ -45,6 +44,33 @@ Future<void> pumpSidebar(
 }
 
 void main() {
+  testWidgets('勾选过的库才出现在选择器里', (tester) async {
+    final source = FakeSchemaSource(
+      dbs: ['shop', 'analytics', 'mysql'],
+      tablesByDb: {'shop': []},
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: TableSidebar(
+            source: source,
+            database: 'shop',
+            onlyDatabases: const ['shop'],
+            onDatabaseChanged: (_) {},
+            onTableSelected: (_) {},
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('database-picker')));
+    await tester.pumpAndSettle();
+    expect(find.text('analytics'), findsNothing);
+    expect(find.text('mysql'), findsNothing);
+    expect(find.text('shop'), findsWidgets);
+  });
+
   testWidgets('列出表并统计数量', (tester) async {
     await pumpSidebar(tester, FakeSchemaSource.simple());
 
@@ -396,14 +422,57 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('SQL INSERT').last);
       await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('export-table-orders')), findsOneWidget);
       await tester.tap(find.text('导出…'));
       await tester.pumpAndSettle();
 
       expect(suggested, 'orders.sql');
-      expect(source.tableExports.single.$1, 'orders');
-      expect(source.tableExports.single.$2, '/tmp/orders.sql');
-      expect(source.tableExports.single.$3.format, ExportFormat.sqlInsert);
+      expect(source.tableExports, isEmpty);
+      final dump = source.sqlDumps.single;
+      expect(dump.tables, ['orders']);
+      expect(dump.path, '/tmp/orders.sql');
+      expect(dump.options.createDatabase, isFalse, reason: '只勾了一张表，不建库');
+      expect(dump.options.dropTable, isTrue);
+      expect(dump.options.createTable, isTrue);
+      expect(dump.options.includeData, isTrue);
       expect(find.textContaining('5000 行'), findsOneWidget);
+    });
+
+    testWidgets('SQL 导出可以多选表，全选就是整个库', (tester) async {
+      bigWindow(tester);
+      final source = FakeSchemaSource.simple();
+      String? suggested;
+      await pumpSidebar(
+        tester,
+        source,
+        pickSavePath: (name) async {
+          suggested = name;
+          return '/tmp/shop.sql';
+        },
+      );
+
+      await menu(tester, 'orders', '导出…');
+      await tester.tap(find.byKey(const ValueKey('export-format')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('SQL INSERT').last);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('export-table-users')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('导出…'));
+      await tester.pumpAndSettle();
+
+      expect(source.sqlDumps.single.tables, ['orders', 'users']);
+      expect(suggested, 'shop.sql');
+
+      await tester.tap(find.text('确定'));
+      await tester.pumpAndSettle();
+      source.sqlDumps.clear();
+      await menu(tester, 'orders', '导出数据库…');
+      expect(find.text('已选 4 / 4'), findsOneWidget);
+      await tester.tap(find.text('导出…'));
+      await tester.pumpAndSettle();
+      expect(source.sqlDumps.single.tables, ['orders', 'order_items', 'users', 'v_daily']);
+      expect(source.sqlDumps.single.options.createDatabase, isTrue);
     });
 
     testWidgets('导出失败显示原因，取消保存就不导出', (tester) async {

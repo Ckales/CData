@@ -18,6 +18,7 @@ pub struct _SavedConnection {
     pub port: u16,
     pub user: String,
     pub database: Option<String>,
+    pub databases: Vec<String>,
     pub options: ConnectionOptions,
 }
 

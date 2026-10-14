@@ -53,6 +53,10 @@ pub struct SavedConnection {
     pub port: u16,
     pub user: String,
     pub database: Option<String>,
+    /// 连接页勾选的库。空表示不限制，侧栏列出服务器上的全部库。
+    /// 旧配置没有这个字段，按空列表读出来
+    #[serde(default)]
+    pub databases: Vec<String>,
     /// SSL、超时、SSH。加这个字段之前保存的连接没有它，按默认值读出来，不报解析错误
     #[serde(default)]
     pub options: ConnectionOptions,
@@ -256,6 +260,7 @@ mod tests {
             port: 3306,
             user: "root".into(),
             database: Some("shop".into()),
+            databases: Vec::new(),
             options: ConnectionOptions::default(),
         };
 
@@ -270,6 +275,7 @@ mod tests {
         let old = r#"[{"id":"c1","name":"本地","host":"127.0.0.1","port":3306,"user":"root","database":null}]"#;
         let all: Vec<SavedConnection> = serde_json::from_str(old).unwrap();
         assert_eq!(all[0].options, ConnectionOptions::default());
+        assert!(all[0].databases.is_empty());
     }
 
     #[test]
@@ -325,9 +331,11 @@ mod tests {
             port: 3306,
             user: "root".into(),
             database: Some("shop".into()),
+            databases: vec!["shop".into(), "blog".into()],
             options: ConnectionOptions::default(),
         };
         save(&connection, None).unwrap();
+        assert_eq!(list().unwrap()[0].databases, ["shop", "blog"]);
         assert_eq!(list().unwrap(), vec![connection.clone()]);
 
         // 落盘的内容里不能有密码痕迹
@@ -360,6 +368,7 @@ mod tests {
             port: 3306,
             user: "root".into(),
             database: None,
+            databases: Vec::new(),
             options: ConnectionOptions::default(),
         };
 

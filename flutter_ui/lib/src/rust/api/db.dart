@@ -98,6 +98,21 @@ Future<BigInt> exportTable({
   options: options,
 );
 
+/// 选中的表，或整个库，导出成一个 SQL 文件。返回写了多少行数据
+Future<BigInt> exportSqlDump({
+  required BigInt sessionId,
+  required String database,
+  required List<String> tables,
+  required String path,
+  required SqlDumpOptions options,
+}) => RustLib.instance.api.crateApiDbExportSqlDump(
+  sessionId: sessionId,
+  database: database,
+  tables: tables,
+  path: path,
+  options: options,
+);
+
 /// 按主键从库里重读一行放回缓存。库里找不到这一行就报错，缓存不动
 Future<void> refreshRow({
   required BigInt sessionId,
@@ -507,4 +522,39 @@ class QuerySummary {
           truncated == other.truncated &&
           editability == other.editability &&
           layoutKey == other.layoutKey;
+}
+
+class SqlDumpOptions {
+  final ExportEncoding encoding;
+  final bool createDatabase;
+  final bool dropTable;
+  final bool createTable;
+  final bool includeData;
+
+  const SqlDumpOptions({
+    required this.encoding,
+    required this.createDatabase,
+    required this.dropTable,
+    required this.createTable,
+    required this.includeData,
+  });
+
+  @override
+  int get hashCode =>
+      encoding.hashCode ^
+      createDatabase.hashCode ^
+      dropTable.hashCode ^
+      createTable.hashCode ^
+      includeData.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is SqlDumpOptions &&
+          runtimeType == other.runtimeType &&
+          encoding == other.encoding &&
+          createDatabase == other.createDatabase &&
+          dropTable == other.dropTable &&
+          createTable == other.createTable &&
+          includeData == other.includeData;
 }

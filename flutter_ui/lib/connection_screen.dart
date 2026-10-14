@@ -6,15 +6,23 @@ import 'mac_widgets.dart';
 import 'src/rust/api/connections.dart';
 import 'src/rust/api/db.dart';
 import 'src/rust/api/options.dart';
+import 'src/rust/api/schema.dart';
 import 'theme.dart';
 
 /// 连接页（Querious 的连接窗口）：左边收藏的连接，右边连接表单。
 ///
 /// 连上之后由外面开工作区。已经有打开的连接时可以点「返回」回去。
 class ConnectionScreen extends StatefulWidget {
-  /// 按表单去连。成功返回 null，失败返回原因，显示在表单里
-  final Future<String?> Function(ConnectionConfig config, String name)
-  onConnect;
+  /// 按表单去连。成功返回 null，失败返回原因，显示在表单里。
+  /// databases 是勾选的库；空列表表示不限制，侧栏列出服务器上的全部库
+  final Future<String?> Function(
+    ConnectionConfig config,
+    String name,
+    List<String> databases,
+  ) onConnect;
+
+  /// 用表单参数开一个临时会话，用来列库。SSH 主机确认由调用方处理
+  final Future<BigInt> Function(ConnectionConfig config) openSession;
 
   /// 已经有打开的连接时才有，回到那个工作区
   final VoidCallback? onCancel;
@@ -27,6 +35,7 @@ class ConnectionScreen extends StatefulWidget {
   const ConnectionScreen({
     super.key,
     required this.onConnect,
+    required this.openSession,
     required this.onPreferences,
     this.onCancel,
     this.startupError,
@@ -44,6 +53,10 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
   // 密码不预填 —— 凭据不进源码
   final _password = TextEditingController();
   final _database = TextEditingController();
+
+  /// 选择器勾选的库。空表示还没选过，沿用 [_database] 里的单个默认库，侧栏不限制
+  List<String> _databases = [];
+  bool _listingDatabases = false;
 
   /// SSL / 超时 / SSH。同一份对象一直传下去：FRB 生成的类比较列表字段用的是引用相等
   ConnectionOptions _options = defaultConnectionOptions();
@@ -96,6 +109,7 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
     _port.text = connection.port.toString();
     _user.text = connection.user;
     _database.text = connection.database ?? '';
+    _databases = List.of(connection.databases);
     final String? password;
     try {
       password = await loadPassword(id: connection.id);
@@ -133,9 +147,91 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
       _user.text = 'root';
       _password.clear();
       _database.clear();
+      _databases = [];
       _options = defaultConnectionOptions();
       _sshSecrets = const [];
       _error = null;
+    });
+  }
+
+  /// 选了 1 个库就用它当默认库；选了多个不指定默认库，只限制侧栏；没选则沿用旧的单个库名
+  ({String? database, List<String> filter}) _databaseChoice() {
+    if (_databases.isNotEmpty) {
+      return (
+        database: _databases.length == 1 ? _databases.first : null,
+        filter: _databases,
+      );
+    }
+    final typed = _database.text.trim();
+    return (database: typed.isEmpty ? null : typed, filter: const []);
+  }
+
+  /// 用表单里的账号连上去，列出服务器上的库，勾选后记在这条连接上
+  Future<void> _pickDatabases() async {
+    if (_listingDatabases) return;
+    final port = int.tryParse(_port.text.trim());
+    if (port == null) {
+      setState(() => _error = '端口要填数字：${_port.text}');
+      return;
+    }
+    final host = _host.text.trim();
+    if (host.isEmpty) {
+      setState(() => _error = '主机地址不能为空');
+      return;
+    }
+    setState(() {
+      _listingDatabases = true;
+      _error = null;
+    });
+    final config = ConnectionConfig(
+      host: host,
+      port: port,
+      user: _user.text.trim(),
+      password: _password.text,
+      database: null,
+      options: _options,
+      sshSecrets: _sshSecrets,
+      savedId: _savedId,
+    );
+    final BigInt sessionId;
+    try {
+      sessionId = await widget.openSession(config);
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _listingDatabases = false;
+          _error = '$e';
+        });
+      }
+      return;
+    }
+    List<String> names;
+    try {
+      names = await listDatabases(sessionId: sessionId);
+    } catch (e) {
+      await closeSession(sessionId: sessionId);
+      if (mounted) {
+        setState(() {
+          _listingDatabases = false;
+          _error = '$e';
+        });
+      }
+      return;
+    }
+    await closeSession(sessionId: sessionId);
+    if (!mounted) return;
+    setState(() => _listingDatabases = false);
+    final initial = _databases.isNotEmpty
+        ? _databases
+        : (_database.text.trim().isEmpty ? const <String>[] : [_database.text.trim()]);
+    final picked = await showDialog<List<String>>(
+      context: context,
+      builder: (context) => _DatabaseMultiSelect(databases: names, initial: initial),
+    );
+    if (picked == null || !mounted) return;
+    setState(() {
+      _databases = picked;
+      _database.clear();
     });
   }
 
@@ -162,7 +258,7 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
       return;
     }
     final id = _connectionId;
-    final database = _database.text.trim();
+    final choice = _databaseChoice();
     try {
       await saveConnection(
         connection: SavedConnection(
@@ -171,7 +267,8 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
           host: _host.text.trim(),
           port: port,
           user: _user.text.trim(),
-          database: database.isEmpty ? null : database,
+          database: choice.database,
+          databases: choice.filter,
           options: _options,
         ),
         // 密码单独进钥匙串，配置文件里一个字符都不存
@@ -254,13 +351,13 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
       setState(() => _error = '端口要填数字：${_port.text}');
       return;
     }
-    final database = _database.text.trim();
+    final choice = _databaseChoice();
     final config = ConnectionConfig(
       host: _host.text.trim(),
       port: port,
       user: _user.text.trim(),
       password: _password.text,
-      database: database.isEmpty ? null : database,
+      database: choice.database,
       options: _options,
       sshSecrets: _sshSecrets,
       savedId: _savedId,
@@ -269,7 +366,7 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
       _connecting = true;
       _error = null;
     });
-    final error = await widget.onConnect(config, _displayName);
+    final error = await widget.onConnect(config, _displayName, choice.filter);
     if (!mounted) return;
     setState(() {
       _connecting = false;
@@ -411,7 +508,7 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
               FormRow(
                 label: '数据库',
                 labelWidth: 101,
-                child: _field('conn-database', _database, hint: '连接后选择数据库（可选）'),
+                child: _databaseField(),
               ),
               FormRow(
                 label: '高级选项',
@@ -486,6 +583,47 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
     );
   }
 
+  Widget _databaseField() {
+    final label = _databases.isNotEmpty ? _databases.join('、') : _database.text.trim();
+    final hint = _listingDatabases ? '正在读取库…' : '点击选择数据库（可选）';
+    return SizedBox(
+      height: 28,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          key: const ValueKey('conn-database'),
+          borderRadius: BorderRadius.circular(6),
+          onTap: _listingDatabases ? null : _pickDatabases,
+          child: InputDecorator(
+            decoration: InputDecoration(
+              hintText: label.isEmpty ? hint : null,
+              contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+              suffixIcon: _listingDatabases
+                  ? const Padding(
+                      padding: EdgeInsets.all(6),
+                      child: SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(strokeWidth: 1.5),
+                      ),
+                    )
+                  : const Icon(Icons.arrow_drop_down, size: 18),
+              suffixIconConstraints: const BoxConstraints(minWidth: 28, minHeight: 24),
+            ),
+            child: label.isEmpty
+                ? const SizedBox.shrink()
+                : Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 13),
+                  ),
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _field(
     String key,
     TextEditingController controller, {
@@ -523,6 +661,114 @@ String _optionsSummary(ConnectionOptions options) {
     parts.add('查询超时 ${options.timeouts.querySecs} 秒');
   }
   return parts.join(' · ');
+}
+
+Future<void> _showDeleteMenu(
+  BuildContext context,
+  Offset position,
+  VoidCallback onDelete,
+) async {
+  final choice = await showMenu<String>(
+    context: context,
+    position: RelativeRect.fromLTRB(position.dx, position.dy, position.dx, position.dy),
+    items: [
+      desktopMenuItem(
+        value: 'delete',
+        label: '删除',
+        icon: Icons.delete_outline,
+        destructive: true,
+      ),
+    ],
+  );
+  if (choice == 'delete') onDelete();
+}
+
+/// 列服务器上的库，勾选要带上的。空选择表示不限制
+class _DatabaseMultiSelect extends StatefulWidget {
+  final List<String> databases;
+  final List<String> initial;
+
+  const _DatabaseMultiSelect({required this.databases, required this.initial});
+
+  @override
+  State<_DatabaseMultiSelect> createState() => _DatabaseMultiSelectState();
+}
+
+class _DatabaseMultiSelectState extends State<_DatabaseMultiSelect> {
+  late final Set<String> _selected = widget.initial.toSet();
+  final _filter = TextEditingController();
+
+  @override
+  void dispose() {
+    _filter.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final keyword = _filter.text.trim().toLowerCase();
+    final visible = <String>[];
+    for (final name in widget.databases) {
+      if (keyword.isEmpty || name.toLowerCase().contains(keyword)) visible.add(name);
+    }
+    return AlertDialog(
+      title: const Text('选择数据库'),
+      content: SizedBox(
+        width: 360,
+        height: 420,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            TextField(
+              controller: _filter,
+              autofocus: true,
+              decoration: const InputDecoration(hintText: '过滤'),
+              onChanged: (_) => setState(() {}),
+            ),
+            const SizedBox(height: 8),
+            Expanded(
+              child: visible.isEmpty
+                  ? const Center(child: Text('没有匹配的库'))
+                  : ListView.builder(
+                      itemCount: visible.length,
+                      itemBuilder: (context, index) {
+                        final name = visible[index];
+                        return CheckboxListTile(
+                          dense: true,
+                          value: _selected.contains(name),
+                          title: Text(name, style: const TextStyle(fontSize: 13)),
+                          controlAffinity: ListTileControlAffinity.leading,
+                          onChanged: (checked) {
+                            setState(() {
+                              if (checked == true) {
+                                _selected.add(name);
+                              } else {
+                                _selected.remove(name);
+                              }
+                            });
+                          },
+                        );
+                      },
+                    ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text('取消')),
+        FilledButton(
+          onPressed: () {
+            final picked = <String>[];
+            for (final name in widget.databases) {
+              if (_selected.contains(name)) picked.add(name);
+            }
+            Navigator.pop(context, picked);
+          },
+          child: const Text('确定'),
+        ),
+      ],
+    );
+  }
 }
 
 class _FavoriteList extends StatelessWidget {
@@ -605,6 +851,11 @@ class _FavoriteList extends StatelessWidget {
                             borderRadius: BorderRadius.circular(4),
                             onTap: () => onPick(connection),
                             onDoubleTap: () => onOpen(connection),
+                            onSecondaryTapUp: (details) => _showDeleteMenu(
+                              context,
+                              details.globalPosition,
+                              () => onDelete(connection),
+                            ),
                             child: SizedBox(
                               height: 48,
                               child: Padding(
@@ -659,6 +910,14 @@ class _FavoriteList extends StatelessWidget {
                                         ],
                                       ),
                                     ),
+                                    IconButton(
+                                      tooltip: '删除',
+                                      onPressed: () => onDelete(connection),
+                                      icon: Icon(Icons.delete_outline, size: 15, color: secondary),
+                                      constraints: const BoxConstraints.tightFor(width: 28, height: 28),
+                                      padding: EdgeInsets.zero,
+                                      visualDensity: VisualDensity.compact,
+                                    ),
                                   ],
                                 ),
                               ),
@@ -683,12 +942,9 @@ class _FavoriteList extends StatelessWidget {
                   label: const Text('新建连接'),
                 ),
                 const Spacer(),
-                IconButton(
-                  tooltip: '删除选中的收藏',
-                  onPressed: selected == null
-                      ? null
-                      : () => onDelete(selected!),
-                  icon: const Icon(Icons.remove_circle_outline, size: 15),
+                TextButton(
+                  onPressed: selected == null ? null : () => onDelete(selected!),
+                  child: const Text('删除'),
                 ),
               ],
             ),

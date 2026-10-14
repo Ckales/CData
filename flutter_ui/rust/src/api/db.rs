@@ -10,7 +10,7 @@ use tokio::runtime::Runtime;
 
 pub use cdata_core::db::{ColumnKind, ColumnMeta, ConnectionConfig};
 pub use cdata_core::edit::{Editability, EditTarget};
-pub use cdata_core::export::{ExportEncoding, ExportFormat, ExportOptions, ExportSummary};
+pub use cdata_core::export::{ExportEncoding, ExportFormat, ExportOptions, ExportSummary, SqlDumpOptions};
 pub use cdata_core::session::QuerySummary;
 pub use cdata_core::sql::{FilterCondition, FilterGroup, FilterItem, FilterOp};
 pub use cdata_core::CellValue;
@@ -147,6 +147,15 @@ pub struct _ExportOptions {
     pub table_name: String,
 }
 
+#[frb(mirror(SqlDumpOptions))]
+pub struct _SqlDumpOptions {
+    pub encoding: ExportEncoding,
+    pub create_database: bool,
+    pub drop_table: bool,
+    pub create_table: bool,
+    pub include_data: bool,
+}
+
 #[frb(mirror(ExportSummary))]
 pub struct _ExportSummary {
     pub rows_written: u64,
@@ -258,6 +267,20 @@ pub async fn export_table(
 ) -> Result<u64> {
     on_runtime(async move { cdata_core::session::export_table(session_id, &database, &table, &path, &options).await })
         .await
+}
+
+/// 选中的表，或整个库，导出成一个 SQL 文件。返回写了多少行数据
+pub async fn export_sql_dump(
+    session_id: u64,
+    database: String,
+    tables: Vec<String>,
+    path: String,
+    options: SqlDumpOptions,
+) -> Result<u64> {
+    on_runtime(async move {
+        cdata_core::session::export_sql_dump(session_id, &database, &tables, &path, &options).await
+    })
+    .await
 }
 
 /// 按主键从库里重读一行放回缓存。库里找不到这一行就报错，缓存不动

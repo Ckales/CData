@@ -718,6 +718,49 @@ async fn export_table_streams_every_row_without_the_row_limit() {
 }
 
 #[tokio::test]
+async fn export_sql_dump_writes_structure_and_rows_of_selected_tables() {
+    use cdata_core::export::{ExportEncoding, SqlDumpOptions};
+    let Some(config) = config_from_env() else {
+        return;
+    };
+    let database = config.database.clone().unwrap();
+    let total = count_where(&config, "SELECT COUNT(*) FROM edit_target").await;
+
+    let id = cdata_core::session::open_session(&config).await.unwrap();
+    let path = std::env::temp_dir().join(format!("cdata-export-dump-{}.sql", std::process::id()));
+    let options = SqlDumpOptions {
+        encoding: ExportEncoding::Utf8,
+        create_database: true,
+        drop_table: true,
+        create_table: true,
+        include_data: true,
+    };
+    let written = cdata_core::session::export_sql_dump(
+        id,
+        &database,
+        &["edit_target".to_string()],
+        path.to_str().unwrap(),
+        &options,
+    )
+    .await
+    .expect("导出失败");
+    let text = std::fs::read_to_string(&path).unwrap();
+    std::fs::remove_file(&path).ok();
+
+    assert_eq!(written as i64, total);
+    assert!(text.contains("CREATE DATABASE IF NOT EXISTS"), "{text}");
+    assert!(text.contains(&format!("USE `{}`;", database.replace('`', "``"))), "{text}");
+    assert!(text.contains("SET FOREIGN_KEY_CHECKS=0;"), "{text}");
+    assert!(text.contains("DROP TABLE IF EXISTS `edit_target`;"), "{text}");
+    assert!(text.contains("CREATE TABLE"), "{text}");
+    assert!(text.contains("SET FOREIGN_KEY_CHECKS=1;"), "{text}");
+    if total > 0 {
+        assert!(text.contains("INSERT INTO `edit_target`"), "{text}");
+    }
+    cdata_core::session::close_session(id).await.ok();
+}
+
+#[tokio::test]
 async fn batch_delete_rolls_back_when_any_row_is_stale() {
     let Some(config) = config_from_env() else {
         return;

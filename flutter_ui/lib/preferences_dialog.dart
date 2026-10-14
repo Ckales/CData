@@ -353,7 +353,7 @@ class _PreferencesDialogState extends State<_PreferencesDialog> {
         children: [
           for (var i = 0; i < shortcuts.length; i++)
             Container(
-              height: 24,
+              height: 32,
               padding: const EdgeInsets.symmetric(horizontal: 10),
               color: i.isOdd ? scheme.surfaceContainerLow : scheme.surface,
               child: Row(

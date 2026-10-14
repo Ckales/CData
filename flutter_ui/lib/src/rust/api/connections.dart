@@ -87,6 +87,7 @@ class SavedConnection {
   final int port;
   final String user;
   final String? database;
+  final List<String> databases;
   final ConnectionOptions options;
 
   const SavedConnection({
@@ -96,6 +97,7 @@ class SavedConnection {
     required this.port,
     required this.user,
     this.database,
+    required this.databases,
     required this.options,
   });
 
@@ -107,6 +109,7 @@ class SavedConnection {
       port.hashCode ^
       user.hashCode ^
       database.hashCode ^
+      databases.hashCode ^
       options.hashCode;
 
   @override
@@ -120,5 +123,6 @@ class SavedConnection {
           port == other.port &&
           user == other.user &&
           database == other.database &&
+          databases == other.databases &&
           options == other.options;
 }

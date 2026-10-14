@@ -194,13 +194,6 @@ class _SqlImportDialogState extends State<_SqlImportDialog> {
                                 : (value) => setState(() => _encoding = value),
                           ),
                         ),
-                        _messageCard(
-                          icon: Icons.warning_amber_rounded,
-                          title: '执行说明',
-                          message: '遇到错误即停止。此前已执行的写入和 DDL 可能无法撤回。',
-                          background: colors.tertiaryContainer,
-                          foreground: colors.onTertiaryContainer,
-                        ),
                         if (_running) ...[
                           const SizedBox(height: 10),
                           _section(

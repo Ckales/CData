@@ -35,6 +35,9 @@ class Workspace {
   final BigInt schemaId;
   final String? initialTable;
 
+  /// 连接页勾选的库。空表示不限制
+  final List<String> databases;
+
   // 数据源随会话建一次，每次重绘都新建的话侧栏会以为换了库，重读一遍
   final RustSchemaSource schema;
   final RustServerSource server;
@@ -56,10 +59,12 @@ class Workspace {
     required this.config,
     required this.schemaId,
     this.initialTable,
+    List<String> databases = const [],
   }) : schema = RustSchemaSource(schemaId),
        server = RustServerSource(schemaId),
        users = RustUserSource(schemaId),
-       imports = RustImportSource(schemaId);
+       imports = RustImportSource(schemaId),
+       databases = List.of(databases);
 
   WorkspaceTab get activeTab => tabs[active];
 
@@ -348,8 +353,12 @@ class WorkspaceViewState extends State<WorkspaceView> {
     });
   }
 
-  /// 换库：这个标签的两个会话按新库重开，选中的表清掉
+  /// 换库：这个标签的两个会话按新库重开，选中的表清掉。
+  /// 勾选过库时，新建的库也加进这份清单，不然建完一刷新就从侧栏消失
   Future<void> _switchDatabase(String database) async {
+    if (database.isNotEmpty && _ws.databases.isNotEmpty && !_ws.databases.contains(database)) {
+      _ws.databases.add(database);
+    }
     final tab = _tab;
     setState(() {
       tab.database = database;
@@ -549,6 +558,7 @@ class WorkspaceViewState extends State<WorkspaceView> {
                     TableSidebar(
                       source: _ws.schema,
                       database: tab.database,
+                      onlyDatabases: _ws.databases,
                       selectedTable: tab.table,
                       onDatabaseChanged: _switchDatabase,
                       onTableSelected: _openTable,

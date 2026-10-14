@@ -90,7 +90,13 @@ class _QueryPageState extends State<QueryPage> {
           sshSecrets: const [],
           savedId: connection.id,
         );
-        final error = await _openConnection(config, connection.name, remember: false, initialTable: state.table);
+        final error = await _openConnection(
+          config,
+          connection.name,
+          remember: false,
+          initialTable: state.table,
+          databases: connection.databases,
+        );
         if (error != null) {
           failed.add(state);
           errors.add('${connection.name}：$error');
@@ -173,13 +179,15 @@ class _QueryPageState extends State<QueryPage> {
   }
 
   /// 连上一条新连接：开侧栏会话，列一次库确认真的连得上，再开工作区。失败返回原因
-  Future<String?> _connect(ConnectionConfig config, String name) => _openConnection(config, name, remember: true);
+  Future<String?> _connect(ConnectionConfig config, String name, List<String> databases) =>
+      _openConnection(config, name, remember: true, databases: databases);
 
   Future<String?> _openConnection(
     ConnectionConfig config,
     String name, {
     required bool remember,
     String? initialTable,
+    List<String> databases = const [],
   }) async {
     final BigInt sessionId;
     try {
@@ -200,7 +208,14 @@ class _QueryPageState extends State<QueryPage> {
     }
     setState(() {
       _workspaces.add(
-        Workspace(id: _nextWorkspaceId++, name: name, config: config, schemaId: sessionId, initialTable: initialTable),
+        Workspace(
+          id: _nextWorkspaceId++,
+          name: name,
+          config: config,
+          schemaId: sessionId,
+          initialTable: initialTable,
+          databases: databases,
+        ),
       );
       _active = _workspaces.length - 1;
       _connecting = false;
@@ -367,6 +382,7 @@ class _QueryPageState extends State<QueryPage> {
   Widget _buildPage() {
     final connectionScreen = ConnectionScreen(
       onConnect: _connect,
+      openSession: (config) => openSessionTrusting(config, _confirmHostKey),
       onPreferences: _editPreferences,
       onCancel: _workspaces.isEmpty ? null : () => setState(() => _connecting = false),
       startupError: widget.startupError,

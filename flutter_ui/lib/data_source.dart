@@ -5,7 +5,7 @@ import 'src/rust/api/csv_import.dart' as csv_import show suggestMapping;
 import 'src/rust/api/db.dart';
 // 顶层函数和下面 GridSource 的同名方法重名，方法体里直接调会解析成方法自己
 import 'src/rust/api/db.dart' as db
-    show refreshRow, insertRow, deleteRows, copyRange, exportTable, parseClipboard, pasteCells, columnChoices, exportRows;
+    show refreshRow, insertRow, deleteRows, copyRange, exportTable, exportSqlDump, parseClipboard, pasteCells, columnChoices, exportRows;
 import 'src/rust/api/layouts.dart';
 import 'src/rust/api/layouts.dart' as layouts show loadLayout, saveLayout;
 import 'src/rust/api/schema.dart';
@@ -144,6 +144,9 @@ abstract class SchemaSource {
 
   /// 整张表导出成文件，从库里逐行读写，不受行数上限限制。返回写了多少行
   Future<int> exportTable(String database, String table, String path, ExportOptions options);
+
+  /// 选中的表导出成一个 SQL 文件。返回写了多少行数据
+  Future<int> exportSqlDump(String database, List<String> tables, String path, SqlDumpOptions options);
 
   /// 新建库对话框的选项：字符集、排序规则、服务器默认值
   Future<DatabaseOptions> databaseOptions();
@@ -386,6 +389,18 @@ class RustSchemaSource implements SchemaSource {
       sessionId: sessionId,
       database: database,
       table: table,
+      path: path,
+      options: options,
+    );
+    return written.toInt();
+  }
+
+  @override
+  Future<int> exportSqlDump(String database, List<String> tables, String path, SqlDumpOptions options) async {
+    final written = await db.exportSqlDump(
+      sessionId: sessionId,
+      database: database,
+      tables: tables,
       path: path,
       options: options,
     );

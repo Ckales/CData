@@ -41,6 +41,38 @@ pub struct ExportOptions {
     pub table_name: String,
 }
 
+/// 多张表或整个库导出成一个 SQL 文件。和结果集的 ExportOptions 分开：
+/// 结果集导出不知道库里还有哪些表，也不该写 DROP / CREATE。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SqlDumpOptions {
+    pub encoding: ExportEncoding,
+    /// CREATE DATABASE IF NOT EXISTS + USE
+    pub create_database: bool,
+    /// DROP TABLE / VIEW IF EXISTS
+    pub drop_table: bool,
+    /// SHOW CREATE 的原文
+    pub create_table: bool,
+    /// 表数据写成 INSERT。视图没有数据可导
+    pub include_data: bool,
+}
+
+/// SHOW CREATE DATABASE 没有 IF NOT EXISTS，原样导入时库已存在就会失败
+pub(crate) fn create_database_if_not_exists(show_create: &str) -> Result<String, String> {
+    let sql = show_create.trim().trim_end_matches(';').trim();
+    if sql.is_empty() {
+        return Err("SHOW CREATE DATABASE 没有返回语句".to_string());
+    }
+    let upper = sql.to_ascii_uppercase();
+    if upper.starts_with("CREATE DATABASE IF NOT EXISTS") {
+        return Ok(sql.to_string());
+    }
+    const PREFIX: &str = "CREATE DATABASE";
+    if upper.starts_with(PREFIX) {
+        return Ok(format!("CREATE DATABASE IF NOT EXISTS{}", &sql[PREFIX.len()..]));
+    }
+    Err(format!("认不出的建库语句：{sql}"))
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ExportSummary {
     pub rows_written: u64,
@@ -84,6 +116,10 @@ pub struct ExportWriter {
     column_indexes: Vec<usize>,
     format: RowFormat,
     rows: u64,
+    /// 当前这张表已经写进 INSERT 的行数。换表时归零，避免上一张表的批次把下一张的头吞掉
+    batch_rows: u64,
+    /// 当前 INSERT 还没写分号。换表、写 DDL、收尾之前要先补上
+    insert_open: bool,
 }
 
 enum RowFormat {
@@ -129,9 +165,75 @@ impl ExportWriter {
             column_indexes: column_indexes.to_vec(),
             format,
             rows: 0,
+            batch_rows: 0,
+            insert_open: false,
         };
         writer.write_header(columns, options)?;
         Ok(writer)
+    }
+
+    /// 一个 SQL 文件，还没有具体的表。后面用 write_sql 写 DDL，begin_insert + write_row 写数据
+    pub fn create_sql_dump(path: &Path, encoding: ExportEncoding) -> Result<Self, String> {
+        let options = ExportOptions {
+            format: ExportFormat::SqlInsert,
+            encoding,
+            delimiter: ",".to_string(),
+            header: false,
+            null_text: String::new(),
+            table_name: String::new(),
+        };
+        let temp = temp_path(path);
+        let file = File::create(&temp).map_err(|e| format!("创建文件失败：{e}"))?;
+        let mut writer = ExportWriter {
+            out: Some(Encoder { writer: BufWriter::new(file), encoding }),
+            path: path.to_path_buf(),
+            temp,
+            column_indexes: Vec::new(),
+            format: RowFormat::Sql { head: String::new() },
+            rows: 0,
+            batch_rows: 0,
+            insert_open: false,
+        };
+        writer.write_header(&[], &options)?;
+        Ok(writer)
+    }
+
+    /// 写一段 SQL（建库、删表、建表、USE）。若上一张表的 INSERT 还没结束，先补分号
+    pub fn write_sql(&mut self, sql: &str) -> Result<(), String> {
+        if !matches!(self.format, RowFormat::Sql { .. }) {
+            return Err("只有 SQL 导出能写语句".to_string());
+        }
+        self.close_insert()?;
+        self.out().text(sql, "语句")
+    }
+
+    /// 接下来的 write_row 写成这张表的 INSERT。列名按给出的顺序，调用方传原始列名
+    pub fn begin_insert(&mut self, table: &str, column_names: &[String]) -> Result<(), String> {
+        if table.is_empty() {
+            return Err("表名是空的".to_string());
+        }
+        if column_names.is_empty() {
+            return Err(format!("{table} 没有列"));
+        }
+        self.close_insert()?;
+        let mut names = Vec::with_capacity(column_names.len());
+        for name in column_names {
+            names.push(quote_ident(name));
+        }
+        self.format = RowFormat::Sql {
+            head: format!("INSERT INTO {} ({}) VALUES\n", quote_ident(table), names.join(", ")),
+        };
+        self.column_indexes = (0..column_names.len()).collect();
+        self.batch_rows = 0;
+        Ok(())
+    }
+
+    fn close_insert(&mut self) -> Result<(), String> {
+        if self.insert_open {
+            self.out().raw(b";\n\n")?;
+            self.insert_open = false;
+        }
+        Ok(())
     }
 
     fn out(&mut self) -> &mut Encoder {
@@ -190,17 +292,21 @@ impl ExportWriter {
                 format!("{}\r\n", fields.join(separator))
             }
             RowFormat::Sql { head } => {
+                if head.is_empty() {
+                    return Err("还没指定 INSERT 的表".to_string());
+                }
                 let mut values = Vec::with_capacity(self.column_indexes.len());
                 for &index in &self.column_indexes {
                     values.push(sql_literal(&row[index]));
                 }
                 // 不知道后面还有没有行，所以分隔符写在行前：每批第一行前写 INSERT 头，其余行前写逗号
-                if self.rows % ROWS_PER_INSERT == 0 {
+                if self.batch_rows % ROWS_PER_INSERT == 0 {
                     let head = head.clone();
-                    if self.rows > 0 {
+                    if self.insert_open {
                         self.out().raw(b";\n")?;
                     }
                     self.out().text(&head, "表名或列名")?;
+                    self.insert_open = true;
                     format!("  ({})", values.join(", "))
                 } else {
                     format!(",\n  ({})", values.join(", "))
@@ -209,6 +315,7 @@ impl ExportWriter {
         };
         self.out().text(&line, &location)?;
         self.rows += 1;
+        self.batch_rows += 1;
         Ok(())
     }
 
@@ -217,8 +324,9 @@ impl ExportWriter {
         let rows = self.rows;
         if let RowFormat::Sql { .. } = self.format {
             let mut tail = String::new();
-            if rows > 0 {
+            if self.insert_open {
                 tail.push_str(";\n");
+                self.insert_open = false;
             }
             tail.push_str(&format!("\n-- 共 {rows} 行\nSET SESSION sql_mode = @CDATA_OLD_SQL_MODE;\n"));
             self.out().text(&tail, "文件尾")?;
@@ -519,5 +627,44 @@ mod tests {
         let text = fs::read_to_string(&path).unwrap();
         fs::remove_file(&path).ok();
         assert_eq!(text.matches("INSERT INTO").count(), 3, "250 行分成 100 + 100 + 50");
+    }
+
+    #[test]
+    fn sql_dump_closes_each_table_before_the_next() {
+        let dir = std::env::temp_dir().join(format!("cdata-export-dump-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("dump.sql");
+        let mut writer = ExportWriter::create_sql_dump(&path, ExportEncoding::Utf8).unwrap();
+        writer.write_sql("USE `shop`;\nSET FOREIGN_KEY_CHECKS=0;\n").unwrap();
+        writer.begin_insert("orders", &["id".to_string()]).unwrap();
+        writer.write_row(&[CellValue::Int(1)]).unwrap();
+        writer.write_row(&[CellValue::Int(2)]).unwrap();
+        writer.write_sql("DROP TABLE IF EXISTS `items`;\n").unwrap();
+        writer.begin_insert("items", &["id".to_string(), "name".to_string()]).unwrap();
+        writer.write_row(&[CellValue::Int(9), CellValue::Text("a'b".into())]).unwrap();
+        let rows = writer.finish().unwrap();
+        let text = fs::read_to_string(&path).unwrap();
+        fs::remove_dir_all(&dir).ok();
+
+        assert_eq!(rows, 3);
+        assert_eq!(text.matches("SET NAMES").count(), 1, "文件头只写一次");
+        assert!(text.contains("USE `shop`;\nSET FOREIGN_KEY_CHECKS=0;\n"), "{text}");
+        assert!(text.contains("INSERT INTO `orders` (`id`) VALUES\n  (1),\n  (2);\n\nDROP TABLE IF EXISTS `items`;\n"), "{text}");
+        assert!(text.contains("INSERT INTO `items` (`id`, `name`) VALUES\n  (9, 'a''b');\n"), "{text}");
+        assert_eq!(text.matches("SET SESSION sql_mode = @CDATA_OLD_SQL_MODE;").count(), 1);
+    }
+
+    #[test]
+    fn create_database_statement_gains_if_not_exists() {
+        assert_eq!(
+            create_database_if_not_exists("CREATE DATABASE `shop` /*!40100 DEFAULT CHARACTER SET utf8mb4 */").unwrap(),
+            "CREATE DATABASE IF NOT EXISTS `shop` /*!40100 DEFAULT CHARACTER SET utf8mb4 */"
+        );
+        assert_eq!(
+            create_database_if_not_exists("CREATE DATABASE IF NOT EXISTS `shop`").unwrap(),
+            "CREATE DATABASE IF NOT EXISTS `shop`"
+        );
+        assert!(create_database_if_not_exists("").is_err());
+        assert!(create_database_if_not_exists("DROP DATABASE `shop`").is_err());
     }
 }

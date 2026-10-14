@@ -4,7 +4,7 @@ import 'package:flutter/services.dart';
 import 'data_source.dart';
 import 'export_dialog.dart';
 import 'mac_widgets.dart';
-import 'src/rust/api/db.dart' show ExportFormat;
+import 'src/rust/api/db.dart' show ExportFormat, SqlDumpOptions;
 import 'src/rust/api/schema.dart';
 import 'structure_editor.dart' show showDdlPreview;
 import 'theme.dart';
@@ -14,6 +14,9 @@ import 'theme.dart';
 class TableSidebar extends StatefulWidget {
   final SchemaSource source;
   final String database;
+
+  /// 非空时侧栏只列这些库。当前库即使不在里面也留着，避免打开的标签失去入口
+  final List<String> onlyDatabases;
 
   /// 当前选中的表，由外面（当前标签）决定：每个标签记着自己选的是哪张表
   final String? selectedTable;
@@ -44,6 +47,7 @@ class TableSidebar extends StatefulWidget {
     super.key,
     required this.source,
     required this.database,
+    this.onlyDatabases = const [],
     this.selectedTable,
     required this.onDatabaseChanged,
     required this.onTableSelected,
@@ -91,13 +95,25 @@ class _TableSidebarState extends State<TableSidebar> {
     super.dispose();
   }
 
+  List<String> _visibleDatabases(List<String> databases) {
+    final only = widget.onlyDatabases;
+    if (only.isEmpty) return databases;
+    final allowed = only.toSet();
+    final current = widget.database;
+    final visible = <String>[];
+    for (final name in databases) {
+      if (allowed.contains(name) || name == current) visible.add(name);
+    }
+    return visible;
+  }
+
   Future<void> _reload() async {
     setState(() {
       _loading = true;
       _error = null;
     });
     try {
-      final databases = await widget.source.databases();
+      final databases = _visibleDatabases(await widget.source.databases());
       // 连接时没指定库：先只列库，等用户在上面选一个
       final tables = widget.database.isEmpty
           ? <TableInfo>[]
@@ -178,12 +194,15 @@ class _TableSidebarState extends State<TableSidebar> {
           _menuItem('create', '新建表…', Icons.add_box_outlined),
         if (widget.onImport != null)
           _menuItem('import', '导入…', Icons.file_download_outlined),
+        if (_tables.isNotEmpty && widget.database.isNotEmpty)
+          _menuItem('export-database', '导出数据库…', Icons.file_upload_outlined),
       ],
     );
     if (!mounted) return;
     if (choice == 'create-database') await _createDatabase();
     if (choice == 'create') await _createTable();
     if (choice == 'import') await _import(null);
+    if (choice == 'export-database') await _export(null, selectAll: true);
   }
 
   /// 右键菜单，出现在鼠标位置。分组照 Querious：打开、改名复制、删除、复制文本、导入统计、新建
@@ -218,6 +237,7 @@ class _TableSidebarState extends State<TableSidebar> {
       if (widget.onImport != null)
         _menuItem('import', '导入…', Icons.file_download_outlined),
       _menuItem('export', '导出…', Icons.file_upload_outlined),
+      _menuItem('export-database', '导出数据库…', Icons.file_upload_outlined),
       if (!isView) _menuItem('count', '统计行数', Icons.numbers),
       if (!isView) _menuItem('operations', '表操作', Icons.tune, submenu: true),
       const PopupMenuDivider(height: 8),
@@ -253,6 +273,8 @@ class _TableSidebarState extends State<TableSidebar> {
         await _import(isView ? null : table);
       case 'export':
         await _export(table);
+      case 'export-database':
+        await _export(table, selectAll: true);
       case 'count':
         await _countRows(table);
       case 'operations':
@@ -264,42 +286,83 @@ class _TableSidebarState extends State<TableSidebar> {
     }
   }
 
-  /// 导出整张表：选项 → 保存位置 → core 从库里逐行读写。不经过结果网格，不受行数上限限制
-  Future<void> _export(String table) async {
+  /// 导出。SQL 可以勾选多张表或整个库；CSV 仍是右键的那一张。
+  /// table 为空是从空白处导出整个库
+  Future<void> _export(String? table, {bool selectAll = false}) async {
+    if (_tables.isEmpty || widget.database.isEmpty) {
+      setState(() => _error = '这个库没有表可导出');
+      return;
+    }
     final choice = await showExportDialog(
       context,
       allRowsLabel: '整张表（不受行数上限限制）',
       selectionLabel: null,
       suggestedTable: '',
+      tables: _tables,
+      currentTable: table,
+      selectAll: selectAll,
+      initialFormat: selectAll ? ExportFormat.sqlInsert : ExportFormat.csv,
     );
     if (choice == null || !mounted) return;
+    final dump = choice.dump;
     final extension = choice.options.format == ExportFormat.csv ? 'csv' : 'sql';
+    final csvTable = table ?? _tables.first.name;
+    final suggested = dump == null
+        ? '$csvTable.$extension'
+        : dump.tables.length == 1
+            ? '${dump.tables.single}.sql'
+            : '${widget.database}.sql';
     final pickSavePath = widget.pickSavePath ?? pickExportPath;
-    final path = await pickSavePath('$table.$extension');
+    final path = await pickSavePath(suggested);
     if (path == null || !mounted) return;
 
     final database = widget.database;
-    setState(() => _busy = '正在导出 $table…');
+    final label = dump == null
+        ? csvTable
+        : dump.tables.length == 1
+            ? dump.tables.single
+            : database;
+    setState(() => _busy = '正在导出 $label…');
     final int written;
     try {
-      written = await widget.source.exportTable(
-        database,
-        table,
-        path,
-        choice.options,
-      );
+      if (dump != null) {
+        written = await widget.source.exportSqlDump(
+          database,
+          dump.tables,
+          path,
+          SqlDumpOptions(
+            encoding: choice.options.encoding,
+            createDatabase: dump.createDatabase,
+            dropTable: dump.dropTable,
+            createTable: dump.createTable,
+            includeData: dump.includeData,
+          ),
+        );
+      } else {
+        written = await widget.source.exportTable(database, csvTable, path, choice.options);
+      }
     } catch (e) {
-      if (mounted) setState(() => _error = '导出 $table 失败：$e');
+      if (mounted) setState(() => _error = '导出 $label 失败：$e');
       return;
     } finally {
       if (mounted) setState(() => _busy = null);
     }
     if (!mounted) return;
+    final String summary;
+    if (dump == null) {
+      summary = '已把 $csvTable 的 $written 行导出到\n$path';
+    } else if (!dump.includeData) {
+      summary = '已把 ${dump.tables.length} 张表的结构导出到\n$path';
+    } else if (dump.tables.length == 1) {
+      summary = '已把 ${dump.tables.single} 的 $written 行导出到\n$path';
+    } else {
+      summary = '已把 $database 的 $written 行（${dump.tables.length} 张表）导出到\n$path';
+    }
     await showDialog<void>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('导出完成'),
-        content: SelectableText('已把 $table 的 $written 行导出到\n$path'),
+        content: SelectableText(summary),
         actions: [
           FilledButton(
             onPressed: () => Navigator.of(context).pop(),

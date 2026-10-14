@@ -3,11 +3,11 @@
 //! 十万行结果集留在 Rust 侧，Dart 侧任何时候只持有可视区的两百来行。
 //! 这是 FFI 契约的核心：**不要把整个结果集搬过 FFI**。
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Mutex, OnceLock};
 
 use mysql_async::prelude::Queryable;
-use mysql_async::TxOpts;
+use mysql_async::{Row, TxOpts};
 
 use crate::db::{
     open_pool, run_query_with_params, run_script, ColumnMeta, ConnectFailed, ConnectionConfig, DbPool, OpenError,
@@ -1495,6 +1495,175 @@ pub async fn export_table(
     }
     drop(result);
     writer.finish().map_err(Error::BadInput)
+}
+
+/// 把选中的表（或整个库：调用方把全部表名传进来）导出成一个 SQL 文件。
+/// 视图只写结构，不写数据。写文件出错时连接上可能还有没读完的行，这条连接直接断开
+pub async fn export_sql_dump(
+    session_id: u64,
+    database: &str,
+    tables: &[String],
+    path: &str,
+    options: &crate::export::SqlDumpOptions,
+) -> Result<u64> {
+    if database.is_empty() {
+        return Err(Error::BadInput("没有指定库".to_string()));
+    }
+    if !options.create_database && !options.drop_table && !options.create_table && !options.include_data {
+        return Err(Error::BadInput("没有要导出的内容".to_string()));
+    }
+    let mut wanted = Vec::new();
+    let mut seen = HashSet::new();
+    for table in tables {
+        if table.is_empty() {
+            return Err(Error::BadInput("表名是空的".to_string()));
+        }
+        if seen.insert(table.clone()) {
+            wanted.push(table.clone());
+        }
+    }
+    if wanted.is_empty() {
+        return Err(Error::BadInput("没有选要导出的表".to_string()));
+    }
+
+    let pool = pool_of(session_id)?;
+    let mut conn = pool.get_conn().await?;
+    let outcome = dump_tables(&mut conn, database, &wanted, path, options).await;
+    if outcome.is_err() {
+        // 可能正停在没读完的结果集上，这条连接不能还回池里
+        let _ = conn.disconnect().await;
+    }
+    outcome
+}
+
+async fn dump_tables(
+    conn: &mut mysql_async::Conn,
+    database: &str,
+    tables: &[String],
+    path: &str,
+    options: &crate::export::SqlDumpOptions,
+) -> Result<u64> {
+    let types: Vec<(String, String)> = conn
+        .exec(
+            "SELECT TABLE_NAME, TABLE_TYPE FROM information_schema.TABLES WHERE TABLE_SCHEMA = ?",
+            (database,),
+        )
+        .await?;
+    let type_of: HashMap<String, String> = types.into_iter().collect();
+    for table in tables {
+        if !type_of.contains_key(table) {
+            return Err(Error::BadInput(format!("库 {database} 里没有 {table}")));
+        }
+    }
+
+    let mut writer = crate::export::ExportWriter::create_sql_dump(std::path::Path::new(path), options.encoding)
+        .map_err(Error::BadInput)?;
+    if options.create_database {
+        let row: Option<Row> = conn.query_first(format!("SHOW CREATE DATABASE {}", crate::sql::quote_ident(database))).await?;
+        let sql = row.and_then(|row| row.get::<String, usize>(1)).unwrap_or_default();
+        let statement = crate::export::create_database_if_not_exists(&sql).map_err(Error::BadInput)?;
+        writer.write_sql(&format!("{statement};\n")).map_err(Error::BadInput)?;
+    }
+    // 不写 USE 的话，导入会落到当时选中的库，整库导出就导错地方
+    writer
+        .write_sql(&format!("USE {};\nSET FOREIGN_KEY_CHECKS=0;\n\n", crate::sql::quote_ident(database)))
+        .map_err(Error::BadInput)?;
+
+    for table in tables {
+        let table_type = type_of.get(table).expect("上面查过");
+        let is_view = table_type == "VIEW" || table_type == "SYSTEM VIEW";
+        let mut ddl = String::new();
+        if options.drop_table {
+            let kind = if is_view { "VIEW" } else { "TABLE" };
+            ddl.push_str(&format!("DROP {kind} IF EXISTS {};\n", crate::sql::quote_ident(table)));
+        }
+        if options.create_table {
+            let create = show_create(conn, database, table).await?;
+            ddl.push_str(create.trim_end());
+            ddl.push_str(";\n\n");
+        }
+        if !ddl.is_empty() {
+            writer.write_sql(&ddl).map_err(Error::BadInput)?;
+        }
+        if !options.include_data {
+            continue;
+        }
+        if is_view {
+            writer
+                .write_sql(&format!("-- 视图 {} 不导出数据\n\n", crate::sql::quote_ident(table)))
+                .map_err(Error::BadInput)?;
+            continue;
+        }
+        write_table_data(conn, &mut writer, database, table).await?;
+    }
+    writer.write_sql("SET FOREIGN_KEY_CHECKS=1;\n").map_err(Error::BadInput)?;
+    writer.finish().map_err(Error::BadInput)
+}
+
+async fn show_create(conn: &mut mysql_async::Conn, database: &str, table: &str) -> Result<String> {
+    let row: Option<Row> = conn
+        .query_first(format!(
+            "SHOW CREATE TABLE {}.{}",
+            crate::sql::quote_ident(database),
+            crate::sql::quote_ident(table)
+        ))
+        .await?;
+    // 表是 (Table, Create Table)，视图是 (View, Create View, …)，建表语句都在第 2 列
+    let sql = row.and_then(|row| row.get::<String, usize>(1)).unwrap_or_default();
+    if sql.is_empty() {
+        return Err(Error::BadInput(format!("读不到 {table} 的建表语句")));
+    }
+    Ok(sql)
+}
+
+async fn write_table_data(
+    conn: &mut mysql_async::Conn,
+    writer: &mut crate::export::ExportWriter,
+    database: &str,
+    table: &str,
+) -> Result<()> {
+    let sql = format!(
+        "SELECT * FROM {}.{}",
+        crate::sql::quote_ident(database),
+        crate::sql::quote_ident(table)
+    );
+    let mut result = conn.exec_iter(sql, ()).await?;
+    let columns = match result.columns() {
+        Some(columns) => crate::db::build_columns(&columns),
+        None => {
+            drop(result);
+            return Err(Error::BadInput(format!("{table} 没有返回列")));
+        }
+    };
+    let mut names = Vec::with_capacity(columns.len());
+    for column in &columns {
+        let name = if column.org_name.is_empty() { &column.name } else { &column.org_name };
+        names.push(name.clone());
+    }
+    let mut started = false;
+    loop {
+        let row = match result.next().await {
+            Ok(Some(row)) => row,
+            Ok(None) => break,
+            Err(err) => {
+                drop(result);
+                return Err(Error::from(err));
+            }
+        };
+        if !started {
+            if let Err(err) = writer.begin_insert(table, &names) {
+                drop(result);
+                return Err(Error::BadInput(err));
+            }
+            started = true;
+        }
+        if let Err(err) = writer.write_row(&crate::db::build_row(row, &columns)) {
+            drop(result);
+            return Err(Error::BadInput(err));
+        }
+    }
+    drop(result);
+    Ok(())
 }
 
 /// 新建库对话框的选项：服务器上的字符集、排序规则和默认值，一次取齐
