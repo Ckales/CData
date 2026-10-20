@@ -171,6 +171,28 @@ void main() {
     expect(find.text('CURRENT_TIMESTAMP'), findsNothing, reason: '没设 ON UPDATE 的列不能显示得像设了一样');
   });
 
+  testWidgets('默认值写在一列里，只有右侧图标能切换类型', (tester) async {
+    final source = await openEditor(tester);
+    expect(find.text("''"), findsOneWidget, reason: '空串字面量要看得见，不能和没默认值混成空白');
+    expect(find.text('无默认值'), findsOneWidget);
+    expect(find.text('字面量'), findsNothing, reason: '类型不占一列');
+
+    await tester.tap(find.text("''"));
+    await tester.pumpAndSettle();
+    expect(find.text('表达式'), findsNothing, reason: '点值本身不能切类型');
+
+    await tester.tap(find.byKey(const ValueKey('column-default-kind-1')));
+    await tester.pumpAndSettle();
+    expect(find.text('表达式'), findsOneWidget);
+    await tester.tap(find.text('表达式'));
+    await settle(tester);
+    await editColumnText(tester, 'default', 1, 'NOW()');
+
+    await tester.tap(find.text('预览 DDL'));
+    await settle(tester);
+    expect(source.previews.single.columns[1].default_, const DefaultValue.expression('NOW()'));
+  });
+
   testWidgets('类型下拉按类别显示、能筛选，选择后把完整类型交给草稿', (tester) async {
     final source = await openEditor(tester);
     expect(find.byKey(const ValueKey('column-type-1')), findsNothing);

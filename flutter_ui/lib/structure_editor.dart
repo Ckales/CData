@@ -152,6 +152,7 @@ class _InlineTextCell extends StatefulWidget {
   final Key inputKey;
   final bool enabled;
   final String? hint;
+  final String? emptyDisplay;
   final ValueChanged<String>? onChanged;
 
   const _InlineTextCell({
@@ -161,6 +162,7 @@ class _InlineTextCell extends StatefulWidget {
     required this.inputKey,
     required this.enabled,
     this.hint,
+    this.emptyDisplay,
     this.onChanged,
   });
 
@@ -202,7 +204,8 @@ class _InlineTextCellState extends State<_InlineTextCell> {
     }
 
     final value = widget.controller.text;
-    final empty = value.isEmpty;
+    final shown = value.isEmpty ? (widget.emptyDisplay ?? widget.hint ?? '') : value;
+    final placeholder = value.isEmpty && widget.emptyDisplay == null;
     return GestureDetector(
       key: widget.displayKey,
       behavior: HitTestBehavior.opaque,
@@ -212,14 +215,14 @@ class _InlineTextCellState extends State<_InlineTextCell> {
         child: Align(
           alignment: Alignment.centerLeft,
           child: Text(
-            empty ? widget.hint ?? '' : value,
+            shown,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
               fontSize: 12,
               fontFamily: 'Menlo',
-              color: empty ? scheme.outline : scheme.onSurface,
-              fontStyle: empty ? FontStyle.italic : null,
+              color: placeholder ? scheme.outline : scheme.onSurface,
+              fontStyle: placeholder ? FontStyle.italic : null,
             ),
           ),
         ),
@@ -988,7 +991,7 @@ class _StructureEditorPanelState extends State<StructureEditorPanel> {
 
   // ---- 列 ----
 
-  static const _columnWidths = [175.0, 180.0, 40.0, 110.0, 150.0, 40.0, 170.0, 190.0, 180.0];
+  static const _columnWidths = [175.0, 180.0, 40.0, 200.0, 40.0, 170.0, 190.0, 180.0];
 
   Widget _columnsTab() {
     return Column(
@@ -997,7 +1000,7 @@ class _StructureEditorPanelState extends State<StructureEditorPanel> {
         Expanded(
           child: _Table(
             widths: _columnWidths,
-            headers: const ['列名', '类型', '可空', '默认值', '', '自增', 'ON UPDATE', '排序规则', '注释'],
+            headers: const ['列名', '类型', '可空', '默认值', '自增', 'ON UPDATE', '排序规则', '注释'],
             rows: [for (var i = 0; i < _columns.length; i++) _columnRow(i)],
             headerHeight: 29,
             rowHeight: 29,
@@ -1017,7 +1020,6 @@ class _StructureEditorPanelState extends State<StructureEditorPanel> {
   List<Widget> _columnRow(int i) {
     final column = _columns[i];
     final editable = column.locked == null;
-    final hasDefaultText = column.defaultKind == _DefaultKind.literal || column.defaultKind == _DefaultKind.expression;
     return [
       Row(
         children: [
@@ -1040,14 +1042,7 @@ class _StructureEditorPanelState extends State<StructureEditorPanel> {
         editable ? (value) => setState(() => column.nullable = value) : null,
         key: ValueKey('column-nullable-$i'),
       ),
-      MacPopupButton<_DefaultKind>(
-        key: ValueKey('column-default-kind-$i'),
-        value: column.defaultKind,
-        expand: true,
-        onChanged: editable ? (value) => setState(() => column.defaultKind = value) : null,
-        items: {for (final kind in _DefaultKind.values) kind: _defaultKindLabels[kind]!},
-      ),
-      _columnTextCell(column.defaultText, i, 'default', enabled: editable && hasDefaultText),
+      _defaultCell(column, i, editable),
       _checkbox(
         column.autoIncrement,
         editable ? (value) => setState(() => column.autoIncrement = value) : null,
@@ -1059,12 +1054,50 @@ class _StructureEditorPanelState extends State<StructureEditorPanel> {
     ];
   }
 
+  Widget _defaultCell(_ColumnRow column, int i, bool editable) {
+    final hasText = column.defaultKind == _DefaultKind.literal || column.defaultKind == _DefaultKind.expression;
+    final scheme = Theme.of(context).colorScheme;
+    return Row(
+      children: [
+        Expanded(
+          child: hasText
+              ? _columnTextCell(
+                  column.defaultText,
+                  i,
+                  'default',
+                  enabled: editable,
+                  // 空串是值，不能显示成空白，否则和「无默认值」分不清
+                  emptyDisplay: column.defaultKind == _DefaultKind.literal ? "''" : null,
+                )
+              : Text(
+                  _defaultKindLabels[column.defaultKind]!,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: scheme.onSurfaceVariant,
+                    fontStyle: column.defaultKind == _DefaultKind.null_ ? FontStyle.italic : null,
+                  ),
+                ),
+        ),
+        MacPopupButton<_DefaultKind>(
+          key: ValueKey('column-default-kind-$i'),
+          value: column.defaultKind,
+          iconOnly: true,
+          onChanged: editable ? (value) => setState(() => column.defaultKind = value) : null,
+          items: {for (final kind in _DefaultKind.values) kind: _defaultKindLabels[kind]!},
+        ),
+      ],
+    );
+  }
+
   Widget _columnTextCell(
     TextEditingController controller,
     int index,
     String field, {
     bool enabled = true,
     String? hint,
+    String? emptyDisplay,
     bool rebuildOnChange = false,
   }) => _InlineTextCell(
     key: ObjectKey(controller),
@@ -1073,6 +1106,7 @@ class _StructureEditorPanelState extends State<StructureEditorPanel> {
     inputKey: ValueKey('column-$field-$index'),
     enabled: enabled,
     hint: hint,
+    emptyDisplay: emptyDisplay,
     onChanged: rebuildOnChange ? (_) => setState(() {}) : null,
   );
 

@@ -724,6 +724,9 @@ class MacPopupButton<T> extends StatelessWidget {
   /// 文字前面的小图标
   final Widget? leading;
 
+  /// 不画文字和边框，只留右侧上下箭头。点箭头才出菜单
+  final bool iconOnly;
+
   const MacPopupButton({
     super.key,
     required this.value,
@@ -733,6 +736,7 @@ class MacPopupButton<T> extends StatelessWidget {
     this.expand = false,
     this.placeholder = '—',
     this.leading,
+    this.iconOnly = false,
   });
 
   @override
@@ -773,8 +777,8 @@ class MacPopupButton<T> extends StatelessWidget {
       initialValue: value,
       enabled: enabled,
       constraints: constraints,
-      // 空串就不挂 Tooltip，否则悬停会冒出 Material 的「Show menu」
-      tooltip: '',
+      // 空串就不挂 Tooltip，否则悬停会冒出 Material 的「Show menu」。只留箭头时悬停显示当前类型
+      tooltip: iconOnly ? (items[value] ?? '') : '',
       onSelected: onChanged,
       itemBuilder: (context) => [
         for (final entry in items.entries)
@@ -802,31 +806,43 @@ class MacPopupButton<T> extends StatelessWidget {
             ),
           ),
       ],
-      child: Container(
-        // 和主题按钮一样 24px，一排控件对得齐
-        height: 24,
-        padding: const EdgeInsets.only(left: 8, right: 4),
-        decoration: BoxDecoration(
-          color: enabled ? mac.control : mac.window,
-          border: Border.all(
-            color: enabled ? mac.controlBorder : mac.separator,
-          ),
-          borderRadius: BorderRadius.circular(5),
-        ),
-        child: Row(
-          mainAxisSize: expand ? MainAxisSize.max : MainAxisSize.min,
-          children: [
-            if (leading != null) ...[leading!, const SizedBox(width: 5)],
-            if (expand) Expanded(child: text) else Flexible(child: text),
-            const SizedBox(width: 4),
-            Icon(
-              Icons.unfold_more,
-              size: 14,
-              color: enabled ? mac.secondaryText : mac.tertiaryText,
+      child: iconOnly
+          ? SizedBox(
+              width: 24,
+              height: 24,
+              child: Center(
+                child: Icon(
+                  Icons.unfold_more,
+                  size: 14,
+                  color: enabled ? mac.secondaryText : mac.tertiaryText,
+                ),
+              ),
+            )
+          : Container(
+              // 和主题按钮一样 24px，一排控件对得齐
+              height: 24,
+              padding: const EdgeInsets.only(left: 8, right: 4),
+              decoration: BoxDecoration(
+                color: enabled ? mac.control : mac.window,
+                border: Border.all(
+                  color: enabled ? mac.controlBorder : mac.separator,
+                ),
+                borderRadius: BorderRadius.circular(5),
+              ),
+              child: Row(
+                mainAxisSize: expand ? MainAxisSize.max : MainAxisSize.min,
+                children: [
+                  if (leading != null) ...[leading!, const SizedBox(width: 5)],
+                  if (expand) Expanded(child: text) else Flexible(child: text),
+                  const SizedBox(width: 4),
+                  Icon(
+                    Icons.unfold_more,
+                    size: 14,
+                    color: enabled ? mac.secondaryText : mac.tertiaryText,
+                  ),
+                ],
+              ),
             ),
-          ],
-        ),
-      ),
     );
   }
 }
