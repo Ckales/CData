@@ -222,8 +222,8 @@ pub async fn execute_script(session_id: u64, sql: &str, max_rows: usize) -> Resu
 
     drop_child_results(session_id)?;
     let (pool, server) = session_pool(session_id)?;
-    // 每条都在服务端截断。SELECT 多要 1 行判断后面还有没有；
-    // 非查询语句的 LIMIT 包在不会执行的派生表里，服务器不看
+    // 查询在服务端截断，多要 1 行判断后面还有没有。
+    // ALTER 这类不能包进派生表，limit_query 会原样返回
     let limited: Vec<String> = statements.iter().map(|sql| crate::sql::limit_query(sql, probe_limit(max_rows))).collect();
     let run = run_script(&pool, &limited, max_rows).await?;
 

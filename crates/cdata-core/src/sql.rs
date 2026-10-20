@@ -20,19 +20,122 @@ pub fn browse_table(table: &str) -> String {
     format!("SELECT * FROM {}", quote_ident(table))
 }
 
-/// 给一条查询包上服务端行数上限。
+/// 给一条查询包上服务端行数上限。不是查询的语句原样返回。
 ///
 /// 多要 1 行只用来判断后面还有没有数据，调用方读到这一行就停、不留在结果里。
 /// 包成派生表而不是改原 SQL：原句可能已有 LIMIT、UNION、ORDER BY，插错位置会改语义。
 /// MySQL 会把这层合并掉，列元数据里的原始表还在。
 ///
+/// 派生表里只能放查询。ALTER、INSERT 这类包进去，服务器在第 2 行看到它们就报 1064，
+/// 语句本身根本没执行。
+///
 /// 原句末尾的分号留着会让子查询语法错。换行包住，行尾 `-- 注释` 不会吞掉右括号。
 pub fn limit_query(sql: &str, limit: u64) -> String {
-    format!(
-        "SELECT * FROM (\n{}\n) AS cdata_limit LIMIT {}",
-        sql.trim().trim_end_matches(';'),
-        limit
-    )
+    let trimmed = sql.trim().trim_end_matches(';');
+    if !is_limitable_query(trimmed) {
+        return trimmed.trim().to_string();
+    }
+    format!("SELECT * FROM (\n{trimmed}\n) AS cdata_limit LIMIT {limit}")
+}
+
+/// 这条语句能不能放进 `SELECT * FROM ( … )`。拿不准就不包，原样执行。
+fn is_limitable_query(sql: &str) -> bool {
+    let units: Vec<u16> = sql.encode_utf16().collect();
+    let tokens = crate::lexer::tokenize(sql);
+    let mut cursor = TokenCursor { units: &units, tokens: &tokens, index: 0 };
+    let Some(first) = cursor.bump() else {
+        return false;
+    };
+    match first.to_ascii_uppercase().as_str() {
+        "SELECT" | "TABLE" | "VALUES" | "(" => true,
+        "WITH" => with_main_is_query(&mut cursor),
+        _ => false,
+    }
+}
+
+/// `WITH` 后面的主语句是 SELECT / TABLE / VALUES 才是查询。`WITH … UPDATE` 不是。
+fn with_main_is_query(cursor: &mut TokenCursor<'_>) -> bool {
+    let Some(first) = cursor.bump() else {
+        return false;
+    };
+    // RECURSIVE 不是 CTE 名字，名字在下一个 token，这里只确认它在
+    if first.eq_ignore_ascii_case("RECURSIVE") && cursor.bump().is_none() {
+        return false;
+    }
+    loop {
+        let Some(next) = cursor.bump() else {
+            return false;
+        };
+        let as_word = if next == "(" {
+            if !cursor.skip_parens() {
+                return false;
+            }
+            let Some(word) = cursor.bump() else {
+                return false;
+            };
+            word
+        } else {
+            next
+        };
+        if !as_word.eq_ignore_ascii_case("AS") {
+            return false;
+        }
+        let Some(open) = cursor.bump() else {
+            return false;
+        };
+        if open != "(" || !cursor.skip_parens() {
+            return false;
+        }
+        let Some(after) = cursor.bump() else {
+            return false;
+        };
+        if after == "," {
+            if cursor.bump().is_none() {
+                return false;
+            }
+            continue;
+        }
+        let after = after.to_ascii_uppercase();
+        return matches!(after.as_str(), "SELECT" | "TABLE" | "VALUES" | "(");
+    }
+}
+
+struct TokenCursor<'a> {
+    units: &'a [u16],
+    tokens: &'a [crate::lexer::SqlToken],
+    index: usize,
+}
+
+impl TokenCursor<'_> {
+    fn bump(&mut self) -> Option<String> {
+        while self.index < self.tokens.len() {
+            let token = &self.tokens[self.index];
+            self.index += 1;
+            if token.kind == crate::lexer::SqlTokenKind::Comment {
+                continue;
+            }
+            return Some(String::from_utf16_lossy(&self.units[token.start as usize..token.end as usize]));
+        }
+        None
+    }
+
+    /// 调用方已经吃掉了开头的 `(`，这里把配平的 `)` 也吃掉
+    fn skip_parens(&mut self) -> bool {
+        let mut depth = 1i32;
+        while let Some(text) = self.bump() {
+            match text.as_str() {
+                "(" => depth += 1,
+                ")" => {
+                    depth -= 1;
+                    if depth == 0 {
+                        return true;
+                    }
+                }
+                _ => {}
+            }
+        }
+        false
+    }
 }
 
 /// 筛选运算符。值一律按字符串绑定，由 MySQL 按列类型转换
@@ -284,6 +387,30 @@ mod tests {
     #[test]
     fn browse_table_quotes_the_name() {
         assert_eq!(browse_table("big_rows"), "SELECT * FROM `big_rows`");
+    }
+
+    #[test]
+    fn limit_leaves_non_queries_alone() {
+        // 包进派生表后，服务器在第 2 行看到 ALTER，报 1064，语句不会执行
+        let alter = "ALTER TABLE uf_third_party_tool_model\n\
+            ADD COLUMN url_prefix varchar(63) NOT NULL DEFAULT '' COMMENT 'x' AFTER upstream_path;";
+        let out = limit_query(alter, 1001);
+        assert!(out.starts_with("ALTER TABLE"), "{out}");
+        assert!(!out.contains("cdata_limit"), "{out}");
+        assert!(!out.contains(';'), "{out}");
+
+        assert!(limit_query("INSERT INTO t VALUES (1)", 5).starts_with("INSERT"));
+        assert!(limit_query("-- 先改表\nALTER TABLE t ADD COLUMN x int", 5).starts_with("--"));
+        assert!(limit_query("WITH c AS (SELECT 1) UPDATE t SET x = 1", 5).starts_with("WITH"));
+    }
+
+    #[test]
+    fn limit_wraps_queries_including_with_select() {
+        assert!(limit_query("SELECT 1", 2).starts_with("SELECT * FROM ("));
+        assert!(limit_query("WITH c AS (SELECT 1) SELECT * FROM c", 2).starts_with("SELECT * FROM ("));
+        assert!(limit_query("WITH RECURSIVE c AS (SELECT 1) SELECT * FROM c", 2).starts_with("SELECT * FROM ("));
+        assert!(limit_query("WITH c (a) AS (SELECT 1), d AS (SELECT 2) SELECT a FROM c", 2).starts_with("SELECT * FROM ("));
+        assert!(limit_query("(SELECT 1) UNION (SELECT 2)", 2).starts_with("SELECT * FROM ("));
     }
 
     #[test]

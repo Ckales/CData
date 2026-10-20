@@ -456,6 +456,17 @@ class QueryTabState extends State<QueryTab> {
     try {
       final summary = await widget.runner.run(_baseSql, _filter, _sortColumn, _sortAscending);
       if (!mounted) return;
+      // ALTER、INSERT 这类没有列。空网格看起来像没跑成，说清楚
+      if (summary.columns.isEmpty) {
+        setState(() {
+          _source = null;
+          _columns = const [];
+          _scriptNotice = '语句已执行，没有结果集';
+          _elapsed = DateTime.now().difference(started);
+        });
+        widget.onConnected();
+        return;
+      }
       setState(() {
         _source = widget.runner.gridSource(summary);
         _columns = [for (final column in summary.columns) column.name];
