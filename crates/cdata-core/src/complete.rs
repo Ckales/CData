@@ -140,14 +140,14 @@ pub fn complete(sql: &str, cursor: u32, catalog: &Catalog) -> Completion {
                 push(&mut items, column, CompletionKind::Column, &detail, &prefix);
             }
         }
-        return finish(replace_start, replace_end, items);
+        return finish(replace_start, replace_end, items, &prefix);
     }
 
     if expects_table(&before, &text_of) {
         for table in &catalog.tables {
             push(&mut items, &table.name, CompletionKind::Table, "", &prefix);
         }
-        return finish(replace_start, replace_end, items);
+        return finish(replace_start, replace_end, items, &prefix);
     }
 
     // 其他位置：作用域里的列（里层优先）、别名、表名，最后是关键字
@@ -176,17 +176,27 @@ pub fn complete(sql: &str, cursor: u32, catalog: &Catalog) -> Completion {
     for keyword in KEYWORDS {
         push(&mut items, keyword, CompletionKind::Keyword, "", &prefix);
     }
-    finish(replace_start, replace_end, items)
+    finish(replace_start, replace_end, items, &prefix)
 }
 
-fn finish(replace_start: u32, replace_end: u32, mut items: Vec<CompletionItem>) -> Completion {
+/// 前缀命中排前面，其余保持加入顺序，再截断
+fn finish(replace_start: u32, replace_end: u32, mut items: Vec<CompletionItem>, prefix: &str) -> Completion {
+    if !prefix.is_empty() {
+        let query = prefix.to_lowercase();
+        items.sort_by(|a, b| {
+            let a_prefix = a.label.to_lowercase().starts_with(&query);
+            let b_prefix = b.label.to_lowercase().starts_with(&query);
+            // true > false，反过来比就是前缀在前；同档保持原顺序
+            b_prefix.cmp(&a_prefix)
+        });
+    }
     items.truncate(MAX_ITEMS);
     Completion { replace_start, replace_end, items }
 }
 
-/// 名字匹配前缀（不分大小写）才加进去
+/// 名字包含已输入的片段（不分大小写）才加进去。`ap` 命中 `sp_app`
 fn push(items: &mut Vec<CompletionItem>, label: &str, kind: CompletionKind, detail: &str, prefix: &str) {
-    if !label.to_lowercase().starts_with(&prefix.to_lowercase()) {
+    if !prefix.is_empty() && !label.to_lowercase().contains(&prefix.to_lowercase()) {
         return;
     }
     let insert_text = match kind {
@@ -760,6 +770,49 @@ mod tests {
         assert_eq!(labels(&at("SELECT * FROM |")), ["orders", "users", "用户表"]);
         assert_eq!(labels(&at("SELECT * FROM orders o JOIN us|")), ["users"]);
         assert_eq!(labels(&at("SELECT * FROM orders, u|")), ["users"], "FROM 列表里逗号后面也是表");
+    }
+
+    #[test]
+    fn fragment_inside_name_matches() {
+        let catalog = Catalog {
+            tables: vec![
+                CatalogTable { name: "sp_app".into(), columns: vec!["androidpk".into()] },
+                CatalogTable { name: "apple".into(), columns: vec![] },
+                CatalogTable { name: "orders".into(), columns: vec![] },
+            ],
+        };
+        let sql = "SELECT * FROM ap";
+        let completion = complete(sql, sql.encode_utf16().count() as u32, &catalog);
+        // apple 是前缀，排在仅包含的 sp_app 前面
+        assert_eq!(labels(&completion), ["apple", "sp_app"]);
+
+        let sql = "SELECT * FROM AP";
+        let completion = complete(sql, sql.encode_utf16().count() as u32, &catalog);
+        assert_eq!(labels(&completion), ["apple", "sp_app"]);
+    }
+
+    #[test]
+    fn fragment_inside_column_name_matches() {
+        let catalog = Catalog {
+            tables: vec![CatalogTable {
+                name: "sp_app".into(),
+                columns: vec!["id".into(), "androidpk".into(), "pk_name".into()],
+            }],
+        };
+        let sql = "SELECT * FROM sp_app WHERE pk";
+        let completion = complete(sql, sql.encode_utf16().count() as u32, &catalog);
+        let columns: Vec<String> = completion
+            .items
+            .iter()
+            .filter(|item| item.kind == CompletionKind::Column)
+            .map(|item| item.label.clone())
+            .collect();
+        // pk_name 是前缀，排在仅包含的 androidpk 前面
+        assert_eq!(columns, ["pk_name", "androidpk"]);
+
+        let sql = "SELECT * FROM sp_app WHERE sp_app.pk";
+        let completion = complete(sql, sql.encode_utf16().count() as u32, &catalog);
+        assert_eq!(labels(&completion), ["pk_name", "androidpk"]);
     }
 
     #[test]
