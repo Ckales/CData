@@ -175,6 +175,49 @@ Future<GlobalKey<QueryTabState>> pumpTab(
 }
 
 void main() {
+  testWidgets('SQL 编辑区默认紧凑，拖动分隔条同时扩大输入区域', (tester) async {
+    await pumpTab(tester, FakeRunner(), FakeLibrary());
+    final divider = find.byKey(const ValueKey('sql-editor-resize'));
+    final field = find.descendant(
+      of: find.byKey(const ValueKey('sql-editor')),
+      matching: find.byType(TextField),
+    );
+    final initialBottom = tester.getRect(divider).bottom;
+    final initialFieldHeight = tester.getSize(field).height;
+    expect(initialBottom, lessThanOrEqualTo(150));
+
+    await tester.drag(divider, const Offset(0, 100));
+    await tester.pumpAndSettle();
+
+    final growth = tester.getRect(divider).bottom - initialBottom;
+    expect(growth, greaterThan(60));
+    expect(tester.getSize(field).height - initialFieldHeight, closeTo(growth, 1));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('编辑区拖动有上下限，窗口缩小时保留结果空间', (tester) async {
+    addTearDown(() => tester.view.resetPhysicalSize());
+    addTearDown(() => tester.view.resetDevicePixelRatio());
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(800, 600);
+    await pumpTab(tester, FakeRunner(), FakeLibrary());
+    final divider = find.byKey(const ValueKey('sql-editor-resize'));
+
+    await tester.drag(divider, const Offset(0, 1000));
+    await tester.pumpAndSettle();
+    expect(tester.getRect(divider).bottom, lessThanOrEqualTo(360));
+
+    tester.view.physicalSize = const Size(800, 300);
+    await tester.pumpAndSettle();
+    expect(tester.getRect(divider).bottom, lessThanOrEqualTo(180));
+
+    await tester.drag(divider, const Offset(0, -1000));
+    await tester.pumpAndSettle();
+    expect(tester.getRect(divider).bottom, closeTo(96, 1));
+    expect(tester.getSize(find.byKey(const ValueKey('sql-editor'))).height, greaterThan(20));
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('运行：跑编辑器里的 SQL，记历史，显示结果', (tester) async {
     final runner = FakeRunner();
     final library = FakeLibrary();

@@ -76,6 +76,7 @@ class SqlEditorField extends StatefulWidget {
   final SqlCompleter? complete;
   final VoidCallback? onRun;
   final double fontSize;
+  final bool expands;
 
   const SqlEditorField({
     super.key,
@@ -83,6 +84,7 @@ class SqlEditorField extends StatefulWidget {
     required this.complete,
     required this.onRun,
     this.fontSize = 13,
+    this.expands = false,
   });
 
   @override
@@ -327,8 +329,9 @@ class _SqlEditorFieldState extends State<SqlEditorField> {
             onTapOutside: (_) => _close(),
             key: _fieldKey,
             controller: widget.controller,
-            maxLines: 6,
-            minLines: 2,
+            expands: widget.expands,
+            maxLines: widget.expands ? null : 6,
+            minLines: widget.expands ? null : 2,
             style: TextStyle(fontSize: widget.fontSize, fontFamily: 'Menlo'),
             // 边框、底色、聚焦环都跟主题的输入框走，这里只收紧内边距
             decoration: const InputDecoration(contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 6)),

@@ -205,6 +205,8 @@ class QueryTabState extends State<QueryTab> {
   /// 脚本跑完的概况，比如执行了几条、影响了多少行
   String? _scriptNotice;
 
+  double _editorHeight = 150;
+
   @override
   void dispose() {
     _sql.dispose();
@@ -496,77 +498,87 @@ class QueryTabState extends State<QueryTab> {
     final active = views.isEmpty ? 0 : _activeResult.clamp(0, views.length - 1);
     final showingMain = views.isNotEmpty && views[active].isMain;
     final notice = _scriptNotice;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        if (widget.showEditor)
-          _SqlBar(
-            controller: _sql,
-            complete: widget.complete,
-            busy: _busy,
-            onRun: _busy ? null : run,
-            onOpenLibrary: _openLibrary,
-            onExplain: _busy ? null : _explain,
-            fontSize: widget.editorFontSize,
-          ),
-        // 没条件时不挂筛选条：它比结果晚一帧出现，会把表格往下顶。
-        // 只在已经有条件时显示，入口改到结果状态栏，高度不变。
-        // 筛选只作用在单条语句的结果上，看脚本结果和执行计划时不显示。
-        // 筛选出错时 _source 是 null，靠上次成功的列名把条留着，才能改掉或清掉。
-        if (_columns.isNotEmpty && (views.isEmpty || showingMain) && _filter.items.isNotEmpty)
-          FilterBar(
-            filter: _filter,
-            onEdit: _busy ? null : _editFilter,
-            onClear: _busy ? null : _clearFilter,
-          ),
-        if (_error != null) _ErrorBanner(message: _error!),
-        // 脚本失败时也要显示概况：失败之前执行了几条，和错误信息一起看
-        if (_elapsed != null && (_error == null || notice != null))
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-            child: Text(
-              notice == null ? '耗时 ${_elapsed!.inMilliseconds} ms' : '耗时 ${_elapsed!.inMilliseconds} ms · $notice',
-              style: TextStyle(
-                fontSize: 11,
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
+    return LayoutBuilder(builder: (context, constraints) {
+      // 编辑区最多占六成，给执行状态和结果保留空间。
+      final maxEditorHeight = (constraints.maxHeight * 0.6).clamp(96.0, double.infinity);
+      final editorHeight = _editorHeight.clamp(96.0, maxEditorHeight);
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (widget.showEditor)
+            _SqlBar(
+              controller: _sql,
+              complete: widget.complete,
+              busy: _busy,
+              onRun: _busy ? null : run,
+              onOpenLibrary: _openLibrary,
+              onExplain: _busy ? null : _explain,
+              fontSize: widget.editorFontSize,
+              height: editorHeight,
+              onResize: (delta) => setState(() {
+                final currentHeight = _editorHeight.clamp(96.0, maxEditorHeight);
+                _editorHeight = (currentHeight + delta).clamp(96.0, maxEditorHeight);
+              }),
+            ),
+          // 没条件时不挂筛选条：它比结果晚一帧出现，会把表格往下顶。
+          // 只在已经有条件时显示，入口改到结果状态栏，高度不变。
+          // 筛选只作用在单条语句的结果上，看脚本结果和执行计划时不显示。
+          // 筛选出错时 _source 是 null，靠上次成功的列名把条留着，才能改掉或清掉。
+          if (_columns.isNotEmpty && (views.isEmpty || showingMain) && _filter.items.isNotEmpty)
+            FilterBar(
+              filter: _filter,
+              onEdit: _busy ? null : _editFilter,
+              onClear: _busy ? null : _clearFilter,
+            ),
+          if (_error != null) _ErrorBanner(message: _error!),
+          // 脚本失败时也要显示概况：失败之前执行了几条，和错误信息一起看
+          if (_elapsed != null && (_error == null || notice != null))
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+              child: Text(
+                notice == null ? '耗时 ${_elapsed!.inMilliseconds} ms' : '耗时 ${_elapsed!.inMilliseconds} ms · $notice',
+                style: TextStyle(
+                  fontSize: 11,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
               ),
             ),
+          if (views.length > 1)
+            _ResultStrip(
+              views: views,
+              active: active,
+              onSelect: (index) => setState(() => _activeResult = index),
+            ),
+          Expanded(
+            child: views.isEmpty
+                ? Center(child: Text(_emptyText, style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant)))
+                // 不在前台的结果也留着，切回来滚动位置和选区都还在
+                : IndexedStack(
+                    index: active,
+                    children: [
+                      for (final view in views)
+                        ResultGrid(
+                          key: ObjectKey(view.source),
+                          source: view.source,
+                          // 脚本结果和执行计划不能按列重跑：单独重跑一条语句可能拿不到它依赖的会话状态
+                          onSortColumn: view.isMain ? _sortBy : null,
+                          sortColumn: view.isMain ? _sortColumn : null,
+                          sortAscending: _sortAscending,
+                          pickSavePath: widget.pickSavePath,
+                          onAddToSearch: view.isMain && !_busy ? _addToSearch : null,
+                          // 有条件时上面的筛选条已经是入口，这里不再放一个，避免两个「筛选」
+                          onEditFilter: view.isMain && !_busy && _columns.isNotEmpty && _filter.items.isEmpty
+                              ? _editFilter
+                              : null,
+                          // 按当前的 SQL + 筛选 + 排序重跑一次，拿库里最新的数据
+                          onRefreshAll: view.isMain && !_busy ? _runView : null,
+                        ),
+                    ],
+                  ),
           ),
-        if (views.length > 1)
-          _ResultStrip(
-            views: views,
-            active: active,
-            onSelect: (index) => setState(() => _activeResult = index),
-          ),
-        Expanded(
-          child: views.isEmpty
-              ? Center(child: Text(_emptyText, style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant)))
-              // 不在前台的结果也留着，切回来滚动位置和选区都还在
-              : IndexedStack(
-                  index: active,
-                  children: [
-                    for (final view in views)
-                      ResultGrid(
-                        key: ObjectKey(view.source),
-                        source: view.source,
-                        // 脚本结果和执行计划不能按列重跑：单独重跑一条语句可能拿不到它依赖的会话状态
-                        onSortColumn: view.isMain ? _sortBy : null,
-                        sortColumn: view.isMain ? _sortColumn : null,
-                        sortAscending: _sortAscending,
-                        pickSavePath: widget.pickSavePath,
-                        onAddToSearch: view.isMain && !_busy ? _addToSearch : null,
-                        // 有条件时上面的筛选条已经是入口，这里不再放一个，避免两个「筛选」
-                        onEditFilter: view.isMain && !_busy && _columns.isNotEmpty && _filter.items.isEmpty
-                            ? _editFilter
-                            : null,
-                        // 按当前的 SQL + 筛选 + 排序重跑一次，拿库里最新的数据
-                        onRefreshAll: view.isMain && !_busy ? _runView : null,
-                      ),
-                  ],
-                ),
-        ),
-      ],
-    );
+        ],
+      );
+    });
   }
 }
 
@@ -578,6 +590,8 @@ class _SqlBar extends StatelessWidget {
   final VoidCallback onOpenLibrary;
   final VoidCallback? onExplain;
   final double fontSize;
+  final double height;
+  final ValueChanged<double> onResize;
 
   const _SqlBar({
     required this.controller,
@@ -587,15 +601,16 @@ class _SqlBar extends StatelessWidget {
     required this.onOpenLibrary,
     required this.onExplain,
     required this.fontSize,
+    required this.height,
+    required this.onResize,
   });
 
   @override
   Widget build(BuildContext context) {
     final mac = MacColors.of(context);
     final scheme = Theme.of(context).colorScheme;
-    // 查询工具栏在上，编辑区和下方结果分区保持独立高度。
     return Container(
-      height: 277,
+      height: height,
       decoration: BoxDecoration(
         color: mac.content,
         border: Border(bottom: BorderSide(color: mac.separator)),
@@ -634,7 +649,7 @@ class _SqlBar extends StatelessWidget {
           ),
           Expanded(
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(17, 15, 17, 12),
+              padding: const EdgeInsets.fromLTRB(17, 8, 17, 4),
               child: Theme(
                 data: Theme.of(context).copyWith(
                   inputDecorationTheme: Theme.of(context).inputDecorationTheme.copyWith(
@@ -651,6 +666,25 @@ class _SqlBar extends StatelessWidget {
                   complete: complete,
                   onRun: onRun,
                   fontSize: fontSize,
+                  expands: true,
+                ),
+              ),
+            ),
+          ),
+          MouseRegion(
+            cursor: SystemMouseCursors.resizeUpDown,
+            child: GestureDetector(
+              key: const ValueKey('sql-editor-resize'),
+              behavior: HitTestBehavior.opaque,
+              onVerticalDragUpdate: (details) => onResize(details.delta.dy),
+              child: SizedBox(
+                height: 6,
+                child: Center(
+                  child: Container(
+                    width: 32,
+                    height: 2,
+                    color: mac.separator,
+                  ),
                 ),
               ),
             ),
