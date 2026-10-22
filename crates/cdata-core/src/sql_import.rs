@@ -52,10 +52,11 @@ pub(crate) fn server_error_message(server: &mysql_async::ServerError) -> String 
         1062 => "唯一键冲突（重复值已隐藏）".to_string(),
         1064 => "SQL syntax error (SQL excerpt hidden)".to_string(),
         1146 => "表不存在".to_string(),
+        1267 => "字符串排序规则冲突，请检查比较字段与表达式的 COLLATION".to_string(),
         1292 | 1366 => "字段值格式不正确（原值已隐藏）".to_string(),
         1406 => "字段值超出长度限制".to_string(),
         1452 => "外键约束未满足".to_string(),
-        _ => return prefix,
+        _ => "详细信息已隐藏".to_string(),
     };
     format!("{prefix}：{detail}")
 }
@@ -265,6 +266,46 @@ mod tests {
         let statements = read_statements(path.to_str().unwrap(), ExportEncoding::Gbk).unwrap();
         assert_eq!(statements[0].sql, "SELECT '中文'");
         std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn import_error_explains_collation_conflict_without_server_message() {
+        let server = mysql_async::ServerError {
+            code: 1267,
+            state: "HY000".into(),
+            message: "Illegal mix of collations comparing 'private-literal'".into(),
+        };
+        assert_eq!(
+            server_error_message(&server),
+            "MySQL 错误 1267 (HY000)：字符串排序规则冲突，请检查比较字段与表达式的 COLLATION"
+        );
+    }
+
+    #[test]
+    fn import_unknown_error_explicitly_hides_server_details() {
+        let server = mysql_async::ServerError {
+            code: 65000,
+            state: "HY000".into(),
+            message: "Unknown failure near 'IDENTIFIED BY private-literal'".into(),
+        };
+        assert_eq!(
+            server_error_message(&server),
+            "MySQL 错误 65000 (HY000)：详细信息已隐藏"
+        );
+    }
+
+    #[test]
+    fn import_error_keeps_sensitive_values_hidden_for_existing_mappings() {
+        for code in [1062, 1064, 1292, 1366] {
+            let server = mysql_async::ServerError {
+                code,
+                state: "HY000".into(),
+                message: "SQL literal or password: 'private-literal'".into(),
+            };
+            let shown = server_error_message(&server);
+            assert!(shown.starts_with(&format!("MySQL 错误 {code} (HY000)：")));
+            assert!(!shown.contains("private-literal"), "{shown}");
+        }
     }
 
     #[test]
