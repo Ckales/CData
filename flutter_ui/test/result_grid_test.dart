@@ -21,6 +21,8 @@ Future<void> pumpGrid(
   void Function(String column)? onSortColumn,
   String? sortColumn,
   bool sortAscending = true,
+  VoidCallback? onRefreshAll,
+  VoidCallback? onEditFilter,
 }) async {
   await tester.pumpWidget(
     MaterialApp(
@@ -31,6 +33,8 @@ Future<void> pumpGrid(
           onSortColumn: onSortColumn,
           sortColumn: sortColumn,
           sortAscending: sortAscending,
+          onRefreshAll: onRefreshAll,
+          onEditFilter: onEditFilter,
         ),
       ),
     ),
@@ -520,6 +524,48 @@ void main() {
       await tester.tap(finder, buttons: kSecondaryButton);
       await tester.pumpAndSettle();
     }
+
+    testWidgets('空表空白处可刷新、筛选、导出并新增第一行', (tester) async {
+      final source = FakeGridSource.rows(0);
+      var refreshes = 0;
+      var filters = 0;
+      await pumpGrid(tester, source, onRefreshAll: () => refreshes++, onEditFilter: () => filters++);
+
+      await tester.tapAt(const Offset(600, 200), buttons: kSecondaryButton);
+      await tester.pumpAndSettle();
+      expect(find.text('导出…'), findsOneWidget);
+      expect(find.text('删除行'), findsNothing);
+      expect(find.text('复制整行'), findsNothing);
+      await tester.tap(find.text('刷新全部行'));
+      await tester.pumpAndSettle();
+      expect(refreshes, 1);
+
+      await tester.tapAt(const Offset(600, 200), buttons: kSecondaryButton);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('筛选…'));
+      await tester.pumpAndSettle();
+      expect(filters, 1);
+
+      await tester.tapAt(const Offset(600, 200), buttons: kSecondaryButton);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('新增行…'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('插入'));
+      await tester.pumpAndSettle();
+      expect(source.inserts, hasLength(1));
+      expect(find.text('1 行'), findsOneWidget);
+    });
+
+    testWidgets('有数据时行下方空白处也有菜单，只读结果不能新增', (tester) async {
+      await pumpGrid(tester, FakeGridSource.rows(1, editability: const Editability.readOnly('没有主键')));
+      await tester.tapAt(const Offset(100, 200), buttons: kSecondaryButton);
+      await tester.pumpAndSettle();
+      final insert = tester.widget<PopupMenuItem<String>>(find.widgetWithText(PopupMenuItem<String>, '新增行…'));
+      expect(insert.enabled, isFalse);
+      expect(find.text('刷新全部行'), findsNothing);
+      expect(find.text('筛选…'), findsNothing);
+      expect(find.text('导出…'), findsOneWidget);
+    });
 
     testWidgets('复制值只复制点中的那一格，复制整行按屏幕列序', (tester) async {
       mockClipboard(tester);

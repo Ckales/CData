@@ -1031,6 +1031,41 @@ class _ResultGridState extends State<ResultGrid> {
     }
   }
 
+  /// 空白处没有行或单元格，只提供结果集和新增操作。
+  Future<void> _showBlankMenu(Offset globalPosition) async {
+    _gridFocus.requestFocus();
+    final choice = await showMenu<String>(
+      context: context,
+      position: RelativeRect.fromLTRB(
+        globalPosition.dx, globalPosition.dy, globalPosition.dx, globalPosition.dy,
+      ),
+      constraints: const BoxConstraints(minWidth: 160, maxWidth: 200),
+      items: [
+        desktopMenuItem(
+          value: 'insert', label: '新增行…', icon: Icons.add,
+          enabled: widget.summary.editability is Editability_Editable,
+        ),
+        const PopupMenuDivider(height: 8),
+        if (widget.onRefreshAll != null)
+          desktopMenuItem(value: 'refresh-all', label: '刷新全部行', icon: Icons.autorenew),
+        if (widget.onEditFilter != null)
+          desktopMenuItem(value: 'filter', label: '筛选…', icon: Icons.filter_alt_outlined),
+        desktopMenuItem(value: 'export', label: '导出…', icon: Icons.file_download_outlined),
+      ],
+    );
+    if (!mounted || choice == null) return;
+    switch (choice) {
+      case 'insert':
+        await _insertRow();
+      case 'refresh-all':
+        widget.onRefreshAll?.call();
+      case 'filter':
+        widget.onEditFilter?.call();
+      case 'export':
+        await _export();
+    }
+  }
+
   /// 单元格右键菜单，按值、筛选、行、结果分组。
   /// 右键点在选区外就先选中这一格；点在选中的行上，删除作用于全部选中行
   Future<void> _showCellMenu(int row, int position, Offset globalPosition) async {
@@ -1193,79 +1228,87 @@ class _ResultGridState extends State<ResultGrid> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Expanded(
-          child: Focus(
-            focusNode: _gridFocus,
-            onKeyEvent: _handleKey,
-            child: Scrollbar(
-              controller: _hScroll,
-              thumbVisibility: true,
-              interactive: true,
-              scrollbarOrientation: ScrollbarOrientation.bottom,
-              child: SingleChildScrollView(
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onSecondaryTapUp: (details) {
+              if (details.localPosition.dy >= _headerHeight) {
+                _showBlankMenu(details.globalPosition);
+              }
+            },
+            child: Focus(
+              focusNode: _gridFocus,
+              onKeyEvent: _handleKey,
+              child: Scrollbar(
                 controller: _hScroll,
-                scrollDirection: Axis.horizontal,
-                child: SizedBox(
-                  width: totalWidth,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      _HeaderRow(
-                        columns: columns,
-                        order: _order,
-                        widths: _widths,
-                        onResize: _resizeColumn,
-                        onResizeEnd: _saveLayout,
-                        onAutoFit: _autoFitColumn,
-                        onMove: _moveColumn,
-                        onSortColumn: widget.onSortColumn,
-                        sortColumn: widget.sortColumn,
-                        sortAscending: widget.sortAscending,
-                      ),
-                      Expanded(
-                        // 拖选：按下由单元格自己接（知道是哪一格），之后的移动都送到这里，
-                        // 指针拖出网格也照样收得到
-                        child: Listener(
-                          onPointerMove: _dragMove,
-                          onPointerUp: _dragEnd,
-                          onPointerCancel: _dragEnd,
-                          child: ListView.builder(
-                            controller: _scroll,
-                            itemCount: _totalRows,
-                            itemExtent: _rowHeight,
-                            itemBuilder: (context, index) {
-                              final cells = _rowAt(index);
-                              final editing = _editing;
-                              final range = _range;
-                              return _DataRow(
-                                selectedPositions:
-                                    range != null && index >= range.top && index <= range.bottom
-                                    ? (left: range.left, right: range.right)
-                                    : null,
-                                onPointerDownCell: (event, position) => _selectCell(event, index, position),
-                                onSecondaryTapCell: (position, globalPosition) =>
-                                    _showCellMenu(index, position, globalPosition),
-                                rowNumber: index + 1,
-                                selected: _selected.contains(index),
-                                onTapRowNumber: () => _toggleSelected(index),
-                                cells: cells,
-                                columns: columns,
-                                order: _order,
-                                widths: _widths,
-                                editingColumn: editing != null && editing.row == index
-                                    ? editing.column
-                                    : null,
-                                editController: _editController,
-                                editFocus: _editFocus,
-                                onDoubleTapCell: (column) => _beginEdit(index, column),
-                                onCommit: (text) => _commitEdit(CellValue.text(text)),
-                                onSetNull: () => _commitEdit(const CellValue.null_()),
-                                onCancel: _cancelEdit,
-                              );
-                            },
+                thumbVisibility: true,
+                interactive: true,
+                scrollbarOrientation: ScrollbarOrientation.bottom,
+                child: SingleChildScrollView(
+                  controller: _hScroll,
+                  scrollDirection: Axis.horizontal,
+                  child: SizedBox(
+                    width: totalWidth,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        _HeaderRow(
+                          columns: columns,
+                          order: _order,
+                          widths: _widths,
+                          onResize: _resizeColumn,
+                          onResizeEnd: _saveLayout,
+                          onAutoFit: _autoFitColumn,
+                          onMove: _moveColumn,
+                          onSortColumn: widget.onSortColumn,
+                          sortColumn: widget.sortColumn,
+                          sortAscending: widget.sortAscending,
+                        ),
+                        Expanded(
+                          // 拖选：按下由单元格自己接（知道是哪一格），之后的移动都送到这里，
+                          // 指针拖出网格也照样收得到
+                          child: Listener(
+                            onPointerMove: _dragMove,
+                            onPointerUp: _dragEnd,
+                            onPointerCancel: _dragEnd,
+                            child: ListView.builder(
+                              controller: _scroll,
+                              itemCount: _totalRows,
+                              itemExtent: _rowHeight,
+                              itemBuilder: (context, index) {
+                                final cells = _rowAt(index);
+                                final editing = _editing;
+                                final range = _range;
+                                return _DataRow(
+                                  selectedPositions:
+                                      range != null && index >= range.top && index <= range.bottom
+                                      ? (left: range.left, right: range.right)
+                                      : null,
+                                  onPointerDownCell: (event, position) => _selectCell(event, index, position),
+                                  onSecondaryTapCell: (position, globalPosition) =>
+                                      _showCellMenu(index, position, globalPosition),
+                                  rowNumber: index + 1,
+                                  selected: _selected.contains(index),
+                                  onTapRowNumber: () => _toggleSelected(index),
+                                  cells: cells,
+                                  columns: columns,
+                                  order: _order,
+                                  widths: _widths,
+                                  editingColumn: editing != null && editing.row == index
+                                      ? editing.column
+                                      : null,
+                                  editController: _editController,
+                                  editFocus: _editFocus,
+                                  onDoubleTapCell: (column) => _beginEdit(index, column),
+                                  onCommit: (text) => _commitEdit(CellValue.text(text)),
+                                  onSetNull: () => _commitEdit(const CellValue.null_()),
+                                  onCancel: _cancelEdit,
+                                );
+                              },
+                            ),
                           ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
               ),
