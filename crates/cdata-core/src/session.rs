@@ -101,6 +101,11 @@ impl From<mysql_async::Error> for Error {
             mysql_async::Error::Server(server) if CONNECTION_GONE_CODES.contains(&server.code) => {
                 Error::ConnectionLost(server.to_string())
             }
+            mysql_async::Error::Server(server) if server.code == 3730 => {
+                Error::Mysql(format!(
+                    "无法删除表：仍有其他表的外键引用它。请先在引用表的结构中删除或调整对应外键，再重新删除。\n服务器详情：{server}"
+                ))
+            }
             other => Error::Mysql(other.to_string()),
         }
     }
@@ -116,6 +121,25 @@ impl From<OpenError> for Error {
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
+
+#[cfg(test)]
+mod error_tests {
+    use super::Error;
+
+    #[test]
+    fn drop_parent_error_explains_foreign_key_dependency_and_keeps_server_details() {
+        let message = "Cannot drop table 'categories' referenced by a foreign key constraint 'fk_site_category' on table 'sites'.";
+        let error = Error::from(mysql_async::Error::Server(mysql_async::ServerError {
+            code: 3730,
+            state: "HY000".to_string(),
+            message: message.to_string(),
+        }));
+        let shown = error.to_string();
+        assert!(shown.contains("请先在引用表的结构中删除或调整对应外键，再重新删除"), "{shown}");
+        assert!(shown.contains(message), "{shown}");
+        assert!(matches!(error, Error::Mysql(_)));
+    }
+}
 
 /// 一次查询的概况。行数据不在这里，要按窗口单独取
 #[derive(Debug, Clone)]

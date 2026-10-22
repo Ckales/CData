@@ -99,6 +99,7 @@ pub fn plan_action(
             } else {
                 plan.statements.push(format!("DROP TABLE {from}"));
                 plan.dangers.push(format!("删除表 {table} 和里面的全部数据，不能撤销"));
+                plan.notes.push("被其他表的外键引用时 MySQL 会拒绝删除；请先在引用表的结构中删除或调整对应外键".to_string());
             }
         }
         TableAction::Truncate => {
@@ -255,6 +256,15 @@ mod tests {
             let plan = plan_action("shop", "orders", false, &[], &action).unwrap();
             assert_eq!(plan.dangers.len(), 1, "{action:?}");
         }
+    }
+
+    #[test]
+    fn drop_table_explains_foreign_key_restriction_without_bypassing_it() {
+        let plan = plan_action("shop", "categories", false, &[], &TableAction::Drop).unwrap();
+        assert_eq!(plan.statements, ["DROP TABLE `shop`.`categories`"]);
+        assert!(plan.notes.iter().any(|note| note.contains("外键") && note.contains("拒绝删除")));
+        let view = plan_action("shop", "v", true, &[], &TableAction::Drop).unwrap();
+        assert!(view.notes.is_empty());
     }
 
     #[test]

@@ -79,6 +79,30 @@ void main() {
     expect(find.text('4 张表'), findsOneWidget);
   });
 
+  testWidgets('可通过可见刷新按钮和表右键菜单重读清单', (tester) async {
+    final source = FakeSchemaSource.simple();
+    await pumpSidebar(tester, source);
+
+    source.tablesByDb['shop']!.add(
+      TableInfo(name: 'tags', estimatedRows: BigInt.zero, isView: false),
+    );
+    await tester.tap(find.byKey(const ValueKey('sidebar-refresh')));
+    await tester.pumpAndSettle();
+    expect(find.text('tags'), findsOneWidget);
+    expect(find.text('5 张表'), findsOneWidget);
+
+    source.tablesByDb['shop']!.add(
+      TableInfo(name: 'categories', estimatedRows: BigInt.zero, isView: false),
+    );
+    await tester.tap(find.text('users'), buttons: kSecondaryButton);
+    await tester.pumpAndSettle();
+    expect(find.text('刷新'), findsOneWidget);
+    await tester.tap(find.text('刷新'));
+    await tester.pumpAndSettle();
+    expect(find.text('categories'), findsOneWidget);
+    expect(find.text('6 张表'), findsOneWidget);
+  });
+
   testWidgets('选库：弹层挂在按钮下面，过滤后回车选第一个，Esc 关掉', (tester) async {
     final source = FakeSchemaSource(
       dbs: [for (var i = 0; i < 60; i++) 'db_$i', 'shop'],
@@ -364,7 +388,9 @@ void main() {
     testWidgets('复制名称、INSERT 语句放进剪贴板', (tester) async {
       String? clipboard;
       tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
-        if (call.method == 'Clipboard.setData') clipboard = (call.arguments as Map)['text'] as String?;
+        if (call.method == 'Clipboard.setData') {
+          clipboard = (call.arguments as Map)['text'] as String?;
+        }
         return null;
       });
       addTearDown(() => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(SystemChannels.platform, null));

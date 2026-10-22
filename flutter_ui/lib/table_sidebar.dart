@@ -131,6 +131,11 @@ class _TableSidebarState extends State<TableSidebar> {
     }
   }
 
+  Future<void> _refresh() async {
+    if (_loading) return;
+    await _reload();
+  }
+
   List<TableInfo> get _visibleTables {
     final keyword = _filter.text.trim().toLowerCase();
     if (keyword.isEmpty) return _tables;
@@ -218,6 +223,8 @@ class _TableSidebarState extends State<TableSidebar> {
       position.dy,
     );
     final choice = await _showSidebarMenu<String>(at, [
+      _menuItem('refresh', '刷新', Icons.refresh),
+      const PopupMenuDivider(height: 8),
       _menuItem('browse', '浏览数据', Icons.table_rows_outlined),
       if (onOpenInNewTab != null)
         _menuItem('new-tab', '在新标签中打开', Icons.open_in_new),
@@ -248,6 +255,8 @@ class _TableSidebarState extends State<TableSidebar> {
     if (!mounted || choice == null) return;
     setState(() => _error = null);
     switch (choice) {
+      case 'refresh':
+        await _refresh();
       case 'browse':
         _browse(table);
       case 'new-tab':
@@ -662,6 +671,22 @@ class _TableSidebarState extends State<TableSidebar> {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(fontSize: 12, color: mac.text),
+                        ),
+                      ),
+                      IconButton(
+                        key: const ValueKey('sidebar-refresh'),
+                        tooltip: '刷新',
+                        visualDensity: VisualDensity.compact,
+                        constraints: const BoxConstraints.tightFor(
+                          width: 28,
+                          height: 28,
+                        ),
+                        padding: EdgeInsets.zero,
+                        onPressed: _loading ? null : _refresh,
+                        icon: Icon(
+                          Icons.refresh,
+                          size: 16,
+                          color: mac.secondaryText,
                         ),
                       ),
                     ],
