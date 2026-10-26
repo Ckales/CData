@@ -303,12 +303,24 @@ fn resolve_ssh_secrets(config: &ConnectionConfig) -> Result<Vec<Option<String>>,
 }
 
 impl DbPool {
-    /// 取一条连接。闲置连接已经被服务器断开（重启、wait_timeout、被 KILL）时，
-    /// mysql_async 取出来会先检查套接字，坏的丢掉换新的 —— 这就是断线重连，发生在任何语句之前。
+    /// 取一条连接，在任何业务语句发出前用 PING 确认服务器仍可用。
+    /// mysql_async 的套接字检查不能确认远端会话存活；PING 失败就丢弃连接并重取一次。
     ///
     /// 这一步的失败统一包成 ConnectFailed：语句还没发出去，界面可以明确告诉用户没有执行
     pub async fn get_conn(&self) -> Result<Conn, mysql_async::Error> {
-        let attempt = self.pool.get_conn();
+        let attempt = async {
+            let mut conn = self.pool.get_conn().await?;
+            if conn.ping().await.is_err() {
+                // PING 没有业务副作用，此时替换连接不会重复执行用户的操作。
+                let _ = conn.disconnect().await;
+                conn = self.pool.get_conn().await?;
+                if let Err(err) = conn.ping().await {
+                    let _ = conn.disconnect().await;
+                    return Err(err);
+                }
+            }
+            Ok(conn)
+        };
         let result = match self.connect_timeout {
             Some(limit) => match tokio::time::timeout(limit, attempt).await {
                 Ok(result) => result,

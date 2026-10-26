@@ -145,7 +145,7 @@ ThemeData appTheme(Brightness brightness) {
       ),
     ),
     segmentedButtonTheme: SegmentedButtonThemeData(
-      // 模式切换保留原生分段控件的浅色选中面。
+      // 选中面使用蓝色底，与未选中的控件底色明确区分。
       style: SegmentedButton.styleFrom(
         minimumSize: const Size(0, 24),
         padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -156,8 +156,12 @@ ThemeData appTheme(Brightness brightness) {
         side: BorderSide(color: mac.controlBorder),
         foregroundColor: mac.text,
         backgroundColor: mac.control,
-        selectedBackgroundColor: dark ? const Color(0xFF455F86) : mac.content,
-        selectedForegroundColor: dark ? const Color(0xFFEDF4FF) : mac.accent,
+        selectedBackgroundColor: dark
+            ? const Color(0xFF455F86)
+            : scheme.primaryContainer,
+        selectedForegroundColor: dark
+            ? const Color(0xFFEDF4FF)
+            : scheme.onPrimaryContainer,
       ),
     ),
     // 输入框：白底、细边框、5px 圆角，聚焦时一圈系统蓝，像 NSTextField
