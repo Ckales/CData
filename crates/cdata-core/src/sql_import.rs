@@ -23,42 +23,10 @@ pub struct SqlImportSummary {
 }
 
 pub(crate) fn server_error_message(server: &mysql_async::ServerError) -> String {
-    let prefix = format!("MySQL 错误 {} ({})", server.code, server.state);
-    let detail = match server.code {
-        1046 => "No database selected".to_string(),
-        1048 => "非空列不能写入 NULL".to_string(),
-        1050 => "表已存在".to_string(),
-        1052 => {
-            // 只放行可验证的列标识符与固定句式。任意服务器原文可能包含 SQL 字面量或凭据。
-            let parsed = server
-                .message
-                .strip_prefix("Column '")
-                .and_then(|rest| rest.split_once("' in "))
-                .and_then(|(column, context)| {
-                    let context = context.strip_suffix(" is ambiguous")?;
-                    let safe_name = !column.is_empty()
-                        && column.len() <= 128
-                        && column
-                            .chars()
-                            .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '_' | '.' | '$'));
-                    let safe_context =
-                        matches!(context, "field list" | "order clause" | "group statement");
-                    (safe_name && safe_context)
-                        .then(|| format!("Column '{column}' in {context} is ambiguous"))
-                });
-            parsed.unwrap_or_else(|| "Column name is ambiguous".to_string())
-        }
-        1054 => "列不存在".to_string(),
-        1062 => "唯一键冲突（重复值已隐藏）".to_string(),
-        1064 => "SQL syntax error (SQL excerpt hidden)".to_string(),
-        1146 => "表不存在".to_string(),
-        1267 => "字符串排序规则冲突，请检查比较字段与表达式的 COLLATION".to_string(),
-        1292 | 1366 => "字段值格式不正确（原值已隐藏）".to_string(),
-        1406 => "字段值超出长度限制".to_string(),
-        1452 => "外键约束未满足".to_string(),
-        _ => "详细信息已隐藏".to_string(),
-    };
-    format!("{prefix}：{detail}")
+    format!(
+        "MySQL 错误 {} ({})：{}",
+        server.code, server.state, server.message
+    )
 }
 
 pub struct ImportStatement {
@@ -269,82 +237,32 @@ mod tests {
     }
 
     #[test]
-    fn import_error_explains_collation_conflict_without_server_message() {
+    fn import_error_shows_duplicate_column_details() {
         let server = mysql_async::ServerError {
-            code: 1267,
-            state: "HY000".into(),
-            message: "Illegal mix of collations comparing 'private-literal'".into(),
+            code: 1060,
+            state: "42S21".into(),
+            message: "Duplicate column name 'display_name'".into(),
         };
         assert_eq!(
             server_error_message(&server),
-            "MySQL 错误 1267 (HY000)：字符串排序规则冲突，请检查比较字段与表达式的 COLLATION"
+            "MySQL 错误 1060 (42S21)：Duplicate column name 'display_name'"
         );
     }
 
     #[test]
-    fn import_unknown_error_explicitly_hides_server_details() {
-        let server = mysql_async::ServerError {
-            code: 65000,
-            state: "HY000".into(),
-            message: "Unknown failure near 'IDENTIFIED BY private-literal'".into(),
-        };
-        assert_eq!(
-            server_error_message(&server),
-            "MySQL 错误 65000 (HY000)：详细信息已隐藏"
-        );
-    }
-
-    #[test]
-    fn import_error_keeps_sensitive_values_hidden_for_existing_mappings() {
-        for code in [1062, 1064, 1292, 1366] {
+    fn import_error_preserves_details_for_all_server_codes() {
+        for code in [
+            1046, 1048, 1050, 1052, 1054, 1062, 1064, 1146, 1267, 1292, 1366, 1406, 1452, 65000,
+        ] {
             let server = mysql_async::ServerError {
                 code,
                 state: "HY000".into(),
-                message: "SQL literal or password: 'private-literal'".into(),
+                message: "服务器返回的具体错误：'value' / `column`\n下一行".into(),
             };
-            let shown = server_error_message(&server);
-            assert!(shown.starts_with(&format!("MySQL 错误 {code} (HY000)：")));
-            assert!(!shown.contains("private-literal"), "{shown}");
+            assert_eq!(
+                server_error_message(&server),
+                format!("MySQL 错误 {code} (HY000)：{}", server.message)
+            );
         }
-    }
-
-    #[test]
-    fn import_error_explains_ambiguous_column_without_leaking_sql_literals() {
-        let ambiguous = mysql_async::ServerError {
-            code: 1052,
-            state: "23000".into(),
-            message: "Column 'id' in field list is ambiguous".into(),
-        };
-        assert_eq!(
-            server_error_message(&ambiguous),
-            "MySQL 错误 1052 (23000)：Column 'id' in field list is ambiguous"
-        );
-
-        let syntax = mysql_async::ServerError {
-            code: 1064,
-            state: "42000".into(),
-            message: "SQL syntax error near 'IDENTIFIED BY supersecret'".into(),
-        };
-        assert!(!server_error_message(&syntax).contains("supersecret"));
-
-        let unsafe_column = mysql_async::ServerError {
-            code: 1052,
-            state: "23000".into(),
-            message: "Column 'secret value' in field list is ambiguous".into(),
-        };
-        assert_eq!(
-            server_error_message(&unsafe_column),
-            "MySQL 错误 1052 (23000)：Column name is ambiguous"
-        );
-
-        let duplicate = mysql_async::ServerError {
-            code: 1062,
-            state: "23000".into(),
-            message: "Duplicate entry 'secret-token' for key 'uq_key'".into(),
-        };
-        assert_eq!(
-            server_error_message(&duplicate),
-            "MySQL 错误 1062 (23000)：唯一键冲突（重复值已隐藏）"
-        );
     }
 }

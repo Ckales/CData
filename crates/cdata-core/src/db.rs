@@ -451,7 +451,7 @@ pub async fn run_sql_import(
                 summary.affected_rows += conn.affected_rows();
             }
             Err(err) => {
-                // MySQL 的语法错误可能引用 SQL 原文，里面可能有 CREATE USER 的密码。
+                // 保留 MySQL 错误码、SQLSTATE 与服务器返回的详细信息。
                 let message = match &err {
                     mysql_async::Error::Server(server) => crate::sql_import::server_error_message(server),
                     _ => err.to_string(),
