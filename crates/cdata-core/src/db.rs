@@ -304,22 +304,25 @@ fn resolve_ssh_secrets(config: &ConnectionConfig) -> Result<Vec<Option<String>>,
 
 impl DbPool {
     /// 取一条连接，在任何业务语句发出前用 PING 确认服务器仍可用。
-    /// mysql_async 的套接字检查不能确认远端会话存活；PING 失败就丢弃连接并重取一次。
+    /// mysql_async 的套接字检查不能确认远端会话存活；取连接或 PING 失败都重取一次。
     ///
     /// 这一步的失败统一包成 ConnectFailed：语句还没发出去，界面可以明确告诉用户没有执行
     pub async fn get_conn(&self) -> Result<Conn, mysql_async::Error> {
-        let attempt = async {
+        let checkout = || async {
             let mut conn = self.pool.get_conn().await?;
-            if conn.ping().await.is_err() {
-                // PING 没有业务副作用，此时替换连接不会重复执行用户的操作。
+            if let Err(err) = conn.ping().await {
                 let _ = conn.disconnect().await;
-                conn = self.pool.get_conn().await?;
-                if let Err(err) = conn.ping().await {
-                    let _ = conn.disconnect().await;
-                    return Err(err);
-                }
+                return Err(err);
             }
             Ok(conn)
+        };
+        let attempt = async {
+            // 连接初始化也可能先于 PING 报断开；整个预检最多尝试两次。
+            // 此时尚未发出业务语句，恢复连接不会重复执行用户的操作。
+            match checkout().await {
+                Ok(conn) => Ok(conn),
+                Err(_) => checkout().await,
+            }
         };
         let result = match self.connect_timeout {
             Some(limit) => match tokio::time::timeout(limit, attempt).await {

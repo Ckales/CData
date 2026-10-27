@@ -436,3 +436,86 @@ async fn import_does_not_reconnect_or_replay_after_connection_drops_during_sql()
     finished_tx.send(()).unwrap();
     server.join().unwrap();
 }
+
+#[tokio::test]
+async fn import_recovers_when_initial_checkout_disconnects() {
+    let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let server = thread::spawn(move || {
+        let (old, _) = listener.accept().unwrap();
+        // Disconnect during handshake, before DbPool can issue its PING.
+        drop(old);
+        listener.set_nonblocking(true).unwrap();
+        let deadline = std::time::Instant::now() + Duration::from_secs(3);
+        let mut fresh = loop {
+            match listener.accept() {
+                Ok((stream, _)) => break stream,
+                Err(err) if err.kind() == std::io::ErrorKind::WouldBlock => {
+                    assert!(
+                        std::time::Instant::now() < deadline,
+                        "checkout was not retried"
+                    );
+                    thread::sleep(Duration::from_millis(5));
+                }
+                Err(err) => panic!("accept failed: {err}"),
+            }
+        };
+        fresh.set_nonblocking(false).unwrap();
+        fresh
+            .set_read_timeout(Some(Duration::from_secs(3)))
+            .unwrap();
+        handshake(&mut fresh, 51);
+        let mut imported = Vec::new();
+        while imported.len() < 2 {
+            let (command, payload) = next_command(&mut fresh);
+            match command {
+                0x0e => ok_packet(&mut fresh, 1),
+                0x03 => {
+                    if payload.starts_with(b"INSERT ") {
+                        imported.push(String::from_utf8(payload.clone()).unwrap());
+                    }
+                    query_reply(&mut fresh, &payload);
+                }
+                other => panic!("unexpected command {other:#x}"),
+            }
+        }
+        imported
+    });
+    let pool = open_pool(&config(port, 3)).await.unwrap();
+    let statements = [
+        ImportStatement {
+            sql: "INSERT INTO t VALUES (1)".into(),
+            line: 1,
+        },
+        ImportStatement {
+            sql: "INSERT INTO t VALUES (2)".into(),
+            line: 2,
+        },
+    ];
+    let result = run_sql_import(&pool, &statements, "synthetic_db").await;
+    let imported = server.join().expect("replacement server");
+    let summary = result.expect("first import should reconnect without a user retry");
+    assert_eq!(summary.executed, 2);
+    assert!(summary.failure.is_none());
+    assert_eq!(
+        imported,
+        statements.iter().map(|s| s.sql.clone()).collect::<Vec<_>>()
+    );
+}
+
+#[tokio::test]
+async fn failed_checkout_reconnect_is_reported_after_two_attempts() {
+    let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let server = thread::spawn(move || {
+        for _ in 0..2 {
+            let (stream, _) = listener.accept().unwrap();
+            drop(stream);
+        }
+    });
+    let pool = open_pool(&config(port, 3)).await.unwrap();
+    let result = run_sql_import(&pool, &[], "synthetic_db").await;
+    assert!(matches!(result, Err(mysql_async::Error::Other(ref err))
+        if err.downcast_ref::<cdata_core::db::ConnectFailed>().is_some()));
+    server.join().unwrap();
+}
