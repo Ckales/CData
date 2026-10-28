@@ -1,6 +1,6 @@
 name: Release
 
-# 推 v* 标签时构建 macOS DMG 与 Windows zip，并发布 GitHub Release。
+# 推 v* 标签时构建 macOS DMG 与 Windows zip，并创建 GitHub Release 草稿。
 # 可选配置 Developer ID 签名 / Apple 公证 Secrets；缺失时仍生成 ad-hoc 签名、未公证的 DMG。
 on:
   push:
@@ -159,9 +159,9 @@ jobs:
         with:
           path: dist
           merge-multiple: true
-      - name: 发布 GitHub Release
+      - name: 创建 GitHub Release 草稿
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}
           VERSION: ${{ needs.version.outputs.version }}
-        run: gh release create "$TAG" dist/* --repo "$GITHUB_REPOSITORY" --title "CData $VERSION" --generate-notes
+        run: gh release create "$TAG" dist/* --repo "$GITHUB_REPOSITORY" --draft --title "CData $VERSION" --generate-notes
