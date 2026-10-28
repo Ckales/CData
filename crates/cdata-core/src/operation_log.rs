@@ -47,12 +47,17 @@ fn read_entries(path: &Path) -> Result<Vec<OperationLogEntry>> {
 }
 
 fn write_entries_atomic(path: &Path, entries: &[OperationLogEntry]) -> Result<()> {
+    write_json_atomic(path, entries)
+}
+
+/// 同目录临时文件完整落盘后替换，供历史和操作日志共用。
+pub(crate) fn write_json_atomic<T: Serialize>(path: &Path, entries: &[T]) -> Result<()> {
     write_entries_atomic_with(path, entries, |from, to| fs::rename(from, to))
 }
 
-fn write_entries_atomic_with(
+fn write_entries_atomic_with<T: Serialize>(
     path: &Path,
-    entries: &[OperationLogEntry],
+    entries: &[T],
     replace: impl FnOnce(&Path, &Path) -> std::io::Result<()>,
 ) -> Result<()> {
     let parent = path
