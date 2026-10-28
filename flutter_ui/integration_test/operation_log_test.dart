@@ -21,7 +21,7 @@ void main() {
       OperationLogEntry(
         sessionId: BigInt.one,
         operation: 'update',
-        detail: 'UPDATE `shop`.`users` SET `scope` = ? WHERE `id` = ?',
+        detail: "UPDATE `shop`.`users` SET `scope` = '2' WHERE `id` = 1 LIMIT 1",
         succeeded: true,
         message: '完成',
         executedAt: DateTime.now().millisecondsSinceEpoch,

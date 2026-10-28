@@ -201,10 +201,10 @@ mod tests {
         }
         assert_eq!(history().unwrap().len(), preferences::load().unwrap().transcript_history_limit as usize);
 
-        for i in 0..30 {
+        for i in 0..105 {
             add_query_history(&format!("SELECT query_{i}")).unwrap();
         }
-        assert_eq!(query_history().unwrap().len(), 25);
+        assert_eq!(query_history().unwrap().len(), 100);
         let saved = std::fs::read_to_string(dir.join("query_history.json")).unwrap();
         preferences::save(&preferences::Preferences { save_query_history: false, ..preferences::Preferences::default() }).unwrap();
         assert!(query_history().unwrap().is_empty());

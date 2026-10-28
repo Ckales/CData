@@ -3812,6 +3812,7 @@ const _: fn() = || {
         let _: u32 = Preferences.transcript_history_limit;
         let _: u32 = Preferences.query_history_limit;
         let _: bool = Preferences.save_query_history;
+        let _: u32 = Preferences.operation_log_limit;
     }
     {
         let PreviewRow = None::<crate::api::csv_import::PreviewRow>.unwrap();
@@ -5868,6 +5869,7 @@ impl SseDecode for crate::api::preferences::Preferences {
         let mut var_transcriptHistoryLimit = <u32>::sse_decode(deserializer);
         let mut var_queryHistoryLimit = <u32>::sse_decode(deserializer);
         let mut var_saveQueryHistory = <bool>::sse_decode(deserializer);
+        let mut var_operationLogLimit = <u32>::sse_decode(deserializer);
         return crate::api::preferences::Preferences {
             theme: var_theme,
             editor_font_size: var_editorFontSize,
@@ -5876,6 +5878,7 @@ impl SseDecode for crate::api::preferences::Preferences {
             transcript_history_limit: var_transcriptHistoryLimit,
             query_history_limit: var_queryHistoryLimit,
             save_query_history: var_saveQueryHistory,
+            operation_log_limit: var_operationLogLimit,
         };
     }
 }
@@ -8226,6 +8229,7 @@ impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::preferences::Prefe
             self.0.transcript_history_limit.into_into_dart().into_dart(),
             self.0.query_history_limit.into_into_dart().into_dart(),
             self.0.save_query_history.into_into_dart().into_dart(),
+            self.0.operation_log_limit.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -10583,6 +10587,7 @@ impl SseEncode for crate::api::preferences::Preferences {
         <u32>::sse_encode(self.transcript_history_limit, serializer);
         <u32>::sse_encode(self.query_history_limit, serializer);
         <bool>::sse_encode(self.save_query_history, serializer);
+        <u32>::sse_encode(self.operation_log_limit, serializer);
     }
 }
 

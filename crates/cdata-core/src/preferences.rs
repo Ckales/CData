@@ -13,6 +13,8 @@ pub const DEFAULT_MAX_ROWS: u64 = 1_000;
 /// 结果集行数上限的上限。十万行是定下来的取舍（见 ROADMAP），偏好只能往小调
 pub const MAX_ROWS_LIMIT: u64 = 100_000;
 pub const MAX_HISTORY_LIMIT: u32 = 500;
+pub const DEFAULT_OPERATION_LOG_LIMIT: u32 = 10_000;
+pub const MAX_OPERATION_LOG_LIMIT: u32 = 10_000;
 
 const FONT_SIZE_MIN: u32 = 10;
 const FONT_SIZE_MAX: u32 = 24;
@@ -40,6 +42,7 @@ pub struct Preferences {
     pub transcript_history_limit: u32,
     pub query_history_limit: u32,
     pub save_query_history: bool,
+    pub operation_log_limit: u32,
 }
 
 impl Default for Preferences {
@@ -49,9 +52,10 @@ impl Default for Preferences {
             editor_font_size: 13,
             max_rows: DEFAULT_MAX_ROWS,
             restore_connections: true,
-            transcript_history_limit: 50,
-            query_history_limit: 25,
+            transcript_history_limit: 100,
+            query_history_limit: 100,
             save_query_history: true,
+            operation_log_limit: DEFAULT_OPERATION_LOG_LIMIT,
         }
     }
 }
@@ -78,6 +82,9 @@ impl Preferences {
             if limit == 0 || limit > MAX_HISTORY_LIMIT {
                 return Err(Error::Invalid(format!("{name}要在 1 到 {MAX_HISTORY_LIMIT} 之间，现在是 {limit}")));
             }
+        }
+        if self.operation_log_limit == 0 || self.operation_log_limit > MAX_OPERATION_LOG_LIMIT {
+            return Err(Error::Invalid(format!("SQL 操作日志保留条数要在 1 到 {MAX_OPERATION_LOG_LIMIT} 之间，现在是 {}", self.operation_log_limit)));
         }
         Ok(())
     }
@@ -129,6 +136,9 @@ mod tests {
         let too_much_history = Preferences { transcript_history_limit: MAX_HISTORY_LIMIT + 1, ..Preferences::default() };
         assert!(too_much_history.validate().is_err());
 
+        assert!(Preferences { operation_log_limit: 0, ..Preferences::default() }.validate().is_err());
+        assert!(Preferences { operation_log_limit: 10_001, ..Preferences::default() }.validate().is_err());
+        assert!(Preferences { operation_log_limit: 250, ..Preferences::default() }.validate().is_ok());
         assert!(Preferences::default().validate().is_ok());
     }
 
@@ -138,8 +148,9 @@ mod tests {
         assert_eq!(preferences.theme, ThemeMode::Dark);
         assert_eq!(preferences.max_rows, 1_000);
         assert_eq!(Preferences::default().max_rows, DEFAULT_MAX_ROWS);
-        assert_eq!(preferences.transcript_history_limit, 50);
-        assert_eq!(preferences.query_history_limit, 25);
+        assert_eq!(preferences.transcript_history_limit, 100);
+        assert_eq!(preferences.query_history_limit, 100);
+        assert_eq!(preferences.operation_log_limit, 10_000);
         assert!(preferences.restore_connections);
         assert!(preferences.save_query_history);
     }
@@ -156,7 +167,7 @@ mod tests {
         // 文件不存在是默认值，不是错误
         assert_eq!(load().unwrap(), Preferences::default());
 
-        let changed = Preferences { theme: ThemeMode::Dark, editor_font_size: 15, max_rows: 5000, ..Preferences::default() };
+        let changed = Preferences { theme: ThemeMode::Dark, editor_font_size: 15, max_rows: 5000, operation_log_limit: 250, ..Preferences::default() };
         save(&changed).unwrap();
         assert_eq!(load().unwrap(), changed);
 

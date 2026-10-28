@@ -158,6 +158,9 @@ void main() {
 
     await tester.tap(find.text('我已了解风险，执行'));
     await settle(tester);
+    expect(find.text('执行成功'), findsOneWidget);
+    await tester.tap(find.text('确定'));
+    await settle(tester);
     expect(source.applied.single, source.plan.statements);
     expect(find.text('确认要执行的 DDL'), findsNothing);
     expect(find.byKey(const ValueKey('column-name-display-1')), findsOneWidget);
@@ -288,6 +291,23 @@ void main() {
     expect(draft.indexes[1].parts.single.column, 'title');
   });
 
+  testWidgets('没有任何改动时弹窗提示，确认后可继续编辑', (tester) async {
+    final source = await openEditor(tester);
+    source.previewError = '没有任何改动';
+    await tester.tap(find.text('预览 DDL'));
+    await settle(tester);
+
+    expect(find.byType(AlertDialog), findsOneWidget);
+    expect(find.descendant(of: find.byType(AlertDialog), matching: find.text('没有任何改动')), findsOneWidget);
+    expect(find.text('确认要执行的 DDL'), findsNothing);
+    expect(source.applied, isEmpty);
+    await tester.tap(find.text('确定'));
+    await settle(tester);
+    expect(find.byType(AlertDialog), findsNothing);
+    expect(find.text('没有任何改动'), findsNothing);
+    expect(find.text('预览 DDL'), findsOneWidget);
+  });
+
   testWidgets('预览失败时显示 core 给的原因，不弹预览', (tester) async {
     final source = await openEditor(tester);
     source.previewError = Exception('索引 idx_title 没有列');
@@ -298,9 +318,61 @@ void main() {
     expect(find.text('确认要执行的 DDL'), findsNothing);
   });
 
-  testWidgets('执行失败时预览留着并显示第几条失败', (tester) async {
+  testWidgets('索引执行成功弹窗，确认后重读结构并保留索引页', (tester) async {
+    final source = await openEditor(tester);
+    await tester.tap(find.text('索引 2').last);
+    await settle(tester);
+    final loadsBefore = source.structureLoads;
+    await tester.tap(find.text('预览 DDL'));
+    await settle(tester);
+    await tester.tap(find.text('执行'));
+    await settle(tester);
+
+    expect(find.text('执行成功'), findsOneWidget);
+    await tester.tap(find.text('确定'));
+    await settle(tester);
+    expect(source.structureLoads, loadsBefore + 1);
+    expect(find.text('添加索引'), findsOneWidget);
+    expect(find.byKey(const ValueKey('column-name-display-1')), findsNothing);
+  });
+
+  testWidgets('连续改索引名时第二次草稿使用刷新后的原名', (tester) async {
+    final source = await openEditor(tester);
+    await tester.tap(find.text('索引 2').last);
+    await settle(tester);
+    await tester.enterText(find.widgetWithText(TextField, 'idx_title'), 'name2');
+    await tester.tap(find.text('预览 DDL'));
+    await settle(tester);
+    // 模拟第一次执行后数据库返回的新结构，且读取在同一帧内完成。
+    final old = postsStructure();
+    source.structures['posts'] = TableStructure(
+      columns: old.columns,
+      indexes: [old.indexes.first, const IndexDef(
+        name: 'name2', unique: false, columns: ['title(10)'],
+        parts: [IndexPart(column: 'title', prefix: 10, descending: false)],
+        indexType: 'BTREE', comment: '',
+      )],
+      foreignKeys: old.foreignKeys, createSql: old.createSql,
+      tableCollation: old.tableCollation, tableCharset: old.tableCharset,
+      engine: old.engine, tableComment: old.tableComment,
+      autoIncrement: old.autoIncrement, checks: old.checks,
+    );
+    await tester.tap(find.text('执行'));
+    await settle(tester);
+    await tester.tap(find.text('确定'));
+    await settle(tester);
+    await tester.enterText(find.widgetWithText(TextField, 'name2'), 'name3');
+    await tester.tap(find.text('预览 DDL'));
+    await settle(tester);
+    expect(source.previews.last.indexes[1].originalName, 'name2');
+    expect(source.previews.last.indexes[1].name, 'name3');
+  });
+
+  testWidgets('执行失败弹窗，确认后预览留着并可返回索引草稿', (tester) async {
     var altered = 0;
     final source = await openEditor(tester, onAltered: () => altered++);
+    await tester.tap(find.text('索引 2').last);
+    await settle(tester);
     source.applyError = Exception('第 2 条（共 2 条）执行失败：…；前 1 条已经生效，不会回滚');
 
     await tester.tap(find.text('预览 DDL'));
@@ -308,10 +380,16 @@ void main() {
     expect(find.text('执行'), findsOneWidget, reason: '没有危险操作时按钮不带警告');
     await tester.tap(find.text('执行'));
     await settle(tester);
+    expect(find.text('执行失败'), findsOneWidget);
     expect(find.textContaining('前 1 条已经生效'), findsOneWidget);
+    await tester.tap(find.text('确定'));
+    await settle(tester);
     expect(find.text('确认要执行的 DDL'), findsOneWidget);
     expect(source.applied, isEmpty);
     expect(altered, 0, reason: '没执行成功不通知');
+    await tester.tap(find.text('返回修改'));
+    await settle(tester);
+    expect(find.text('添加索引'), findsOneWidget);
   });
 
   testWidgets('前缀长度不是数字时直接报错，不当成没填', (tester) async {

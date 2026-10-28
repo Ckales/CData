@@ -88,6 +88,7 @@ void main() {
       restoreConnections: false,
       transcriptHistoryLimit: defaults.transcriptHistoryLimit,
       queryHistoryLimit: defaults.queryHistoryLimit,
+      operationLogLimit: defaults.operationLogLimit,
       saveQueryHistory: defaults.saveQueryHistory,
     );
     await tester.pumpWidget(

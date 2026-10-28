@@ -2,6 +2,34 @@ import Cocoa
 import FlutterMacOS
 
 class MainFlutterWindow: NSWindow {
+  // 与 Flutter MacToolbar 的高度一致（lib/mac_widgets.dart）。
+  private let toolbarHeight: CGFloat = 45
+
+  private func centerWindowButtons() {
+    // 全屏时让 AppKit 管理自动隐藏的标题栏。
+    guard !styleMask.contains(.fullScreen),
+      let container = standardWindowButton(.closeButton)?.superview else { return }
+
+    var frame = container.frame
+    frame.origin.y = frame.maxY - toolbarHeight
+    frame.size.height = toolbarHeight
+    container.frame = frame
+
+    for type in [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton] {
+      guard let button = standardWindowButton(type) else { continue }
+      button.setFrameOrigin(NSPoint(
+        x: button.frame.minX,
+        y: (toolbarHeight - button.frame.height) / 2))
+    }
+  }
+
+  @objc private func scheduleWindowButtonLayout(_ notification: Notification) {
+    // 在 AppKit 完成标题栏布局后调整，避免缩放、退出全屏时被系统重置。
+    DispatchQueue.main.async { [weak self] in
+      self?.centerWindowButtons()
+    }
+  }
+
   override func awakeFromNib() {
     let flutterViewController = FlutterViewController()
     let windowFrame = self.frame
@@ -47,5 +75,12 @@ class MainFlutterWindow: NSWindow {
     RegisterGeneratedPlugins(registry: flutterViewController)
 
     super.awakeFromNib()
+
+    for name in [NSWindow.didResizeNotification, NSWindow.didExitFullScreenNotification,
+                 NSWindow.didBecomeKeyNotification] {
+      NotificationCenter.default.addObserver(
+        self, selector: #selector(scheduleWindowButtonLayout(_:)), name: name, object: self)
+    }
+    scheduleWindowButtonLayout(Notification(name: NSWindow.didResizeNotification))
   }
 }

@@ -9,8 +9,9 @@ final _initial = Preferences(
   editorFontSize: 13,
   maxRows: BigInt.from(100000),
   restoreConnections: true,
-  transcriptHistoryLimit: 50,
-  queryHistoryLimit: 25,
+  transcriptHistoryLimit: 100,
+  queryHistoryLimit: 100,
+  operationLogLimit: 10000,
   saveQueryHistory: true,
 );
 
@@ -104,12 +105,14 @@ void main() {
     await tester.enterText(find.byKey(const ValueKey('pref-transcript-history-limit')), '40');
     await tester.enterText(find.byKey(const ValueKey('pref-query-history-limit')), '12');
     await tester.tap(find.byKey(const ValueKey('pref-save-query-history')));
+    await tester.enterText(find.byKey(const ValueKey('pref-operation-log-limit')), '2000');
     await tester.tap(find.text('保存'));
     await tester.pumpAndSettle();
 
     expect(saved!.restoreConnections, isFalse);
     expect(saved!.transcriptHistoryLimit, 40);
     expect(saved!.queryHistoryLimit, 12);
+    expect(saved!.operationLogLimit, 2000);
     expect(saved!.saveQueryHistory, isFalse);
   });
 

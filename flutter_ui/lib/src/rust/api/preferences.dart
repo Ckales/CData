@@ -28,6 +28,7 @@ class Preferences {
   final int transcriptHistoryLimit;
   final int queryHistoryLimit;
   final bool saveQueryHistory;
+  final int operationLogLimit;
 
   const Preferences({
     required this.theme,
@@ -37,6 +38,7 @@ class Preferences {
     required this.transcriptHistoryLimit,
     required this.queryHistoryLimit,
     required this.saveQueryHistory,
+    required this.operationLogLimit,
   });
 
   @override
@@ -47,7 +49,8 @@ class Preferences {
       restoreConnections.hashCode ^
       transcriptHistoryLimit.hashCode ^
       queryHistoryLimit.hashCode ^
-      saveQueryHistory.hashCode;
+      saveQueryHistory.hashCode ^
+      operationLogLimit.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -60,7 +63,8 @@ class Preferences {
           restoreConnections == other.restoreConnections &&
           transcriptHistoryLimit == other.transcriptHistoryLimit &&
           queryHistoryLimit == other.queryHistoryLimit &&
-          saveQueryHistory == other.saveQueryHistory;
+          saveQueryHistory == other.saveQueryHistory &&
+          operationLogLimit == other.operationLogLimit;
 }
 
 enum ThemeMode { system, light, dark }

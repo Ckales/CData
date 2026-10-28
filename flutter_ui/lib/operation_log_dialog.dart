@@ -135,7 +135,7 @@ class _OperationLogDialogState extends State<_OperationLogDialog> {
             Padding(
               padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
               child: Text(
-                '保留最近 10,000 条，超出后覆盖最旧记录；不按天数清理。本地保存，重启后仍可查看。SQL 参数和敏感内容已隐藏，从此版本开始记录。',
+                '按偏好设置中的保留条数保存，超出后覆盖最旧记录；不按天数清理。本地保存，重启后仍可查看。记录完整 SQL 和参数值，从此版本开始记录。',
                 style: TextStyle(
                   fontSize: 11,
                   color: Theme.of(context).colorScheme.onSurfaceVariant,

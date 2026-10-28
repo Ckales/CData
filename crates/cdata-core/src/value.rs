@@ -223,6 +223,11 @@ pub fn value_to_mysql(cell: &CellValue) -> Value {
     }
 }
 
+/// 仅供日志展示绑定参数，不参与 SQL 执行，不经过浮点或日期的二次转换。
+pub fn mysql_value_sql_literal(value: &Value) -> String {
+    value.as_sql(false)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -1,8 +1,6 @@
 //! SQL operation logging helpers.
 //!
-//! Values are never interpolated into SQL templates here. String, numeric, and comment
-//! tokens are redacted before the template is persisted, and administrative statements
-//! that can carry credentials are summarized instead of retained.
+//! 记录完整 SQL；参数仅还原为日志文本，不参与数据库执行。
 
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
@@ -17,18 +15,10 @@ pub fn record(
     succeeded: bool,
     message: impl Into<String>,
 ) {
-    record_detail(
-        session_id,
-        operation,
-        &redact_sql(sql),
-        started,
-        succeeded,
-        message,
-    );
+    record_detail(session_id, operation, sql, started, succeeded, message);
 }
 
-/// Record already-redacted details, used for a batch whose statements need independent
-/// credential checks while still producing one accurate batch duration.
+/// Record a batch with its complete SQL and batch duration.
 pub fn record_detail(
     session_id: u64,
     operation: &str,
@@ -46,15 +36,53 @@ pub fn record_detail(
         executed_at: now_millis(),
         elapsed_ms: started.elapsed().as_millis().min(u64::MAX as u128) as u64,
     };
-    let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| crate::operation_log::record(entry)));
+    let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        crate::operation_log::record(entry)
+    }));
 }
 
-pub fn redact_sql_batch(statements: &[String]) -> String {
-    statements
-        .iter()
-        .map(|sql| redact_sql(sql))
-        .collect::<Vec<_>>()
-        .join(";\n")
+pub fn sql_batch(statements: &[String]) -> String {
+    statements.join(";\n")
+}
+
+/// MySQL 预处理语句在服务端绑定参数。这里仅为日志生成含实际值的可读 SQL。
+/// 引号和注释里的问号不是参数，不替换；数据库始终使用原 SQL 和原参数执行。
+pub fn render_sql(sql: &str, params: &[mysql_async::Value]) -> String {
+    if params.is_empty() {
+        return sql.to_string();
+    }
+    let offsets = utf16_byte_offsets(sql);
+    let mut output = String::with_capacity(sql.len());
+    let mut cursor = 0;
+    let mut values = params.iter();
+    let mut placeholders = 0;
+    for token in crate::lexer::tokenize(sql) {
+        let start = offsets[token.start as usize];
+        let end = offsets[token.end as usize];
+        if token.kind != crate::lexer::SqlTokenKind::Operator || &sql[start..end] != "?" {
+            continue;
+        }
+        output.push_str(&sql[cursor..start]);
+        placeholders += 1;
+        if let Some(value) = values.next() {
+            output.push_str(&crate::value::mysql_value_sql_literal(value));
+        } else {
+            output.push('?');
+        }
+        cursor = end;
+    }
+    output.push_str(&sql[cursor..]);
+    if placeholders != params.len() {
+        output.push_str("\n-- 日志参数数量不匹配，原始参数：");
+        output.push_str(
+            &params
+                .iter()
+                .map(crate::value::mysql_value_sql_literal)
+                .collect::<Vec<_>>()
+                .join(", "),
+        );
+    }
+    output
 }
 
 pub fn operation_name(sql: &str) -> &'static str {
@@ -96,35 +124,6 @@ pub fn record_mysql_result<T>(
     }
 }
 
-/// Redact literals and comments using the shared lexer (whose offsets are UTF-16 indices).
-pub fn redact_sql(sql: &str) -> String {
-    let tokens = crate::lexer::tokenize(sql);
-    let offsets = utf16_byte_offsets(sql);
-    if is_sensitive_admin_sql(sql, &tokens, &offsets) {
-        return "[敏感管理语句已隐藏]".to_string();
-    }
-
-    let mut output = String::with_capacity(sql.len());
-    let mut cursor = 0usize;
-    for token in tokens {
-        let start = offsets[token.start as usize];
-        let end = offsets[token.end as usize];
-        if start < cursor || end > sql.len() || start > end {
-            continue;
-        }
-        output.push_str(&sql[cursor..start]);
-        match token.kind {
-            crate::lexer::SqlTokenKind::String => output.push_str("'[已隐藏]'"),
-            crate::lexer::SqlTokenKind::Number => output.push('?'),
-            crate::lexer::SqlTokenKind::Comment => output.push_str("/* 已隐藏 */"),
-            _ => output.push_str(&sql[start..end]),
-        }
-        cursor = end;
-    }
-    output.push_str(&sql[cursor..]);
-    output
-}
-
 fn utf16_byte_offsets(text: &str) -> Vec<usize> {
     let mut offsets = Vec::with_capacity(text.encode_utf16().count() + 1);
     for (byte, ch) in text.char_indices() {
@@ -136,49 +135,13 @@ fn utf16_byte_offsets(text: &str) -> Vec<usize> {
     offsets
 }
 
-fn is_sensitive_admin_sql(sql: &str, tokens: &[crate::lexer::SqlToken], offsets: &[usize]) -> bool {
-    use crate::lexer::SqlTokenKind;
-
-    let words: Vec<String> = tokens
-        .iter()
-        .cloned()
-        .into_iter()
-        .filter(|token| {
-            !matches!(
-                token.kind,
-                SqlTokenKind::String | SqlTokenKind::Number | SqlTokenKind::Comment
-            )
-        })
-        .filter_map(|token| {
-            let start = offsets[token.start as usize];
-            let end = offsets[token.end as usize];
-            sql.get(start..end).map(str::to_ascii_uppercase)
-        })
-        .collect();
-    let joined = words.join(" ");
-
-    [
-        "CREATE USER",
-        "ALTER USER",
-        "DROP USER",
-        "CREATE ROLE",
-        "ALTER ROLE",
-        "DROP ROLE",
-        "GRANT ",
-        "REVOKE ",
-        "SET PASSWORD",
-        "IDENTIFIED BY",
-        "CHANGE MASTER",
-        "CHANGE REPLICATION SOURCE",
-    ]
-    .iter()
-    .any(|prefix| joined.starts_with(prefix))
-}
-
 pub fn safe_mysql_error(error: &mysql_async::Error) -> String {
     match error {
         mysql_async::Error::Server(server) => {
-            format!("MySQL error {} (SQLSTATE {})", server.code, server.state)
+            format!(
+                "MySQL error {} (SQLSTATE {}): {}",
+                server.code, server.state, server.message
+            )
         }
         mysql_async::Error::Io(_) => "连接中断，语句可能已执行，请确认数据库状态".to_string(),
         mysql_async::Error::Driver(mysql_async::DriverError::ConnectionClosed) => {
@@ -212,41 +175,56 @@ mod tests {
     use super::*;
 
     #[test]
-    fn redact_sql_hides_literals_numbers_comments_and_handles_unicode_offsets() {
-        let sql = "SELECT 名称 FROM 用户 WHERE 密钥 = '秘密' AND id = 123 /* token */";
-        let redacted = redact_sql(sql);
-        assert!(redacted.contains("名称"));
-        assert!(redacted.contains("用户"));
-        assert!(!redacted.contains("秘密"));
-        assert!(!redacted.contains("123"));
-        assert!(!redacted.contains("token"));
-        assert!(redacted.contains("密钥 = '[已隐藏]'"));
+    fn update_log_contains_actual_value_primary_key_and_limit() {
+        let sql = "UPDATE `unifly`.`uf_admin_op_log` SET `scope` = ? WHERE `id` = ? LIMIT 1";
+        let params = [
+            mysql_async::Value::Bytes(b"2".to_vec()),
+            mysql_async::Value::UInt(18446744073709551615),
+        ];
+        assert_eq!(render_sql(sql, &params), "UPDATE `unifly`.`uf_admin_op_log` SET `scope` = '2' WHERE `id` = 18446744073709551615 LIMIT 1");
     }
 
     #[test]
-    fn sensitive_account_statements_are_hidden_as_a_whole() {
-        for sql in [
-            "CREATE USER 'admin'@'%' IDENTIFIED BY 'secret'",
-            "ALTER USER user IDENTIFIED BY 'secret'",
-            "SET PASSWORD FOR user = 'secret'",
-            "GRANT ALL ON *.* TO user IDENTIFIED BY 'secret'",
-        ] {
-            let redacted = redact_sql(sql);
-            assert!(!redacted.contains("secret"), "{redacted}");
-            assert!(!redacted.contains("admin"), "{redacted}");
-            assert_eq!(redacted, "[敏感管理语句已隐藏]");
-        }
+    fn literal_sql_is_preserved_including_strings_numbers_and_comments() {
+        let sql = "SELECT '完整内容', 123 /* 保留注释 */ LIMIT 1001";
+        assert_eq!(render_sql(sql, &[]), sql);
+        assert_eq!(sql_batch(&[sql.to_string()]), sql);
     }
 
     #[test]
-    fn mysql_failure_messages_do_not_include_server_text() {
+    fn replaces_only_parameter_markers_and_preserves_exact_values() {
+        let sql = "UPDATE `中文😀` SET `a?` = ?, note = '?' /* ? */ WHERE id = ?";
+        let params = [
+            mysql_async::Value::Bytes("O'Reilly\\路径😀".as_bytes().to_vec()),
+            mysql_async::Value::NULL,
+        ];
+        let rendered = render_sql(sql, &params);
+        assert!(
+            rendered.contains("`a?` = 'O\\'Reilly\\\\路径😀'"),
+            "{rendered}"
+        );
+        assert!(rendered.contains("note = '?' /* ? */ WHERE id = NULL"));
+        let decimal = "123456789012345678901234567890.1234567890";
+        assert_eq!(
+            render_sql(
+                "SELECT ?",
+                &[mysql_async::Value::Bytes(decimal.as_bytes().to_vec())]
+            ),
+            format!("SELECT '{decimal}'")
+        );
+    }
+
+    #[test]
+    fn mysql_failure_messages_keep_original_server_text() {
         let error = mysql_async::Error::Server(mysql_async::ServerError {
             code: 1064,
             state: "42000".into(),
             message: "syntax error near 'super-secret'".into(),
         });
         let message = safe_mysql_error(&error);
-        assert_eq!(message, "MySQL error 1064 (SQLSTATE 42000)");
-        assert!(!message.contains("super-secret"));
+        assert_eq!(
+            message,
+            "MySQL error 1064 (SQLSTATE 42000): syntax error near 'super-secret'"
+        );
     }
 }

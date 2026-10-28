@@ -22,6 +22,7 @@ pub struct _Preferences {
     pub transcript_history_limit: u32,
     pub query_history_limit: u32,
     pub save_query_history: bool,
+    pub operation_log_limit: u32,
 }
 
 /// 没存过就是默认值；存的值不合法报错

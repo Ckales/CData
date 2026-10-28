@@ -4825,8 +4825,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   Preferences dco_decode_preferences(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 7)
-      throw Exception('unexpected arr length: expect 7 but see ${arr.length}');
+    if (arr.length != 8)
+      throw Exception('unexpected arr length: expect 8 but see ${arr.length}');
     return Preferences(
       theme: dco_decode_theme_mode(arr[0]),
       editorFontSize: dco_decode_u_32(arr[1]),
@@ -4835,6 +4835,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       transcriptHistoryLimit: dco_decode_u_32(arr[4]),
       queryHistoryLimit: dco_decode_u_32(arr[5]),
       saveQueryHistory: dco_decode_bool(arr[6]),
+      operationLogLimit: dco_decode_u_32(arr[7]),
     );
   }
 
@@ -7191,6 +7192,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_transcriptHistoryLimit = sse_decode_u_32(deserializer);
     var var_queryHistoryLimit = sse_decode_u_32(deserializer);
     var var_saveQueryHistory = sse_decode_bool(deserializer);
+    var var_operationLogLimit = sse_decode_u_32(deserializer);
     return Preferences(
       theme: var_theme,
       editorFontSize: var_editorFontSize,
@@ -7199,6 +7201,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       transcriptHistoryLimit: var_transcriptHistoryLimit,
       queryHistoryLimit: var_queryHistoryLimit,
       saveQueryHistory: var_saveQueryHistory,
+      operationLogLimit: var_operationLogLimit,
     );
   }
 
@@ -9373,6 +9376,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_u_32(self.transcriptHistoryLimit, serializer);
     sse_encode_u_32(self.queryHistoryLimit, serializer);
     sse_encode_bool(self.saveQueryHistory, serializer);
+    sse_encode_u_32(self.operationLogLimit, serializer);
   }
 
   @protected

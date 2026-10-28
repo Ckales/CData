@@ -267,7 +267,7 @@ pub async fn execute_script(session_id: u64, sql: &str, max_rows: usize) -> Resu
     let run = match run_script(&pool, &limited, max_rows).await {
         Ok(run) => run,
         Err(error) => {
-            let detail = crate::sql_log::redact_sql_batch(&limited);
+            let detail = crate::sql_log::sql_batch(&limited);
             crate::sql_log::record_detail(
                 session_id,
                 "script",
@@ -293,7 +293,7 @@ pub async fn execute_script(session_id: u64, sql: &str, max_rows: usize) -> Resu
         (true, "完成".to_string())
     };
     if !executed.is_empty() {
-        let detail = crate::sql_log::redact_sql_batch(&executed);
+        let detail = crate::sql_log::sql_batch(&executed);
         crate::sql_log::record_detail(session_id, "script", &detail, started, succeeded, message);
     }
 
@@ -342,7 +342,7 @@ pub async fn import_sql_file(
             }
         }
         if !executed.is_empty() {
-            let detail = crate::sql_log::redact_sql_batch(&executed);
+            let detail = crate::sql_log::sql_batch(&executed);
             crate::sql_log::record_detail(
                 session_id,
                 "import",
@@ -361,7 +361,7 @@ pub async fn import_sql_file(
             .iter()
             .map(|statement| statement.sql.clone())
             .collect::<Vec<_>>();
-        let detail = crate::sql_log::redact_sql_batch(&attempted);
+        let detail = crate::sql_log::sql_batch(&attempted);
         crate::sql_log::record_detail(
             session_id,
             "import",
@@ -507,12 +507,13 @@ async fn execute_statement(
     // 服务端停在上限 + 1。不包这一层的话，SELECT * 要等 MySQL 生成完全表结果，
     // 客户端读到上限才停，大表打开会卡很久
     let limited = crate::sql::limit_query(sql, probe_limit(max_rows));
+    let log_sql = crate::sql_log::render_sql(&limited, &params);
     let started = Instant::now();
     let result = run_query_with_params(&pool, &limited, params, max_rows).await;
     crate::sql_log::record_mysql_result(
         session_id,
         crate::sql_log::operation_name(sql),
-        &limited,
+        &log_sql,
         started,
         &result,
     );
@@ -792,7 +793,7 @@ async fn run_planned(
     match crate::alter::run_statements(conn, statements).await {
         Ok(()) => {
             if !statements.is_empty() {
-                let detail = crate::sql_log::redact_sql_batch(statements);
+                let detail = crate::sql_log::sql_batch(statements);
                 crate::sql_log::record_detail(session_id, operation, &detail, started, true, "完成");
             }
             Ok(())
@@ -800,7 +801,7 @@ async fn run_planned(
         Err((index, mysql_error)) => {
             let attempted = statements.iter().take(index.saturating_add(1)).cloned().collect::<Vec<_>>();
             if !attempted.is_empty() {
-                let detail = crate::sql_log::redact_sql_batch(&attempted);
+                let detail = crate::sql_log::sql_batch(&attempted);
                 crate::sql_log::record_detail(
                     session_id,
                     operation,
@@ -943,6 +944,7 @@ pub async fn apply_edit(
     let statement = build_update(&target, &columns, &row, column_index, &new_value)
         .map_err(Error::NotEditable)?;
 
+    let log_sql = crate::sql_log::render_sql(&statement.sql, &statement.params);
     let started = Instant::now();
     let mut conn = match pool.get_conn().await {
         Ok(conn) => conn,
@@ -950,7 +952,7 @@ pub async fn apply_edit(
             crate::sql_log::record(
                 session_id,
                 "update",
-                &statement.sql,
+                &log_sql,
                 started,
                 false,
                 crate::sql_log::safe_mysql_error(&error),
@@ -962,7 +964,7 @@ pub async fn apply_edit(
         crate::sql_log::record(
             session_id,
             "update",
-            &statement.sql,
+            &log_sql,
             started,
             false,
             crate::sql_log::safe_mysql_error(&error),
@@ -975,7 +977,7 @@ pub async fn apply_edit(
         crate::sql_log::record(
             session_id,
             "update",
-            &statement.sql,
+            &log_sql,
             started,
             false,
             format!("预期影响 1 行，实际 {affected} 行"),
@@ -984,7 +986,7 @@ pub async fn apply_edit(
             "预期影响 1 行，实际 {affected} 行，改动可能没有生效或定位到了错误的行"
         )));
     }
-    crate::sql_log::record(session_id, "update", &statement.sql, started, true, "完成");
+    crate::sql_log::record(session_id, "update", &log_sql, started, true, "完成");
 
     drop(conn);
     let fresh = reread_row(&pool, &target, &columns, &row).await?;
@@ -1190,10 +1192,11 @@ pub async fn paste_cells(
     let started = Instant::now();
     let mut executed_sql: Vec<String> = Vec::with_capacity(statements.len());
     for (row_index, statement) in statements {
+        let log_sql = crate::sql_log::render_sql(&statement.sql, &statement.params);
         if let Err(error) = tx.exec_drop(&statement.sql, statement.params).await {
             let _ = tx.rollback().await;
-            executed_sql.push(statement.sql);
-            let detail = crate::sql_log::redact_sql_batch(&executed_sql);
+            executed_sql.push(log_sql);
+            let detail = crate::sql_log::sql_batch(&executed_sql);
             crate::sql_log::record_detail(
                 session_id,
                 "paste",
@@ -1204,11 +1207,11 @@ pub async fn paste_cells(
             );
             return Err(error.into());
         }
-        executed_sql.push(statement.sql.clone());
+        executed_sql.push(log_sql);
         let affected = tx.affected_rows();
         if affected != 1 {
             tx.rollback().await?;
-            let detail = crate::sql_log::redact_sql_batch(&executed_sql);
+            let detail = crate::sql_log::sql_batch(&executed_sql);
             crate::sql_log::record_detail(
                 session_id,
                 "paste",
@@ -1224,7 +1227,7 @@ pub async fn paste_cells(
         }
     }
     if let Err(error) = tx.commit().await {
-        let detail = crate::sql_log::redact_sql_batch(&executed_sql);
+        let detail = crate::sql_log::sql_batch(&executed_sql);
         crate::sql_log::record_detail(
             session_id,
             "paste",
@@ -1235,7 +1238,7 @@ pub async fn paste_cells(
         );
         return Err(error.into());
     }
-    let detail = crate::sql_log::redact_sql_batch(&executed_sql);
+    let detail = crate::sql_log::sql_batch(&executed_sql);
     crate::sql_log::record_detail(session_id, "paste", &detail, started, true, "完成");
     drop(conn);
 
@@ -1307,6 +1310,7 @@ pub async fn insert_row(session_id: u64, values: Vec<Option<CellValue>>) -> Resu
         }
     };
 
+    let log_sql = crate::sql_log::render_sql(&insert.sql, &insert.params);
     let started = Instant::now();
     let mut conn = match pool.get_conn().await {
         Ok(conn) => conn,
@@ -1314,7 +1318,7 @@ pub async fn insert_row(session_id: u64, values: Vec<Option<CellValue>>) -> Resu
             crate::sql_log::record(
                 session_id,
                 "insert",
-                &insert.sql,
+                &log_sql,
                 started,
                 false,
                 crate::sql_log::safe_mysql_error(&error),
@@ -1326,7 +1330,7 @@ pub async fn insert_row(session_id: u64, values: Vec<Option<CellValue>>) -> Resu
         crate::sql_log::record(
             session_id,
             "insert",
-            &insert.sql,
+            &log_sql,
             started,
             false,
             crate::sql_log::safe_mysql_error(&error),
@@ -1338,7 +1342,7 @@ pub async fn insert_row(session_id: u64, values: Vec<Option<CellValue>>) -> Resu
         crate::sql_log::record(
             session_id,
             "insert",
-            &insert.sql,
+            &log_sql,
             started,
             false,
             format!("预期插入 1 行，实际 {affected} 行"),
@@ -1347,7 +1351,7 @@ pub async fn insert_row(session_id: u64, values: Vec<Option<CellValue>>) -> Resu
             "预期插入 1 行，实际 {affected} 行"
         )));
     }
-    crate::sql_log::record(session_id, "insert", &insert.sql, started, true, "完成");
+    crate::sql_log::record(session_id, "insert", &log_sql, started, true, "完成");
 
     // 拼一行只有主键有意义的「定位行」，交给 build_select_by_key 生成 WHERE
     let mut locator = vec![CellValue::Null; columns.len()];
@@ -1417,10 +1421,11 @@ pub async fn delete_rows(session_id: u64, row_indexes: Vec<u64>) -> Result<u64> 
     let started = Instant::now();
     let mut attempted = Vec::<String>::with_capacity(statements.len());
     for (statement, &row_index) in statements.into_iter().zip(&row_indexes) {
+        let log_sql = crate::sql_log::render_sql(&statement.sql, &statement.params);
         if let Err(error) = tx.exec_drop(&statement.sql, statement.params).await {
             let _ = tx.rollback().await;
-            attempted.push(statement.sql);
-            let detail = crate::sql_log::redact_sql_batch(&attempted);
+            attempted.push(log_sql);
+            let detail = crate::sql_log::sql_batch(&attempted);
             crate::sql_log::record_detail(
                 session_id,
                 "delete",
@@ -1431,11 +1436,11 @@ pub async fn delete_rows(session_id: u64, row_indexes: Vec<u64>) -> Result<u64> 
             );
             return Err(error.into());
         }
-        attempted.push(statement.sql);
+        attempted.push(log_sql);
         let affected = tx.affected_rows();
         if affected != 1 {
             tx.rollback().await?;
-            let detail = crate::sql_log::redact_sql_batch(&attempted);
+            let detail = crate::sql_log::sql_batch(&attempted);
             crate::sql_log::record_detail(
                 session_id,
                 "delete",
@@ -1451,7 +1456,7 @@ pub async fn delete_rows(session_id: u64, row_indexes: Vec<u64>) -> Result<u64> 
         }
     }
     if let Err(error) = tx.commit().await {
-        let detail = crate::sql_log::redact_sql_batch(&attempted);
+        let detail = crate::sql_log::sql_batch(&attempted);
         crate::sql_log::record_detail(
             session_id,
             "delete",
@@ -1463,7 +1468,7 @@ pub async fn delete_rows(session_id: u64, row_indexes: Vec<u64>) -> Result<u64> 
         return Err(error.into());
     }
     if !attempted.is_empty() {
-        let detail = crate::sql_log::redact_sql_batch(&attempted);
+        let detail = crate::sql_log::sql_batch(&attempted);
         crate::sql_log::record_detail(session_id, "delete", &detail, started, true, "完成");
     }
 

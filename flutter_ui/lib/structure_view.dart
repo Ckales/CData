@@ -76,6 +76,7 @@ class _StructurePanelState extends State<StructurePanel> {
   String? _error;
   bool _copied = false;
   bool _editing = true;
+  int _structureVersion = 0;
 
   @override
   void initState() {
@@ -110,7 +111,11 @@ class _StructurePanelState extends State<StructurePanel> {
     try {
       final structure = await source.structure(database, table);
       if (stale()) return;
-      setState(() => _structure = structure);
+      setState(() {
+        _structure = structure;
+        // 异步读取可能在下一帧前完成，不能依赖中间的 null 让旧草稿卸载。
+        _structureVersion++;
+      });
     } catch (e) {
       if (stale()) return;
       setState(() => _error = '$e');
@@ -134,17 +139,20 @@ class _StructurePanelState extends State<StructurePanel> {
     return IndexedStack(
       index: structure != null && _editing ? 0 : 1,
       children: [
-        if (structure != null)
-          StructureEditorPanel(
+        // 控制器留在刷新边界之外，重读结构时只重建编辑草稿。
+        DefaultTabController(
+          length: 5,
+          child: structure != null ? StructureEditorPanel(
+            key: ValueKey(_structureVersion),
+            inheritTabController: true,
             source: widget.source,
             database: widget.database,
             table: widget.table,
             structure: structure,
             onApplied: _afterApplied,
             onCancel: () => setState(() => _editing = false),
-          )
-        else
-          const SizedBox.shrink(),
+          ) : const SizedBox.shrink(),
+        ),
         _readOnly(structure),
       ],
     );

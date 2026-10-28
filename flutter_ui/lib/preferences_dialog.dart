@@ -55,6 +55,7 @@ class _PreferencesDialogState extends State<_PreferencesDialog> {
   late final _maxRows = TextEditingController(text: '${widget.initial.maxRows}');
   late final _transcriptHistoryLimit = TextEditingController(text: '${widget.initial.transcriptHistoryLimit}');
   late final _queryHistoryLimit = TextEditingController(text: '${widget.initial.queryHistoryLimit}');
+  late final _operationLogLimit = TextEditingController(text: '${widget.initial.operationLogLimit}');
   String? _error;
   bool _saving = false;
 
@@ -64,6 +65,7 @@ class _PreferencesDialogState extends State<_PreferencesDialog> {
     _maxRows.dispose();
     _transcriptHistoryLimit.dispose();
     _queryHistoryLimit.dispose();
+    _operationLogLimit.dispose();
     super.dispose();
   }
 
@@ -89,6 +91,12 @@ class _PreferencesDialogState extends State<_PreferencesDialog> {
       return;
     }
 
+    final operationLogLimit = int.tryParse(_operationLogLimit.text.trim());
+    if (operationLogLimit == null) {
+      setState(() => _error = 'SQL 操作日志保留条数要填整数');
+      return;
+    }
+
     final preferences = prefs.Preferences(
       theme: _theme,
       editorFontSize: fontSize,
@@ -97,6 +105,7 @@ class _PreferencesDialogState extends State<_PreferencesDialog> {
       transcriptHistoryLimit: transcriptHistoryLimit,
       queryHistoryLimit: queryHistoryLimit,
       saveQueryHistory: _saveQueryHistory,
+      operationLogLimit: operationLogLimit,
     );
     setState(() {
       _saving = true;
@@ -262,6 +271,16 @@ class _PreferencesDialogState extends State<_PreferencesDialog> {
             const Text('跨启动保存 Query 最近查询'),
           ]),
         ),
+        FormRow(
+          label: 'SQL 操作日志',
+          labelWidth: _labelWidth,
+          child: Row(children: [
+            SizedBox(width: 90, child: TextField(key: const ValueKey('pref-operation-log-limit'), controller: _operationLogLimit)),
+            const SizedBox(width: 8),
+            const Text('条最近日志'),
+          ]),
+        ),
+        _note('超过配置条数后覆盖最旧记录'),
         const SizedBox(height: 12),
         FormRow(
           label: '查询行数上限',

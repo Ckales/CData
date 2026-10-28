@@ -1,4 +1,4 @@
-//! 用户侧操作记录。日志只存调用方提供的摘要，不记录 SQL 参数或连接凭据。
+//! 用户侧 SQL 操作记录。按偏好设置保留最近若干条完整日志。
 
 use std::fs::{self, OpenOptions};
 use std::io::Write;
@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::connections::{Error, Result};
 
-pub const MAX_ENTRIES: usize = 10_000;
+pub const MAX_ENTRIES: usize = crate::preferences::MAX_OPERATION_LOG_LIMIT as usize;
 
 static LOG_LOCK: Mutex<()> = Mutex::new(());
 static PENDING_STORAGE_ERROR: Mutex<Option<String>> = Mutex::new(None);
@@ -32,10 +32,10 @@ fn log_path() -> Result<PathBuf> {
     crate::history::data_file("CDATA_OPERATION_LOG_PATH", "operation_log.json")
 }
 
-fn normalize_entries(entries: &mut Vec<OperationLogEntry>) {
+fn normalize_entries(entries: &mut Vec<OperationLogEntry>, limit: usize) {
     // `sort_by` is stable, so newly inserted equal-timestamp entries stay first.
     entries.sort_by(|left, right| right.executed_at.cmp(&left.executed_at));
-    entries.truncate(MAX_ENTRIES);
+    entries.truncate(limit);
 }
 
 fn read_entries(path: &Path) -> Result<Vec<OperationLogEntry>> {
@@ -100,7 +100,7 @@ fn write_entries_atomic_with(
     Ok(())
 }
 
-/// 返回日志，最新记录在前，最多 10,000 条。
+/// 返回日志，最新记录在前，按偏好设置的条数裁剪。
 pub fn list() -> Result<Vec<OperationLogEntry>> {
     let _guard = LOG_LOCK.lock().unwrap();
     if let Some(message) = PENDING_STORAGE_ERROR.lock().unwrap().take() {
@@ -115,8 +115,9 @@ pub fn list() -> Result<Vec<OperationLogEntry>> {
         Ok(entries) => entries,
         Err(error) => return remember_error(error),
     };
+    let limit = crate::preferences::load()?.operation_log_limit as usize;
     let original = entries.clone();
-    normalize_entries(&mut entries);
+    normalize_entries(&mut entries, limit);
     if entries != original {
         if let Err(error) = write_entries_atomic(&path, &entries) {
             return remember_error(error);
@@ -132,16 +133,20 @@ pub fn record(entry: OperationLogEntry) -> Result<()> {
         Ok(path) => path,
         Err(error) => return remember_error(error),
     };
-    match append_entry(&path, entry) {
+    let limit = match crate::preferences::load() {
+        Ok(preferences) => preferences.operation_log_limit as usize,
+        Err(error) => return remember_error(error),
+    };
+    match append_entry(&path, entry, limit) {
         Ok(()) => Ok(()),
         Err(error) => remember_error(error),
     }
 }
 
-fn append_entry(path: &Path, entry: OperationLogEntry) -> Result<()> {
+fn append_entry(path: &Path, entry: OperationLogEntry, limit: usize) -> Result<()> {
     let mut entries = read_entries(path)?;
     entries.insert(0, entry);
-    normalize_entries(&mut entries);
+    normalize_entries(&mut entries, limit);
     write_entries_atomic(path, &entries)
 }
 
@@ -176,7 +181,7 @@ mod tests {
             entry(4, now - 20),
         ];
 
-        normalize_entries(&mut entries);
+        normalize_entries(&mut entries, MAX_ENTRIES);
         assert_eq!(
             entries
                 .iter()
@@ -188,7 +193,7 @@ mod tests {
         let mut too_many: Vec<_> = (0..(MAX_ENTRIES + 1))
             .map(|index| entry(index as u64, now - index as i64))
             .collect();
-        normalize_entries(&mut too_many);
+        normalize_entries(&mut too_many, MAX_ENTRIES);
         assert_eq!(too_many.len(), MAX_ENTRIES);
         assert_eq!(too_many[0].session_id, 0);
         assert_eq!(
@@ -214,7 +219,7 @@ mod tests {
     }
 
     #[test]
-    fn appending_persists_newest_first() {
+    fn appending_respects_configured_retention_limit() {
         let directory = std::env::temp_dir().join(format!(
             "cdata-operation-log-append-{}-{}",
             std::process::id(),
@@ -224,10 +229,10 @@ mod tests {
         let older = entry(1, 100);
         let newer = entry(2, 200);
 
-        append_entry(&path, older.clone()).unwrap();
-        append_entry(&path, newer.clone()).unwrap();
+        append_entry(&path, older.clone(), 1).unwrap();
+        append_entry(&path, newer.clone(), 1).unwrap();
 
-        assert_eq!(read_entries(&path).unwrap(), [newer, older]);
+        assert_eq!(read_entries(&path).unwrap(), [newer]);
         fs::remove_dir_all(directory).unwrap();
     }
 

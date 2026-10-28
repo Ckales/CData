@@ -69,7 +69,7 @@ void main() {
     expect(find.text('失败'), findsOneWidget);
     expect(find.text('耗时 8 ms'), findsOneWidget);
     expect(find.text('table missing'), findsOneWidget);
-    expect(find.textContaining('保留最近 10,000 条'), findsOneWidget);
+    expect(find.textContaining('按偏好设置中的保留条数'), findsOneWidget);
   });
 
   testWidgets('按 SQL 或消息搜索，并可筛选失败记录', (tester) async {

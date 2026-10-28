@@ -549,6 +549,8 @@ class StructureEditorPanel extends StatefulWidget {
   final String? table;
   final TableStructure? structure;
   final bool dialog;
+  /// 嵌入结构页时由父层持有页签控制器，刷新草稿不重置当前页签。
+  final bool inheritTabController;
   final VoidCallback? onApplied;
   final VoidCallback? onCancel;
 
@@ -559,6 +561,7 @@ class StructureEditorPanel extends StatefulWidget {
     required this.table,
     required this.structure,
     this.dialog = false,
+    this.inheritTabController = false,
     this.onApplied,
     this.onCancel,
   });
@@ -777,10 +780,22 @@ class _StructureEditorPanelState extends State<StructureEditorPanel> {
           : await widget.source.previewAlter(widget.database, table, structure, draft);
     } catch (e) {
       if (mounted) {
+        final message = '$e';
+        final noChanges = message == '没有任何改动';
         setState(() {
-          _error = '$e';
+          _error = noChanges ? null : message;
           _previewing = false;
         });
+        if (noChanges) {
+          await showDialog<void>(
+            context: context,
+            builder: (context) => AlertDialog(
+              title: const Text('提示'),
+              content: Text(message),
+              actions: [TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('确定'))],
+            ),
+          );
+        }
       }
       return;
     }
@@ -790,6 +805,7 @@ class _StructureEditorPanelState extends State<StructureEditorPanel> {
     final applied = await showDdlPreview(
       context,
       plan: plan,
+      notifyResult: structure != null,
       apply: () => structure == null
           ? widget.source.createTable(widget.database, table, draft, plan.statements)
           : widget.source.applyAlter(widget.database, table, structure, draft, plan.statements),
@@ -896,9 +912,7 @@ class _StructureEditorPanelState extends State<StructureEditorPanel> {
     final scheme = Theme.of(context).colorScheme;
     final titleStyle = Theme.of(context).textTheme.titleMedium;
     final error = _error;
-    final editor = DefaultTabController(
-          length: 5,
-          child: Column(
+    final content = Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               if (widget.dialog) Padding(
@@ -965,8 +979,8 @@ class _StructureEditorPanelState extends State<StructureEditorPanel> {
                 ),
               ),
             ],
-          ),
         );
+    final editor = widget.inheritTabController ? content : DefaultTabController(length: 5, child: content);
     if (!widget.dialog) return editor;
     return Dialog(
       clipBehavior: Clip.antiAlias,
@@ -1643,17 +1657,18 @@ class _TableState extends State<_Table> {
 }
 
 /// DDL 预览：危险操作醒目标出，执行须知写清楚，确认后才执行 apply。执行成功返回 true，
-/// 取消返回 false；执行失败留在框里显示错误，不关
+/// 取消返回 false；执行失败保留预览。notifyResult 用弹窗报告执行结果。
 Future<bool> showDdlPreview(
   BuildContext context, {
   required AlterPlan plan,
   required Future<void> Function() apply,
   String cancelLabel = '返回修改',
+  bool notifyResult = false,
 }) async {
   final applied = await showDialog<bool>(
     context: context,
     barrierDismissible: false,
-    builder: (context) => _PreviewDialog(plan: plan, apply: apply, cancelLabel: cancelLabel),
+    builder: (context) => _PreviewDialog(plan: plan, apply: apply, cancelLabel: cancelLabel, notifyResult: notifyResult),
   );
   return applied == true;
 }
@@ -1662,8 +1677,9 @@ class _PreviewDialog extends StatefulWidget {
   final AlterPlan plan;
   final Future<void> Function() apply;
   final String cancelLabel;
+  final bool notifyResult;
 
-  const _PreviewDialog({required this.plan, required this.apply, required this.cancelLabel});
+  const _PreviewDialog({required this.plan, required this.apply, required this.cancelLabel, required this.notifyResult});
 
   @override
   State<_PreviewDialog> createState() => _PreviewDialogState();
@@ -1684,13 +1700,26 @@ class _PreviewDialogState extends State<_PreviewDialog> {
       if (mounted) {
         setState(() {
           _running = false;
-          _error = '$e';
+          _error = widget.notifyResult ? null : '$e';
         });
+        if (widget.notifyResult) await _showResult('执行失败', '$e');
       }
       return;
     }
+    if (!mounted) return;
+    if (widget.notifyResult) await _showResult('执行成功', '表结构修改已执行成功。');
     if (mounted) Navigator.of(context).pop(true);
   }
+
+  Future<void> _showResult(String title, String message) => showDialog<void>(
+    context: context,
+    barrierDismissible: false,
+    builder: (context) => AlertDialog(
+      title: Text(title),
+      content: SingleChildScrollView(child: SelectableText(message)),
+      actions: [TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('确定'))],
+    ),
+  );
 
   @override
   Widget build(BuildContext context) {
