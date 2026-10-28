@@ -5,19 +5,20 @@
 
 use std::collections::{HashMap, HashSet};
 use std::sync::{Mutex, OnceLock};
+use std::time::Instant;
 
 use mysql_async::prelude::Queryable;
 use mysql_async::{Row, TxOpts};
 
 use crate::db::{
-    open_pool, run_query_with_params, run_script, ColumnMeta, ConnectFailed, ConnectionConfig, DbPool, OpenError,
-    QueryTimedOut, ResultSet,
+    open_pool, run_query_with_params, run_script, ColumnMeta, ConnectFailed, ConnectionConfig,
+    DbPool, OpenError, QueryTimedOut, ResultSet,
 };
-use crate::sql::{build_view, FilterCondition};
 use crate::edit::{
     build_delete, build_insert, build_select_by_key, build_update, detect_editability,
     is_auto_increment, EditTarget, Editability,
 };
+use crate::sql::{build_view, FilterCondition};
 use crate::value::{CellValue, DisplayCell};
 
 #[derive(Debug)]
@@ -65,6 +66,13 @@ impl std::fmt::Display for Error {
 }
 
 impl std::error::Error for Error {}
+
+fn reached_sql_execution(error: &Error) -> bool {
+    matches!(
+        error,
+        Error::Mysql(_) | Error::ConnectionLost(_) | Error::QueryTimeout(_)
+    )
+}
 
 impl Error {
     /// 主机密钥没通过校验时的详情。未知主机可以让用户确认指纹后调 ssh::trust_host_key
@@ -135,7 +143,10 @@ mod error_tests {
             message: message.to_string(),
         }));
         let shown = error.to_string();
-        assert!(shown.contains("请先在引用表的结构中删除或调整对应外键，再重新删除"), "{shown}");
+        assert!(
+            shown.contains("请先在引用表的结构中删除或调整对应外键，再重新删除"),
+            "{shown}"
+        );
         assert!(shown.contains(message), "{shown}");
         assert!(matches!(error, Error::Mysql(_)));
     }
@@ -248,12 +259,56 @@ pub async fn execute_script(session_id: u64, sql: &str, max_rows: usize) -> Resu
     let (pool, server) = session_pool(session_id)?;
     // 查询在服务端截断，多要 1 行判断后面还有没有。
     // ALTER 这类不能包进派生表，limit_query 会原样返回
-    let limited: Vec<String> = statements.iter().map(|sql| crate::sql::limit_query(sql, probe_limit(max_rows))).collect();
-    let run = run_script(&pool, &limited, max_rows).await?;
+    let limited: Vec<String> = statements
+        .iter()
+        .map(|sql| crate::sql::limit_query(sql, probe_limit(max_rows)))
+        .collect();
+    let started = Instant::now();
+    let run = match run_script(&pool, &limited, max_rows).await {
+        Ok(run) => run,
+        Err(error) => {
+            let detail = crate::sql_log::redact_sql_batch(&limited);
+            crate::sql_log::record_detail(
+                session_id,
+                "script",
+                &detail,
+                started,
+                false,
+                crate::sql_log::safe_mysql_error(&error),
+            );
+            return Err(error.into());
+        }
+    };
+    let mut executed = limited
+        .iter()
+        .take(run.results.len())
+        .cloned()
+        .collect::<Vec<_>>();
+    let (succeeded, message) = if let Some((index, error)) = &run.failure {
+        if let Some(sql) = limited.get(*index) {
+            executed.push(sql.clone());
+        }
+        (false, crate::sql_log::safe_mysql_error(error))
+    } else {
+        (true, "完成".to_string())
+    };
+    if !executed.is_empty() {
+        let detail = crate::sql_log::redact_sql_batch(&executed);
+        crate::sql_log::record_detail(session_id, "script", &detail, started, succeeded, message);
+    }
 
     let mut outcomes = Vec::with_capacity(run.results.len());
     for (index, result) in run.results.into_iter().enumerate() {
-        outcomes.push(add_outcome(session_id, &pool, &server, statements[index].clone(), result).await?);
+        outcomes.push(
+            add_outcome(
+                session_id,
+                &pool,
+                &server,
+                statements[index].clone(),
+                result,
+            )
+            .await?,
+        );
     }
 
     let failure = run.failure.map(|(index, err)| StatementFailure {
@@ -273,16 +328,60 @@ pub async fn import_sql_file(
 ) -> Result<crate::sql_import::SqlImportSummary> {
     let statements = crate::sql_import::read_statements(path, encoding).map_err(Error::BadInput)?;
     let (pool, _) = session_pool(session_id)?;
-    crate::db::run_sql_import(&pool, &statements, database)
-        .await
-        .map_err(Error::from)
+    let started = Instant::now();
+    let result = crate::db::run_sql_import(&pool, &statements, database).await;
+    if let Ok(summary) = &result {
+        let mut executed = statements
+            .iter()
+            .take(summary.executed as usize)
+            .map(|statement| statement.sql.clone())
+            .collect::<Vec<_>>();
+        if let Some(failure) = &summary.failure {
+            if let Some(statement) = statements.get(failure.statement.saturating_sub(1) as usize) {
+                executed.push(statement.sql.clone());
+            }
+        }
+        if !executed.is_empty() {
+            let detail = crate::sql_log::redact_sql_batch(&executed);
+            crate::sql_log::record_detail(
+                session_id,
+                "import",
+                &detail,
+                started,
+                summary.failure.is_none(),
+                if summary.failure.is_some() {
+                    "导入语句失败"
+                } else {
+                    "完成"
+                },
+            );
+        }
+    } else if let Err(error) = &result {
+        let attempted = statements
+            .iter()
+            .map(|statement| statement.sql.clone())
+            .collect::<Vec<_>>();
+        let detail = crate::sql_log::redact_sql_batch(&attempted);
+        crate::sql_log::record_detail(
+            session_id,
+            "import",
+            &detail,
+            started,
+            false,
+            crate::sql_log::safe_mysql_error(error),
+        );
+    }
+    result.map_err(Error::from)
 }
 
 /// 看一条语句的执行计划，结果作为一个子结果。普通 EXPLAIN 不执行语句本身
 pub async fn explain(session_id: u64, sql: &str, max_rows: usize) -> Result<StatementOutcome> {
     let statement = crate::script::explain_sql(sql).map_err(Error::BadInput)?;
     let (pool, server) = session_pool(session_id)?;
-    let result = run_query_with_params(&pool, &statement, Vec::new(), max_rows).await?;
+    let started = Instant::now();
+    let result = run_query_with_params(&pool, &statement, Vec::new(), max_rows).await;
+    crate::sql_log::record_mysql_result(session_id, "explain", &statement, started, &result);
+    let result = result?;
     add_outcome(session_id, &pool, &server, statement, result).await
 }
 
@@ -319,7 +418,12 @@ async fn add_outcome(
 ) -> Result<StatementOutcome> {
     let affected_rows = result.affected_rows;
     if result.columns.is_empty() {
-        return Ok(StatementOutcome { sql, session_id: None, summary: None, affected_rows });
+        return Ok(StatementOutcome {
+            sql,
+            session_id: None,
+            summary: None,
+            affected_rows,
+        });
     }
 
     let (summary, editability) = summarize(pool, server, &result).await;
@@ -342,8 +446,18 @@ async fn add_outcome(
             parent: Some(parent_id),
         },
     );
-    guard.sessions.get_mut(&parent_id).unwrap().children.push(id);
-    Ok(StatementOutcome { sql, session_id: Some(id), summary: Some(summary), affected_rows })
+    guard
+        .sessions
+        .get_mut(&parent_id)
+        .unwrap()
+        .children
+        .push(id);
+    Ok(StatementOutcome {
+        sql,
+        session_id: Some(id),
+        summary: Some(summary),
+        affected_rows,
+    })
 }
 
 async fn summarize(pool: &DbPool, server: &str, result: &ResultSet) -> (QuerySummary, Editability) {
@@ -393,7 +507,16 @@ async fn execute_statement(
     // 服务端停在上限 + 1。不包这一层的话，SELECT * 要等 MySQL 生成完全表结果，
     // 客户端读到上限才停，大表打开会卡很久
     let limited = crate::sql::limit_query(sql, probe_limit(max_rows));
-    let result = run_query_with_params(&pool, &limited, params, max_rows).await?;
+    let started = Instant::now();
+    let result = run_query_with_params(&pool, &limited, params, max_rows).await;
+    crate::sql_log::record_mysql_result(
+        session_id,
+        crate::sql_log::operation_name(sql),
+        &limited,
+        started,
+        &result,
+    );
+    let result = result?;
     let (summary, editability) = summarize(&pool, &server, &result).await;
 
     let mut guard = store().lock().unwrap();
@@ -427,7 +550,11 @@ pub fn fetch_window(session_id: u64, offset: u64, limit: u64) -> Result<Vec<Vec<
 /// 和 fetch_window 是两个场景，刻意分开：渲染要的是一屏文本、一次调用；
 /// 编辑要的是单个单元格的原始值。合成一个接口会让每屏都多传一份用不上的数据，
 /// 而按单元格调 FFI 拿文本又会把调用次数放大到几千次。
-pub fn fetch_window_text(session_id: u64, offset: u64, limit: u64) -> Result<Vec<Vec<DisplayCell>>> {
+pub fn fetch_window_text(
+    session_id: u64,
+    offset: u64,
+    limit: u64,
+) -> Result<Vec<Vec<DisplayCell>>> {
     let rows = fetch_window(session_id, offset, limit)?;
 
     let mut out = Vec::with_capacity(rows.len());
@@ -499,7 +626,10 @@ pub fn export_rows(
     )
     .map_err(Error::BadInput)?;
 
-    Ok(crate::export::ExportSummary { rows_written, source_truncated: result.truncated })
+    Ok(crate::export::ExportSummary {
+        rows_written,
+        source_truncated: result.truncated,
+    })
 }
 
 /// 结果集某一列的 ENUM / SET 可选值，按定义顺序。
@@ -521,7 +651,10 @@ pub async fn column_choices(session_id: u64, column_index: u64) -> Result<Vec<St
     };
 
     if column.org_table.is_empty() {
-        return Err(Error::BadInput(format!("列 {} 不是直接来自某张表，读不到可选值", column.name)));
+        return Err(Error::BadInput(format!(
+            "列 {} 不是直接来自某张表，读不到可选值",
+            column.name
+        )));
     }
     crate::structure::column_choices(&pool, &column.schema, &column.org_table, &column.org_name)
         .await?
@@ -547,7 +680,10 @@ pub async fn load_catalog(session_id: u64, database: &str) -> Result<u64> {
     for (table, column) in rows {
         match catalog.tables.last_mut() {
             Some(last) if last.name == table => last.columns.push(column),
-            _ => catalog.tables.push(crate::complete::CatalogTable { name: table, columns: vec![column] }),
+            _ => catalog.tables.push(crate::complete::CatalogTable {
+                name: table,
+                columns: vec![column],
+            }),
         }
     }
     let count = catalog.tables.len() as u64;
@@ -562,7 +698,11 @@ pub async fn load_catalog(session_id: u64, database: &str) -> Result<u64> {
 }
 
 /// 补全。纯计算，读的是 load_catalog 缓存的目录，不访问数据库；没加载过就只有关键字
-pub fn complete_sql(session_id: u64, sql: &str, cursor: u32) -> Result<crate::complete::Completion> {
+pub fn complete_sql(
+    session_id: u64,
+    sql: &str,
+    cursor: u32,
+) -> Result<crate::complete::Completion> {
     let guard = store().lock().unwrap();
     let session = guard
         .sessions
@@ -593,7 +733,8 @@ pub async fn preview_alter(
 ) -> Result<crate::alter::AlterPlan> {
     let pool = pool_of(session_id)?;
     let mut conn = pool.get_conn().await?;
-    let (mut plan, not_null_columns) = plan_alter_on(&mut conn, database, table, original, draft).await?;
+    let (mut plan, not_null_columns) =
+        plan_alter_on(&mut conn, database, table, original, draft).await?;
 
     for column in not_null_columns {
         let sql = format!(
@@ -609,7 +750,9 @@ pub async fn preview_alter(
                  非严格模式下这些 NULL 会被改成该类型的零值（0、''、零日期）"
             ));
         } else {
-            plan.notes.push(format!("列 {column} 改成 NOT NULL：刚查过，现在没有 NULL 值"));
+            plan.notes.push(format!(
+                "列 {column} 改成 NOT NULL：刚查过，现在没有 NULL 值"
+            ));
         }
     }
     Ok(plan)
@@ -634,26 +777,53 @@ pub async fn apply_alter(
         ));
     }
 
-    run_planned(&mut conn, &plan.statements).await
+    run_planned(session_id, &mut conn, &plan.statements, "alter").await
 }
 
 /// 按顺序执行一批 DDL。失败时说清楚第几条失败、这一条和前面的生效了没有
-async fn run_planned(conn: &mut mysql_async::Conn, statements: &[String]) -> Result<()> {
+async fn run_planned(
+    session_id: u64,
+    conn: &mut mysql_async::Conn,
+    statements: &[String],
+    operation: &str,
+) -> Result<()> {
     let total = statements.len();
-    crate::alter::run_statements(conn, statements).await.map_err(|(index, err)| {
-        let err = Error::from(err);
-        let this_one = if matches!(err, Error::ConnectionLost(_)) {
-            "这一条可能已经生效也可能没有，请重新读取结构确认"
-        } else {
-            "这一条没有生效"
-        };
-        let before = if index == 0 {
-            "前面没有已执行的语句".to_string()
-        } else {
-            format!("前 {index} 条已经生效，不会回滚")
-        };
-        Error::EditFailed(format!("第 {} 条（共 {total} 条）执行失败：{err}。{this_one}；{before}", index + 1))
-    })
+    let started = Instant::now();
+    match crate::alter::run_statements(conn, statements).await {
+        Ok(()) => {
+            if !statements.is_empty() {
+                let detail = crate::sql_log::redact_sql_batch(statements);
+                crate::sql_log::record_detail(session_id, operation, &detail, started, true, "完成");
+            }
+            Ok(())
+        }
+        Err((index, mysql_error)) => {
+            let attempted = statements.iter().take(index.saturating_add(1)).cloned().collect::<Vec<_>>();
+            if !attempted.is_empty() {
+                let detail = crate::sql_log::redact_sql_batch(&attempted);
+                crate::sql_log::record_detail(
+                    session_id,
+                    operation,
+                    &detail,
+                    started,
+                    false,
+                    crate::sql_log::safe_mysql_error(&mysql_error),
+                );
+            }
+            let err = Error::from(mysql_error);
+            let this_one = if matches!(err, Error::ConnectionLost(_)) {
+                "这一条可能已经生效也可能没有，请重新读取结构确认"
+            } else {
+                "这一条没有生效"
+            };
+            let before = if index == 0 {
+                "前面没有已执行的语句".to_string()
+            } else {
+                format!("前 {index} 条已经生效，不会回滚")
+            };
+            Err(Error::EditFailed(format!("第 {} 条（共 {total} 条）执行失败：{err}。{this_one}；{before}", index + 1)))
+        }
+    }
 }
 
 /// 核对版本和结构，读这条连接的 sql_mode，生成语句
@@ -664,7 +834,10 @@ async fn plan_alter_on(
     original: &crate::structure::TableStructure,
     draft: &crate::alter::TableDraft,
 ) -> Result<(crate::alter::AlterPlan, Vec<String>)> {
-    let version: String = conn.query_first("SELECT VERSION()").await?.unwrap_or_default();
+    let version: String = conn
+        .query_first("SELECT VERSION()")
+        .await?
+        .unwrap_or_default();
     if !crate::alter::supports_alter(&version) {
         return Err(Error::BadInput(format!(
             "结构编辑只支持 MySQL 8.0.13 及以上（当前 {version}）：更早的版本和 MariaDB 读出来的默认值规则不同，\
@@ -675,7 +848,9 @@ async fn plan_alter_on(
     // 编辑器打开之后别人改过表的话，照旧草稿 MODIFY 会把别人的改动覆盖回去
     let fresh = crate::structure::read_structure(conn, database, table).await?;
     if !fresh.create_sql.starts_with("CREATE TABLE") {
-        return Err(Error::BadInput("只有普通表能用结构编辑器修改，视图请直接写 SQL".to_string()));
+        return Err(Error::BadInput(
+            "只有普通表能用结构编辑器修改，视图请直接写 SQL".to_string(),
+        ));
     }
     // AUTO_INCREMENT 每次插入都会变，不算结构改动；草稿里的自增值是「要设成多少」，不和它比
     if fresh.columns != original.columns
@@ -689,16 +864,22 @@ async fn plan_alter_on(
         || fresh.row_format != original.row_format
     {
         return Err(Error::BadInput(
-            "表结构在打开编辑器之后被改过，请关掉编辑器重新打开，免得把别人的改动覆盖回去".to_string(),
+            "表结构在打开编辑器之后被改过，请关掉编辑器重新打开，免得把别人的改动覆盖回去"
+                .to_string(),
         ));
     }
 
     let no_backslash_escapes = no_backslash_escapes(conn).await?;
-    crate::alter::plan_alter(database, table, &fresh, draft, no_backslash_escapes).map_err(Error::BadInput)
+    crate::alter::plan_alter(database, table, &fresh, draft, no_backslash_escapes)
+        .map_err(Error::BadInput)
 }
 
 /// 导入前读目标表：列能不能写、要不要必填，以及当前 sql_mode 是不是 strict
-pub async fn prepare_import(session_id: u64, database: &str, table: &str) -> Result<crate::import::ImportTarget> {
+pub async fn prepare_import(
+    session_id: u64,
+    database: &str,
+    table: &str,
+) -> Result<crate::import::ImportTarget> {
     let pool = pool_of(session_id)?;
     crate::import::prepare(&pool, database, table).await
 }
@@ -762,15 +943,48 @@ pub async fn apply_edit(
     let statement = build_update(&target, &columns, &row, column_index, &new_value)
         .map_err(Error::NotEditable)?;
 
-    let mut conn = pool.get_conn().await?;
-    conn.exec_drop(&statement.sql, statement.params).await?;
+    let started = Instant::now();
+    let mut conn = match pool.get_conn().await {
+        Ok(conn) => conn,
+        Err(error) => {
+            crate::sql_log::record(
+                session_id,
+                "update",
+                &statement.sql,
+                started,
+                false,
+                crate::sql_log::safe_mysql_error(&error),
+            );
+            return Err(error.into());
+        }
+    };
+    if let Err(error) = conn.exec_drop(&statement.sql, statement.params).await {
+        crate::sql_log::record(
+            session_id,
+            "update",
+            &statement.sql,
+            started,
+            false,
+            crate::sql_log::safe_mysql_error(&error),
+        );
+        return Err(error.into());
+    }
     let affected = conn.affected_rows();
 
     if affected != 1 {
+        crate::sql_log::record(
+            session_id,
+            "update",
+            &statement.sql,
+            started,
+            false,
+            format!("预期影响 1 行，实际 {affected} 行"),
+        );
         return Err(Error::EditFailed(format!(
             "预期影响 1 行，实际 {affected} 行，改动可能没有生效或定位到了错误的行"
         )));
     }
+    crate::sql_log::record(session_id, "update", &statement.sql, started, true, "完成");
 
     drop(conn);
     let fresh = reread_row(&pool, &target, &columns, &row).await?;
@@ -780,10 +994,7 @@ pub async fn apply_edit(
         .sessions
         .get_mut(&session_id)
         .ok_or(Error::NoSuchSession(session_id))?;
-    let result = session
-        .result
-        .as_mut()
-        .ok_or(Error::NoResult(session_id))?;
+    let result = session.result.as_mut().ok_or(Error::NoResult(session_id))?;
     result.rows[row_index] = fresh;
 
     Ok(())
@@ -959,7 +1170,13 @@ pub async fn paste_cells(
             }
         }
 
-        (session.pool.clone(), target, result.columns.clone(), statements, touched)
+        (
+            session.pool.clone(),
+            target,
+            result.columns.clone(),
+            statements,
+            touched,
+        )
     };
 
     if statements.is_empty() {
@@ -970,18 +1187,56 @@ pub async fn paste_cells(
     // ponytail: 一格一条 UPDATE，粘贴几千格以内够用；更大再改成一行一条多列 SET
     let mut conn = pool.get_conn().await?;
     let mut tx = conn.start_transaction(TxOpts::default()).await?;
+    let started = Instant::now();
+    let mut executed_sql: Vec<String> = Vec::with_capacity(statements.len());
     for (row_index, statement) in statements {
-        tx.exec_drop(&statement.sql, statement.params).await?;
+        if let Err(error) = tx.exec_drop(&statement.sql, statement.params).await {
+            let _ = tx.rollback().await;
+            executed_sql.push(statement.sql);
+            let detail = crate::sql_log::redact_sql_batch(&executed_sql);
+            crate::sql_log::record_detail(
+                session_id,
+                "paste",
+                &detail,
+                started,
+                false,
+                crate::sql_log::safe_mysql_error(&error),
+            );
+            return Err(error.into());
+        }
+        executed_sql.push(statement.sql.clone());
         let affected = tx.affected_rows();
         if affected != 1 {
             tx.rollback().await?;
+            let detail = crate::sql_log::redact_sql_batch(&executed_sql);
+            crate::sql_log::record_detail(
+                session_id,
+                "paste",
+                &detail,
+                started,
+                false,
+                "粘贴事务已回滚",
+            );
             return Err(Error::EditFailed(format!(
                 "第 {} 行预期修改 1 行，实际 {affected} 行，已整体回滚（不支持事务的引擎无法回滚，请重新查询确认）",
                 row_index + 1
             )));
         }
     }
-    tx.commit().await?;
+    if let Err(error) = tx.commit().await {
+        let detail = crate::sql_log::redact_sql_batch(&executed_sql);
+        crate::sql_log::record_detail(
+            session_id,
+            "paste",
+            &detail,
+            started,
+            false,
+            crate::sql_log::safe_mysql_error(&error),
+        );
+        return Err(error.into());
+    }
+    let detail = crate::sql_log::redact_sql_batch(&executed_sql);
+    crate::sql_log::record_detail(session_id, "paste", &detail, started, true, "完成");
     drop(conn);
 
     let mut fresh_rows = Vec::with_capacity(touched.len());
@@ -1015,7 +1270,11 @@ pub async fn insert_row(session_id: u64, values: Vec<Option<CellValue>>) -> Resu
             .get(&session_id)
             .ok_or(Error::NoSuchSession(session_id))?;
         let result = session.result.as_ref().ok_or(Error::NoResult(session_id))?;
-        (session.pool.clone(), edit_target(session, session_id)?, result.columns.clone())
+        (
+            session.pool.clone(),
+            edit_target(session, session_id)?,
+            result.columns.clone(),
+        )
     };
 
     let insert = build_insert(&target, &columns, &values).map_err(Error::NotEditable)?;
@@ -1031,7 +1290,9 @@ pub async fn insert_row(session_id: u64, values: Vec<Option<CellValue>>) -> Resu
         [] => None,
         [key_index] if target.key_indexes.len() == 1 => {
             let key_column = &columns[*key_index];
-            if !is_auto_increment(&pool, &target.schema, &target.table, &key_column.org_name).await? {
+            if !is_auto_increment(&pool, &target.schema, &target.table, &key_column.org_name)
+                .await?
+            {
                 return Err(Error::NotEditable(format!(
                     "主键列 {} 没有填值，且不是自增列，插入后无法定位这一行",
                     key_column.name
@@ -1046,12 +1307,47 @@ pub async fn insert_row(session_id: u64, values: Vec<Option<CellValue>>) -> Resu
         }
     };
 
-    let mut conn = pool.get_conn().await?;
-    conn.exec_drop(&insert.sql, insert.params).await?;
+    let started = Instant::now();
+    let mut conn = match pool.get_conn().await {
+        Ok(conn) => conn,
+        Err(error) => {
+            crate::sql_log::record(
+                session_id,
+                "insert",
+                &insert.sql,
+                started,
+                false,
+                crate::sql_log::safe_mysql_error(&error),
+            );
+            return Err(error.into());
+        }
+    };
+    if let Err(error) = conn.exec_drop(&insert.sql, insert.params).await {
+        crate::sql_log::record(
+            session_id,
+            "insert",
+            &insert.sql,
+            started,
+            false,
+            crate::sql_log::safe_mysql_error(&error),
+        );
+        return Err(error.into());
+    }
     let affected = conn.affected_rows();
     if affected != 1 {
-        return Err(Error::EditFailed(format!("预期插入 1 行，实际 {affected} 行")));
+        crate::sql_log::record(
+            session_id,
+            "insert",
+            &insert.sql,
+            started,
+            false,
+            format!("预期插入 1 行，实际 {affected} 行"),
+        );
+        return Err(Error::EditFailed(format!(
+            "预期插入 1 行，实际 {affected} 行"
+        )));
     }
+    crate::sql_log::record(session_id, "insert", &insert.sql, started, true, "完成");
 
     // 拼一行只有主键有意义的「定位行」，交给 build_select_by_key 生成 WHERE
     let mut locator = vec![CellValue::Null; columns.len()];
@@ -1118,18 +1414,58 @@ pub async fn delete_rows(session_id: u64, row_indexes: Vec<u64>) -> Result<u64> 
     // MyISAM 这类不支持事务的引擎回滚无效，报错信息里要说清楚
     let mut conn = pool.get_conn().await?;
     let mut tx = conn.start_transaction(TxOpts::default()).await?;
+    let started = Instant::now();
+    let mut attempted = Vec::<String>::with_capacity(statements.len());
     for (statement, &row_index) in statements.into_iter().zip(&row_indexes) {
-        tx.exec_drop(&statement.sql, statement.params).await?;
+        if let Err(error) = tx.exec_drop(&statement.sql, statement.params).await {
+            let _ = tx.rollback().await;
+            attempted.push(statement.sql);
+            let detail = crate::sql_log::redact_sql_batch(&attempted);
+            crate::sql_log::record_detail(
+                session_id,
+                "delete",
+                &detail,
+                started,
+                false,
+                crate::sql_log::safe_mysql_error(&error),
+            );
+            return Err(error.into());
+        }
+        attempted.push(statement.sql);
         let affected = tx.affected_rows();
         if affected != 1 {
             tx.rollback().await?;
+            let detail = crate::sql_log::redact_sql_batch(&attempted);
+            crate::sql_log::record_detail(
+                session_id,
+                "delete",
+                &detail,
+                started,
+                false,
+                "删除事务已回滚",
+            );
             return Err(Error::EditFailed(format!(
                 "第 {} 行预期删除 1 行，实际 {affected} 行，已整体回滚（不支持事务的引擎无法回滚，请重新查询确认）",
                 row_index + 1
             )));
         }
     }
-    tx.commit().await?;
+    if let Err(error) = tx.commit().await {
+        let detail = crate::sql_log::redact_sql_batch(&attempted);
+        crate::sql_log::record_detail(
+            session_id,
+            "delete",
+            &detail,
+            started,
+            false,
+            crate::sql_log::safe_mysql_error(&error),
+        );
+        return Err(error.into());
+    }
+    if !attempted.is_empty() {
+        let detail = crate::sql_log::redact_sql_batch(&attempted);
+        crate::sql_log::record_detail(session_id, "delete", &detail, started, true, "完成");
+    }
 
     let mut guard = store().lock().unwrap();
     let session = guard
@@ -1217,7 +1553,31 @@ pub async fn kill_process(
     let pool = pool_of(session_id)?;
     let mut conn = pool.get_conn().await?;
     let own_ids = own_connection_ids(session_id)?;
-    crate::server::kill(&mut conn, target, mode, &own_ids).await
+    let statement = crate::server::kill_sql(target.id, mode);
+    let started = Instant::now();
+    let result = crate::server::kill(&mut conn, target, mode, &own_ids).await;
+    match &result {
+        Ok(()) => crate::sql_log::record(
+            session_id,
+            "kill_process",
+            &statement,
+            started,
+            true,
+            "完成",
+        ),
+        Err(error) if reached_sql_execution(error) => {
+            crate::sql_log::record(
+                session_id,
+                "kill_process",
+                &statement,
+                started,
+                false,
+                "执行失败",
+            );
+        }
+        Err(_) => {}
+    }
+    result
 }
 
 /// SHOW GLOBAL / SESSION VARIABLES。会话值来自连接池里的一条连接，归还时会被重置
@@ -1247,23 +1607,51 @@ pub async fn slow_log_config(session_id: u64) -> Result<crate::server::SlowLogCo
 }
 
 /// mysql.slow_log 最近 limit 条。log_output 不含 TABLE 时拒绝并说明日志在哪
-pub async fn slow_log_entries(session_id: u64, limit: u32) -> Result<Vec<crate::server::SlowLogEntry>> {
+pub async fn slow_log_entries(
+    session_id: u64,
+    limit: u32,
+) -> Result<Vec<crate::server::SlowLogEntry>> {
     let pool = pool_of(session_id)?;
     let mut conn = pool.get_conn().await?;
     crate::server::read_slow_log(&mut conn, limit).await
 }
 
-pub async fn preview_set_global(session_id: u64, name: &str, value: &str) -> Result<crate::server::SetVariablePlan> {
+pub async fn preview_set_global(
+    session_id: u64,
+    name: &str,
+    value: &str,
+) -> Result<crate::server::SetVariablePlan> {
     let pool = pool_of(session_id)?;
     let mut conn = pool.get_conn().await?;
     crate::server::plan_set_global(&mut conn, name, value).await
 }
 
 /// 执行预览过的 SET GLOBAL，返回服务器存下的新值
-pub async fn apply_set_global(session_id: u64, name: &str, value: &str, previewed: &str) -> Result<DisplayCell> {
+pub async fn apply_set_global(
+    session_id: u64,
+    name: &str,
+    value: &str,
+    previewed: &str,
+) -> Result<DisplayCell> {
     let pool = pool_of(session_id)?;
     let mut conn = pool.get_conn().await?;
-    crate::server::apply_set_global(&mut conn, name, value, previewed).await
+    let started = Instant::now();
+    let result = crate::server::apply_set_global(&mut conn, name, value, previewed).await;
+    match &result {
+        Ok(_) => crate::sql_log::record(session_id, "set_global", previewed, started, true, "完成"),
+        Err(error) if reached_sql_execution(error) => {
+            crate::sql_log::record(
+                session_id,
+                "set_global",
+                previewed,
+                started,
+                false,
+                "执行失败",
+            );
+        }
+        Err(_) => {}
+    }
+    result
 }
 
 /// 用户管理页打开时的全部信息：当前账号、账号清单、认证插件、各层可选的权限
@@ -1273,7 +1661,10 @@ pub async fn load_user_admin(session_id: u64) -> Result<crate::users::UserAdmin>
 }
 
 /// 一个账号的 SHOW GRANTS，分层解析后连同原文返回
-pub async fn account_grants(session_id: u64, account: &crate::users::Account) -> Result<crate::users::AccountGrants> {
+pub async fn account_grants(
+    session_id: u64,
+    account: &crate::users::Account,
+) -> Result<crate::users::AccountGrants> {
     let mut conn = pool_of(session_id)?.get_conn().await?;
     crate::users::account_grants(&mut conn, account).await
 }
@@ -1296,13 +1687,36 @@ pub async fn apply_user_change(
     previewed: &str,
 ) -> Result<()> {
     let mut conn = pool_of(session_id)?.get_conn().await?;
-    crate::users::apply_change(&mut conn, change, password, previewed).await
+    let started = Instant::now();
+    let result = crate::users::apply_change(&mut conn, change, password, previewed).await;
+    match &result {
+        Ok(()) => {
+            crate::sql_log::record(session_id, "user_change", previewed, started, true, "完成")
+        }
+        Err(error) if reached_sql_execution(error) => {
+            crate::sql_log::record(
+                session_id,
+                "user_change",
+                previewed,
+                started,
+                false,
+                "执行失败",
+            );
+        }
+        Err(_) => {}
+    }
+    result
 }
 
 /// 字符串里的反斜杠怎么转义取决于执行语句那条连接的 sql_mode
 async fn no_backslash_escapes(conn: &mut mysql_async::Conn) -> Result<bool> {
-    let sql_mode: String = conn.query_first("SELECT @@SESSION.sql_mode").await?.unwrap_or_default();
-    Ok(sql_mode.split(',').any(|mode| mode == "NO_BACKSLASH_ESCAPES"))
+    let sql_mode: String = conn
+        .query_first("SELECT @@SESSION.sql_mode")
+        .await?
+        .unwrap_or_default();
+    Ok(sql_mode
+        .split(',')
+        .any(|mode| mode == "NO_BACKSLASH_ESCAPES"))
 }
 
 /// 预览新建表。同名的表或视图已经存在就拒绝
@@ -1334,7 +1748,7 @@ pub async fn create_table(
             "要执行的语句和预览时不一样了（sql_mode 变了），请重新预览".to_string(),
         ));
     }
-    crate::alter::run_statements(&mut conn, &plan.statements).await.map_err(|(_, err)| Error::from(err))
+    run_planned(session_id, &mut conn, &plan.statements, "create_table").await
 }
 
 async fn plan_create_on(
@@ -1343,7 +1757,10 @@ async fn plan_create_on(
     table: &str,
     draft: &crate::alter::TableDraft,
 ) -> Result<crate::alter::AlterPlan> {
-    let version: String = conn.query_first("SELECT VERSION()").await?.unwrap_or_default();
+    let version: String = conn
+        .query_first("SELECT VERSION()")
+        .await?
+        .unwrap_or_default();
     if !crate::alter::supports_alter(&version) {
         return Err(Error::BadInput(format!(
             "新建表只支持 MySQL 8.0.13 及以上（当前 {version}）：和结构编辑用的是同一套生成规则"
@@ -1357,12 +1774,15 @@ async fn plan_create_on(
         .await?;
     if let Some(kind) = existing {
         let what = if kind == "VIEW" { "视图" } else { "表" };
-        return Err(Error::BadInput(format!("{database} 里已经有叫 {table} 的{what}，换个名字")));
+        return Err(Error::BadInput(format!(
+            "{database} 里已经有叫 {table} 的{what}，换个名字"
+        )));
     }
 
     let no_backslash_escapes = no_backslash_escapes(conn).await?;
     let supports_check = crate::alter::supports_check(&version);
-    crate::alter::plan_create(database, table, draft, no_backslash_escapes, supports_check).map_err(Error::BadInput)
+    crate::alter::plan_create(database, table, draft, no_backslash_escapes, supports_check)
+        .map_err(Error::BadInput)
 }
 
 /// 在原查询上套分组筛选（可嵌套、带 IN）和排序再跑。execute_view 是只有一组时的特例。
@@ -1406,7 +1826,7 @@ pub async fn apply_table_action(
             "要执行的语句和预览时不一样了（表被改过或换成了视图），请重新操作".to_string(),
         ));
     }
-    run_planned(&mut conn, &plan.statements).await
+    run_planned(session_id, &mut conn, &plan.statements, "table_action").await
 }
 
 /// 是表还是视图从 information_schema 读，不信界面传的
@@ -1423,24 +1843,29 @@ async fn plan_table_action_on(
         )
         .await?;
     let Some(kind) = kind else {
-        return Err(Error::BadInput(format!("{database} 里没有 {table}，可能已经被删除或改名，请刷新侧栏")));
+        return Err(Error::BadInput(format!(
+            "{database} 里没有 {table}，可能已经被删除或改名，请刷新侧栏"
+        )));
     };
     let is_view = kind == "VIEW" || kind == "SYSTEM VIEW";
 
     let columns = match action {
-        crate::table_ops::TableAction::Duplicate { with_data: true, .. } => {
-            crate::structure::read_columns(conn, database, table).await?
-        }
+        crate::table_ops::TableAction::Duplicate {
+            with_data: true, ..
+        } => crate::structure::read_columns(conn, database, table).await?,
         _ => Vec::new(),
     };
-    crate::table_ops::plan_action(database, table, is_view, &columns, action).map_err(Error::BadInput)
+    crate::table_ops::plan_action(database, table, is_view, &columns, action)
+        .map_err(Error::BadInput)
 }
 
 /// 精确行数。information_schema 里的是估算值，这里真的 COUNT(*) 一遍，大表会慢
 pub async fn count_rows(session_id: u64, database: &str, table: &str) -> Result<u64> {
     let pool = pool_of(session_id)?;
     let mut conn = pool.get_conn().await?;
-    let count: Option<u64> = conn.query_first(crate::table_ops::count_sql(database, table)).await?;
+    let count: Option<u64> = conn
+        .query_first(crate::table_ops::count_sql(database, table))
+        .await?;
     count.ok_or_else(|| Error::BadInput("COUNT(*) 没有返回结果".to_string()))
 }
 
@@ -1454,8 +1879,9 @@ pub async fn run_maintenance(
     let pool = pool_of(session_id)?;
     let mut conn = pool.get_conn().await?;
     // 结果列是 Table / Op / Msg_type / Msg_text
-    let rows: Vec<(String, String, String, String)> =
-        conn.query(crate::table_ops::maintenance_sql(database, table, op)).await?;
+    let rows: Vec<(String, String, String, String)> = conn
+        .query(crate::table_ops::maintenance_sql(database, table, op))
+        .await?;
     let mut messages = Vec::with_capacity(rows.len());
     for (_, _, msg_type, text) in rows {
         messages.push(crate::table_ops::MaintenanceMessage { msg_type, text });
@@ -1468,7 +1894,9 @@ pub async fn insert_template(session_id: u64, database: &str, table: &str) -> Re
     let pool = pool_of(session_id)?;
     let columns = crate::structure::table_columns(&pool, database, table).await?;
     if columns.is_empty() {
-        return Err(Error::BadInput(format!("读不到 {table} 的列，可能已经被删除或改名")));
+        return Err(Error::BadInput(format!(
+            "读不到 {table} 的列，可能已经被删除或改名"
+        )));
     }
     Ok(crate::table_ops::insert_template(table, &columns))
 }
@@ -1484,7 +1912,11 @@ pub async fn export_table(
 ) -> Result<u64> {
     let pool = pool_of(session_id)?;
     let mut conn = pool.get_conn().await?;
-    let sql = format!("SELECT * FROM {}.{}", crate::sql::quote_ident(database), crate::sql::quote_ident(table));
+    let sql = format!(
+        "SELECT * FROM {}.{}",
+        crate::sql::quote_ident(database),
+        crate::sql::quote_ident(table)
+    );
     // 用 prepared statement 跑，和结果网格一样拿到真实数值类型
     let mut result = conn.exec_iter(sql, ()).await?;
     let columns = match result.columns() {
@@ -1497,7 +1929,12 @@ pub async fn export_table(
     }
 
     // ponytail: 在异步任务里同步写文件，导出期间占着一个运行时线程；要并发导出多张表再挪到 spawn_blocking
-    let mut writer = match crate::export::ExportWriter::create(std::path::Path::new(path), &columns, &column_indexes, options) {
+    let mut writer = match crate::export::ExportWriter::create(
+        std::path::Path::new(path),
+        &columns,
+        &column_indexes,
+        options,
+    ) {
         Ok(writer) => writer,
         Err(err) => {
             drop(result);
@@ -1533,7 +1970,11 @@ pub async fn export_sql_dump(
     if database.is_empty() {
         return Err(Error::BadInput("没有指定库".to_string()));
     }
-    if !options.create_database && !options.drop_table && !options.create_table && !options.include_data {
+    if !options.create_database
+        && !options.drop_table
+        && !options.create_table
+        && !options.include_data
+    {
         return Err(Error::BadInput("没有要导出的内容".to_string()));
     }
     let mut wanted = Vec::new();
@@ -1599,7 +2040,10 @@ async fn dump_tables(
         let mut ddl = String::new();
         if options.drop_table {
             let kind = if is_view { "VIEW" } else { "TABLE" };
-            ddl.push_str(&format!("DROP {kind} IF EXISTS {};\n", crate::sql::quote_ident(table)));
+            ddl.push_str(&format!(
+                "DROP {kind} IF EXISTS {};\n",
+                crate::sql::quote_ident(table)
+            ));
         }
         if options.create_table {
             let create = show_create(conn, database, table).await?;
@@ -1614,13 +2058,18 @@ async fn dump_tables(
         }
         if is_view {
             writer
-                .write_sql(&format!("-- 视图 {} 不导出数据\n\n", crate::sql::quote_ident(table)))
+                .write_sql(&format!(
+                    "-- 视图 {} 不导出数据\n\n",
+                    crate::sql::quote_ident(table)
+                ))
                 .map_err(Error::BadInput)?;
             continue;
         }
         write_table_data(conn, &mut writer, database, table).await?;
     }
-    writer.write_sql("SET FOREIGN_KEY_CHECKS=1;\n").map_err(Error::BadInput)?;
+    writer
+        .write_sql("SET FOREIGN_KEY_CHECKS=1;\n")
+        .map_err(Error::BadInput)?;
     writer.finish().map_err(Error::BadInput)
 }
 
@@ -1633,7 +2082,9 @@ async fn show_create(conn: &mut mysql_async::Conn, database: &str, table: &str) 
         ))
         .await?;
     // 表是 (Table, Create Table)，视图是 (View, Create View, …)，建表语句都在第 2 列
-    let sql = row.and_then(|row| row.get::<String, usize>(1)).unwrap_or_default();
+    let sql = row
+        .and_then(|row| row.get::<String, usize>(1))
+        .unwrap_or_default();
     if sql.is_empty() {
         return Err(Error::BadInput(format!("读不到 {table} 的建表语句")));
     }
@@ -1661,7 +2112,11 @@ async fn write_table_data(
     };
     let mut names = Vec::with_capacity(columns.len());
     for column in &columns {
-        let name = if column.org_name.is_empty() { &column.name } else { &column.org_name };
+        let name = if column.org_name.is_empty() {
+            &column.name
+        } else {
+            &column.org_name
+        };
         names.push(name.clone());
     }
     let mut started = false;
@@ -1704,7 +2159,11 @@ pub async fn database_options(session_id: u64) -> Result<crate::table_ops::Datab
     let mut charsets: Vec<crate::table_ops::CharsetInfo> = Vec::new();
     for (charset, collation, is_default) in rows {
         let Some(charset) = charset else { continue };
-        if charsets.last().map(|info| info.name != charset).unwrap_or(true) {
+        if charsets
+            .last()
+            .map(|info| info.name != charset)
+            .unwrap_or(true)
+        {
             charsets.push(crate::table_ops::CharsetInfo {
                 name: charset,
                 default_collation: String::new(),
@@ -1718,10 +2177,16 @@ pub async fn database_options(session_id: u64) -> Result<crate::table_ops::Datab
         info.collations.push(collation);
     }
 
-    let defaults: Option<(String, String)> = conn.query_first("SELECT @@character_set_server, @@collation_server").await?;
+    let defaults: Option<(String, String)> = conn
+        .query_first("SELECT @@character_set_server, @@collation_server")
+        .await?;
     let (default_charset, default_collation) =
         defaults.ok_or_else(|| Error::BadInput("读不到服务器的默认字符集".to_string()))?;
-    Ok(crate::table_ops::DatabaseOptions { charsets, default_charset, default_collation })
+    Ok(crate::table_ops::DatabaseOptions {
+        charsets,
+        default_charset,
+        default_collation,
+    })
 }
 
 /// 预览新建库。排序规则必须属于这个字符集，而且是服务器上有的
@@ -1748,9 +2213,11 @@ pub async fn apply_create_database(
     let mut conn = pool.get_conn().await?;
     let plan = plan_create_database_on(&mut conn, name, charset, collation).await?;
     if plan.statements != previewed {
-        return Err(Error::BadInput("要执行的语句和预览时不一样了，请重新操作".to_string()));
+        return Err(Error::BadInput(
+            "要执行的语句和预览时不一样了，请重新操作".to_string(),
+        ));
     }
-    run_planned(&mut conn, &plan.statements).await
+    run_planned(session_id, &mut conn, &plan.statements, "create_database").await
 }
 
 async fn plan_create_database_on(
@@ -1766,10 +2233,15 @@ async fn plan_create_database_on(
         )
         .await?;
     if found.is_none() {
-        return Err(Error::BadInput(format!("服务器上没有属于字符集 {charset} 的排序规则 {collation}")));
+        return Err(Error::BadInput(format!(
+            "服务器上没有属于字符集 {charset} 的排序规则 {collation}"
+        )));
     }
     let existing: Option<String> = conn
-        .exec_first("SELECT SCHEMA_NAME FROM information_schema.SCHEMATA WHERE SCHEMA_NAME = ?", (name,))
+        .exec_first(
+            "SELECT SCHEMA_NAME FROM information_schema.SCHEMATA WHERE SCHEMA_NAME = ?",
+            (name,),
+        )
         .await?;
     if existing.is_some() {
         return Err(Error::BadInput(format!("已经有叫 {name} 的库，换个名字")));

@@ -56,3 +56,46 @@ class DisplayCell {
           text == other.text &&
           placeholder == other.placeholder;
 }
+
+class OperationLogEntry {
+  final BigInt sessionId;
+  final String operation;
+  final String detail;
+  final bool succeeded;
+  final String message;
+  final PlatformInt64 executedAt;
+  final BigInt elapsedMs;
+
+  const OperationLogEntry({
+    required this.sessionId,
+    required this.operation,
+    required this.detail,
+    required this.succeeded,
+    required this.message,
+    required this.executedAt,
+    required this.elapsedMs,
+  });
+
+  @override
+  int get hashCode =>
+      sessionId.hashCode ^
+      operation.hashCode ^
+      detail.hashCode ^
+      succeeded.hashCode ^
+      message.hashCode ^
+      executedAt.hashCode ^
+      elapsedMs.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is OperationLogEntry &&
+          runtimeType == other.runtimeType &&
+          sessionId == other.sessionId &&
+          operation == other.operation &&
+          detail == other.detail &&
+          succeeded == other.succeeded &&
+          message == other.message &&
+          executedAt == other.executedAt &&
+          elapsedMs == other.elapsedMs;
+}

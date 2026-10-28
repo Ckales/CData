@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'data_source.dart';
 import 'filter_panel.dart';
+import 'operation_log_dialog.dart';
 import 'result_grid.dart';
 import 'sql_editor.dart';
 import 'sql_library.dart';
@@ -156,6 +157,8 @@ class QueryTab extends StatefulWidget {
   /// SQL 编辑器藏起来，但还在，runSql 照常能跑
   final bool showEditor;
 
+  final Future<List<OperationLogEntry>> Function()? loadOperationLogs;
+
   const QueryTab({
     super.key,
     required this.runner,
@@ -168,6 +171,7 @@ class QueryTab extends StatefulWidget {
     this.pickSavePath,
     this.editorFontSize = 13,
     this.showEditor = true,
+    this.loadOperationLogs,
   });
 
   @override
@@ -560,6 +564,7 @@ class QueryTabState extends State<QueryTab> {
                         ResultGrid(
                           key: ObjectKey(view.source),
                           source: view.source,
+                          onOpenLog: () => showOperationLogDialog(context, load: widget.loadOperationLogs),
                           // 脚本结果和执行计划不能按列重跑：单独重跑一条语句可能拿不到它依赖的会话状态
                           onSortColumn: view.isMain ? _sortBy : null,
                           sortColumn: view.isMain ? _sortColumn : null,

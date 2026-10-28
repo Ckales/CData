@@ -5,6 +5,7 @@ pub mod db;
 pub mod editor;
 pub mod layouts;
 pub mod options;
+pub mod operation_log;
 pub mod preferences;
 pub mod schema;
 pub mod server;

@@ -56,6 +56,9 @@ class ResultGrid extends StatefulWidget {
   /// 右键「刷新全部行」：重新执行查询。null 表示这个结果集不能单独重跑（脚本结果、执行计划）
   final VoidCallback? onRefreshAll;
 
+  /// 状态栏「日志」：由查询页提供记录查看入口。
+  final VoidCallback? onOpenLog;
+
   const ResultGrid({
     super.key,
     required this.source,
@@ -67,6 +70,7 @@ class ResultGrid extends StatefulWidget {
     this.onAddToSearch,
     this.onEditFilter,
     this.onRefreshAll,
+    this.onOpenLog,
   });
 
   QuerySummary get summary => source.summary;
@@ -109,6 +113,7 @@ class _ResultGridState extends State<ResultGrid> {
   /// 正在编辑的单元格坐标，null 表示没有在编辑
   ({int row, int column})? _editing;
   final _editController = TextEditingController();
+  String _editInitialText = '';
 
   /// 编辑框的焦点。不能靠 autofocus：按下单元格时网格已经拿了焦点，
   /// autofocus 只在作用域里没有焦点时才生效，结果是编辑框开了、打字却没反应
@@ -142,6 +147,7 @@ class _ResultGridState extends State<ResultGrid> {
   @override
   void initState() {
     super.initState();
+    _editFocus.addListener(_onEditFocusChanged);
     _resetLayout();
     _loadLayout();
     _loadWindow(0);
@@ -149,6 +155,7 @@ class _ResultGridState extends State<ResultGrid> {
 
   @override
   void dispose() {
+    _editFocus.removeListener(_onEditFocusChanged);
     _editController.dispose();
     _editFocus.dispose();
     _scroll.dispose();
@@ -163,6 +170,7 @@ class _ResultGridState extends State<ResultGrid> {
     super.didUpdateWidget(oldWidget);
     // 换了查询就把窗口重置，否则会拿旧结果的行去渲染新结果
     if (oldWidget.source != widget.source) {
+      _editing = null;
       _windowStart = 0;
       _windowRows = [];
       _totalRows = widget.summary.totalRows.toInt();
@@ -451,6 +459,7 @@ class _ResultGridState extends State<ResultGrid> {
   }
 
   void _startInlineEdit(int rowIndex, int columnIndex) {
+    _editInitialText = _editController.text;
     setState(() => _editing = (row: rowIndex, column: columnIndex));
     // 编辑框这一帧才建出来，建好再给焦点
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -458,13 +467,25 @@ class _ResultGridState extends State<ResultGrid> {
     });
   }
 
-  Future<void> _commitEdit(CellValue newValue) async {
+  void _onEditFocusChanged() {
+    if (_editFocus.hasFocus || _editing == null) return;
+    if (_editController.text == _editInitialText) {
+      setState(() => _editing = null);
+      return;
+    }
+    _commitEdit(CellValue.text(_editController.text), restoreGridFocus: false);
+  }
+
+  Future<void> _commitEdit(
+    CellValue newValue, {
+    bool restoreGridFocus = true,
+  }) async {
     final editing = _editing;
     if (editing == null) return;
 
     setState(() => _editing = null);
     // 编辑框拆掉后焦点会退到路由那一层，收回来才能接着用方向键
-    _gridFocus.requestFocus();
+    if (restoreGridFocus) _gridFocus.requestFocus();
     await _writeCell(editing.row, editing.column, newValue);
   }
 
@@ -1327,6 +1348,7 @@ class _ResultGridState extends State<ResultGrid> {
           onExport: _export,
           onDeleteSelected: () => _deleteRows(_selected.toList()..sort()),
           onEditFilter: widget.onEditFilter,
+          onOpenLog: widget.onOpenLog,
         ),
       ],
     );
@@ -1617,7 +1639,7 @@ class _DataRow extends StatelessWidget {
   }
 }
 
-/// 单元格编辑框。Enter 提交，Esc 取消，∅ 写 NULL。
+/// 单元格编辑框。失焦自动提交，Enter 提交，Esc 取消，∅ 写 NULL。
 ///
 /// NULL 要有独立入口：清空输入提交的是空字符串，和 NULL 是两回事，不能靠猜。
 class _CellEditor extends StatelessWidget {
@@ -1637,38 +1659,54 @@ class _CellEditor extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Expanded(
-          child: Focus(
-            onKeyEvent: (node, event) {
-              if (event is KeyDownEvent && event.logicalKey == LogicalKeyboardKey.escape) {
-                onCancel();
-                return KeyEventResult.handled;
-              }
-              return KeyEventResult.ignored;
-            },
-            // 边框和焦点环沿用主题。紧凑输入框高 10 + 上下内边距，5 正好填满 20px 的行
-            child: TextField(
-              controller: controller,
-              focusNode: focusNode,
-              style: _cellStyle,
-              decoration: const InputDecoration(contentPadding: EdgeInsets.symmetric(horizontal: 4, vertical: 5)),
-              onSubmitted: onCommit,
+    // ∅ 属于编辑框，点击它不能先触发文本的失焦提交。
+    return TextFieldTapRegion(
+      child: Row(
+        children: [
+          Expanded(
+            child: Focus(
+              onKeyEvent: (node, event) {
+                if (event is KeyDownEvent &&
+                    event.logicalKey == LogicalKeyboardKey.escape) {
+                  onCancel();
+                  return KeyEventResult.handled;
+                }
+                return KeyEventResult.ignored;
+              },
+              // 边框和焦点环沿用主题。紧凑输入框高 10 + 上下内边距，5 正好填满 20px 的行
+              child: TextField(
+                controller: controller,
+                focusNode: focusNode,
+                style: _cellStyle,
+                decoration: const InputDecoration(
+                  contentPadding: EdgeInsets.symmetric(
+                    horizontal: 4,
+                    vertical: 5,
+                  ),
+                ),
+                onSubmitted: onCommit,
+                onTapOutside: (_) => focusNode.unfocus(),
+              ),
             ),
           ),
-        ),
-        Tooltip(
-          message: '写入 NULL',
-          child: InkWell(
-            onTap: onSetNull,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 4),
-              child: Text('∅', style: TextStyle(fontSize: 12, color: MacColors.of(context).secondaryText)),
+          Tooltip(
+            message: '写入 NULL',
+            child: InkWell(
+              onTap: onSetNull,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 4),
+                child: Text(
+                  '∅',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: MacColors.of(context).secondaryText,
+                  ),
+                ),
+              ),
             ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }
@@ -1716,6 +1754,7 @@ class _StatusBar extends StatelessWidget {
   final VoidCallback onDeleteSelected;
   final VoidCallback onExport;
   final VoidCallback? onEditFilter;
+  final VoidCallback? onOpenLog;
 
   const _StatusBar({
     required this.totalRows,
@@ -1729,6 +1768,7 @@ class _StatusBar extends StatelessWidget {
     required this.onDeleteSelected,
     required this.onExport,
     required this.onEditFilter,
+    required this.onOpenLog,
   });
 
   @override
@@ -1761,6 +1801,13 @@ class _StatusBar extends StatelessWidget {
         // 刻意不用 CircularProgressIndicator：它是无限动画，会让 pumpAndSettle
         // 永远等不到"稳定"，测试直接挂死。静态文字一样能表达状态
         if (loading) const Text('加载中…'),
+        if (onOpenLog != null)
+          _BarButton(
+            key: const ValueKey('open-log'),
+            icon: Icons.history,
+            label: '日志',
+            onPressed: onOpenLog!,
+          ),
         if (onEditFilter != null)
           _BarButton(
             key: const ValueKey('filter-edit'),

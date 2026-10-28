@@ -154,6 +154,7 @@ Future<GlobalKey<QueryTabState>> pumpTab(
   FakeLibrary library, {
   String sql = 'SELECT * FROM t',
   List<String>? ran,
+  Future<List<OperationLogEntry>> Function()? loadOperationLogs,
 }) async {
   final key = GlobalKey<QueryTabState>();
   await tester.pumpWidget(MaterialApp(
@@ -167,6 +168,7 @@ Future<GlobalKey<QueryTabState>> pumpTab(
         initialSql: sql,
         onRan: (sql) => ran?.add(sql),
         onConnected: () {},
+        loadOperationLogs: loadOperationLogs,
       ),
     ),
   ));
@@ -232,6 +234,21 @@ void main() {
     expect(library.queryEntries.single.sql, 'SELECT * FROM t');
     expect(ran, ['SELECT * FROM t'], reason: '标签标题跟着 SQL 变');
     expect(find.text('用户1'), findsOneWidget);
+  });
+
+  testWidgets('结果栏日志打开 SQL 操作日志，不改写查询编辑器', (tester) async {
+    await pumpTab(tester, FakeRunner(), FakeLibrary(), loadOperationLogs: () async => []);
+    await tester.tap(find.text('运行'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('日志'));
+    await tester.pumpAndSettle();
+    expect(find.text('SQL 操作日志'), findsOneWidget);
+    await tester.tap(find.byTooltip('关闭'));
+    await tester.pumpAndSettle();
+    final editor = tester.widget<TextField>(
+      find.descendant(of: find.byKey(const ValueKey('sql-editor')), matching: find.byType(TextField)),
+    );
+    expect(editor.controller!.text, 'SELECT * FROM t');
   });
 
   testWidgets('⌘ + Enter 运行，普通回车只是换行', (tester) async {

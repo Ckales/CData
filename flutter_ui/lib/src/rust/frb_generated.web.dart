@@ -11,6 +11,7 @@ import 'api/csv_import.dart';
 import 'api/db.dart';
 import 'api/editor.dart';
 import 'api/layouts.dart';
+import 'api/operation_log.dart';
 import 'api/options.dart';
 import 'api/preferences.dart';
 import 'api/schema.dart';
@@ -364,6 +365,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<OpenConnectionState> dco_decode_list_open_connection_state(dynamic raw);
 
   @protected
+  List<OperationLogEntry> dco_decode_list_operation_log_entry(dynamic raw);
+
+  @protected
   List<String?> dco_decode_list_opt_String(dynamic raw);
 
   @protected
@@ -437,6 +441,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   OpenSessionError dco_decode_open_session_error(dynamic raw);
+
+  @protected
+  OperationLogEntry dco_decode_operation_log_entry(dynamic raw);
 
   @protected
   String? dco_decode_opt_String(dynamic raw);
@@ -985,6 +992,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  List<OperationLogEntry> sse_decode_list_operation_log_entry(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   List<String?> sse_decode_list_opt_String(SseDeserializer deserializer);
 
   @protected
@@ -1074,6 +1086,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   OpenSessionError sse_decode_open_session_error(SseDeserializer deserializer);
+
+  @protected
+  OperationLogEntry sse_decode_operation_log_entry(
+    SseDeserializer deserializer,
+  );
 
   @protected
   String? sse_decode_opt_String(SseDeserializer deserializer);
@@ -1750,6 +1767,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_list_operation_log_entry(
+    List<OperationLogEntry> self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_list_opt_String(List<String?> self, SseSerializer serializer);
 
   @protected
@@ -1869,6 +1892,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_open_session_error(
     OpenSessionError self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_operation_log_entry(
+    OperationLogEntry self,
     SseSerializer serializer,
   );
 

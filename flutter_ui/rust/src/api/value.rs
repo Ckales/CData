@@ -8,6 +8,18 @@ use flutter_rust_bridge::frb;
 // 按裸名导入，生成的代码会把镜像类型引用为 crate::api::value::<Name>
 pub use cdata_core::CellValue;
 pub use cdata_core::value::DisplayCell;
+pub use cdata_core::operation_log::OperationLogEntry;
+
+#[frb(mirror(OperationLogEntry))]
+pub struct _OperationLogEntry {
+    pub session_id: u64,
+    pub operation: String,
+    pub detail: String,
+    pub succeeded: bool,
+    pub message: String,
+    pub executed_at: i64,
+    pub elapsed_ms: u64,
+}
 
 #[frb(mirror(CellValue))]
 pub enum _CellValue {

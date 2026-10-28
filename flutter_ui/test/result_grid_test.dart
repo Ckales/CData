@@ -23,6 +23,7 @@ Future<void> pumpGrid(
   bool sortAscending = true,
   VoidCallback? onRefreshAll,
   VoidCallback? onEditFilter,
+  VoidCallback? onOpenLog,
 }) async {
   await tester.pumpWidget(
     MaterialApp(
@@ -35,6 +36,7 @@ Future<void> pumpGrid(
           sortAscending: sortAscending,
           onRefreshAll: onRefreshAll,
           onEditFilter: onEditFilter,
+          onOpenLog: onOpenLog,
         ),
       ),
     ),
@@ -207,6 +209,14 @@ void main() {
     expect(find.text('<二进制 12 字节>'), findsOneWidget);
   });
 
+  testWidgets('日志按钮在筛选左侧，点击打开日志', (tester) async {
+    var opened = false;
+    await pumpGrid(tester, FakeGridSource.rows(2), onOpenLog: () => opened = true, onEditFilter: () {});
+    expect(tester.getCenter(find.text('日志')).dx, lessThan(tester.getCenter(find.text('筛选')).dx));
+    await tester.tap(find.text('日志'));
+    expect(opened, isTrue);
+  });
+
   testWidgets('双击改值会写回并显示新值', (tester) async {
     final source = FakeGridSource.rows(2);
     await pumpGrid(tester, source);
@@ -224,15 +234,120 @@ void main() {
     expect(find.text('改过了'), findsOneWidget);
   });
 
+  testWidgets('点击其他单元格失焦后自动提交一次', (tester) async {
+    final source = FakeGridSource.rows(2);
+    await pumpGrid(tester, source);
+    await doubleTap(tester, find.text('用户1'));
+    await tester.enterText(find.byType(TextField), '自动保存');
+
+    await tester.tap(find.text('用户2'));
+    await tester.pumpAndSettle();
+
+    expect(source.edits, [(0, 1, const CellValue.text('自动保存'))]);
+    expect(find.byType(TextField), findsNothing);
+    expect(find.text('自动保存'), findsOneWidget);
+  });
+
+  testWidgets('焦点切换到其他输入框后自动提交且不抢回焦点', (tester) async {
+    final source = FakeGridSource.rows(2);
+    final otherFocus = FocusNode();
+    addTearDown(otherFocus.dispose);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Column(
+            children: [
+              TextField(
+                focusNode: otherFocus,
+                key: const ValueKey('other-input'),
+              ),
+              Expanded(child: ResultGrid(source: source)),
+            ],
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await doubleTap(tester, find.text('用户1'));
+    final editor = find.descendant(
+      of: find.byType(ResultGrid),
+      matching: find.byType(TextField),
+    );
+    await tester.enterText(editor, '自动保存');
+    otherFocus.requestFocus();
+    await tester.pumpAndSettle();
+
+    expect(source.edits, [(0, 1, const CellValue.text('自动保存'))]);
+    expect(otherFocus.hasPrimaryFocus, isTrue);
+  });
+
+  testWidgets('未改动的 NULL 失焦不写成空字符串', (tester) async {
+    final source = FakeGridSource.rows(2);
+    source.rows[0][1] = const CellValue.null_();
+    await pumpGrid(tester, source);
+    await doubleTap(tester, find.text('NULL'));
+    await tester.tap(find.text('用户2'));
+    await tester.pumpAndSettle();
+
+    expect(source.edits, isEmpty);
+    expect(find.byType(TextField), findsNothing);
+    expect(find.text('NULL'), findsOneWidget);
+  });
+
+  testWidgets('Esc 取消修改后失焦不提交', (tester) async {
+    final source = FakeGridSource.rows(2);
+    await pumpGrid(tester, source);
+    await doubleTap(tester, find.text('用户1'));
+    await tester.enterText(find.byType(TextField), '取消这次修改');
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('用户2'));
+    await tester.pumpAndSettle();
+
+    expect(source.edits, isEmpty);
+    expect(find.text('用户1'), findsOneWidget);
+  });
+
+  testWidgets('连续双击下一格时先保存原单元格，下一格可继续编辑', (tester) async {
+    final source = FakeGridSource.rows(2);
+    await pumpGrid(tester, source);
+    await doubleTap(tester, find.text('用户1'));
+    await tester.enterText(find.byType(TextField), '第一格');
+    await doubleTap(tester, find.text('用户2'));
+
+    expect(source.edits, [(0, 1, const CellValue.text('第一格'))]);
+    expect(
+      tester.widget<TextField>(find.byType(TextField)).controller!.text,
+      '用户2',
+    );
+    await tester.enterText(find.byType(TextField), '第二格');
+    await tester.tap(find.text('第一格'));
+    await tester.pumpAndSettle();
+    expect(source.edits.last, (1, 1, const CellValue.text('第二格')));
+  });
+
+  testWidgets('失焦提交失败仍显示数据库错误', (tester) async {
+    final source = FakeGridSource.rows(2)..editError = '预期影响 1 行，实际 0 行';
+    await pumpGrid(tester, source);
+    await doubleTap(tester, find.text('用户1'));
+    await tester.enterText(find.byType(TextField), 'x');
+    await tester.tap(find.text('用户2'));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('实际 0 行'), findsOneWidget);
+    expect(find.text('用户1'), findsOneWidget);
+  });
+
   testWidgets('∅ 写入 NULL，和空字符串区分开', (tester) async {
     final source = FakeGridSource.rows(2);
     await pumpGrid(tester, source);
 
     await doubleTap(tester, find.text('用户1'));
+    await tester.enterText(find.byType(TextField), '只应写入 NULL');
     await tester.tap(find.text('∅'));
     await tester.pumpAndSettle();
 
-    expect(source.edits.first.$3, const CellValue.null_());
+    expect(source.edits.single.$3, const CellValue.null_());
     expect(find.text('NULL'), findsOneWidget);
 
     // 再确认空字符串走的是另一条路，不会被当成 NULL
