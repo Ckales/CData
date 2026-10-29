@@ -585,7 +585,6 @@ class _StructureEditorPanelState extends State<StructureEditorPanel> {
   final _autoIncrement = TextEditingController();
   final _rowFormat = TextEditingController();
   bool _convertCharset = false;
-  String? _error;
   bool _previewing = false;
 
   bool get _creating => widget.structure == null;
@@ -762,7 +761,7 @@ class _StructureEditorPanelState extends State<StructureEditorPanel> {
     try {
       draft = _buildDraft();
     } on FormatException catch (e) {
-      setState(() => _error = e.message);
+      await _showPreviewMessage('预览失败', e.message);
       return;
     }
 
@@ -770,7 +769,6 @@ class _StructureEditorPanelState extends State<StructureEditorPanel> {
     final table = widget.table ?? _tableName.text;
     final structure = widget.structure;
     setState(() {
-      _error = null;
       _previewing = true;
     });
     AlterPlan plan;
@@ -781,21 +779,8 @@ class _StructureEditorPanelState extends State<StructureEditorPanel> {
     } catch (e) {
       if (mounted) {
         final message = '$e';
-        final noChanges = message == '没有任何改动';
-        setState(() {
-          _error = noChanges ? null : message;
-          _previewing = false;
-        });
-        if (noChanges) {
-          await showDialog<void>(
-            context: context,
-            builder: (context) => AlertDialog(
-              title: const Text('提示'),
-              content: Text(message),
-              actions: [TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('确定'))],
-            ),
-          );
-        }
+        setState(() => _previewing = false);
+        await _showPreviewMessage(message == '没有任何改动' ? '提示' : '预览失败', message);
       }
       return;
     }
@@ -818,6 +803,25 @@ class _StructureEditorPanelState extends State<StructureEditorPanel> {
       }
     }
   }
+
+  Future<void> _showPreviewMessage(String title, String message) => showDialog<void>(
+    context: context,
+    barrierDismissible: false,
+    builder: (context) => AlertDialog(
+      title: Row(
+        children: [
+          Icon(
+            title == '提示' ? Icons.info_outline : Icons.error_outline,
+            color: title == '提示' ? Theme.of(context).colorScheme.primary : Theme.of(context).colorScheme.error,
+          ),
+          const SizedBox(width: 8),
+          Expanded(child: Text(title)),
+        ],
+      ),
+      content: SingleChildScrollView(child: SelectableText(message)),
+      actions: [TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('确定'))],
+    ),
+  );
 
   void _addColumn({int? after}) {
     setState(() {
@@ -911,7 +915,6 @@ class _StructureEditorPanelState extends State<StructureEditorPanel> {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final titleStyle = Theme.of(context).textTheme.titleMedium;
-    final error = _error;
     final content = Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -955,11 +958,6 @@ class _StructureEditorPanelState extends State<StructureEditorPanel> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    if (error != null)
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 8),
-                        child: SelectableText(error, style: TextStyle(color: scheme.error, fontSize: 12)),
-                      ),
                     Row(
                       children: [
                         Text('改动在预览确认之前不会写入数据库', style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant)),
@@ -1702,20 +1700,29 @@ class _PreviewDialogState extends State<_PreviewDialog> {
           _running = false;
           _error = widget.notifyResult ? null : '$e';
         });
-        if (widget.notifyResult) await _showResult('执行失败', '$e');
+        if (widget.notifyResult) await _showResult('执行失败', '$e', succeeded: false);
       }
       return;
     }
     if (!mounted) return;
-    if (widget.notifyResult) await _showResult('执行成功', '表结构修改已执行成功。');
+    if (widget.notifyResult) await _showResult('执行成功', '表结构修改已执行成功。', succeeded: true);
     if (mounted) Navigator.of(context).pop(true);
   }
 
-  Future<void> _showResult(String title, String message) => showDialog<void>(
+  Future<void> _showResult(String title, String message, {required bool succeeded}) => showDialog<void>(
     context: context,
     barrierDismissible: false,
     builder: (context) => AlertDialog(
-      title: Text(title),
+      title: Row(
+        children: [
+          Icon(
+            succeeded ? Icons.check_circle_outline : Icons.error_outline,
+            color: succeeded ? Colors.green.shade700 : Theme.of(context).colorScheme.error,
+          ),
+          const SizedBox(width: 8),
+          Expanded(child: Text(title)),
+        ],
+      ),
       content: SingleChildScrollView(child: SelectableText(message)),
       actions: [TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('确定'))],
     ),

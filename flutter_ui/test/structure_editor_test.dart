@@ -308,14 +308,50 @@ void main() {
     expect(find.text('预览 DDL'), findsOneWidget);
   });
 
-  testWidgets('预览失败时显示 core 给的原因，不弹预览', (tester) async {
+  testWidgets('PRIMARY 重复时弹窗显示 core 原因，关闭后保留索引草稿', (tester) async {
     final source = await openEditor(tester);
-    source.previewError = Exception('索引 idx_title 没有列');
+    await tester.tap(find.text('索引 2').last);
+    await settle(tester);
+    await tester.enterText(find.widgetWithText(TextField, 'idx_title'), 'PRIMARY');
+    source.previewError = '索引名 PRIMARY 重复了';
 
     await tester.tap(find.text('预览 DDL'));
     await settle(tester);
-    expect(find.textContaining('索引 idx_title 没有列'), findsOneWidget);
+    expect(find.text('预览失败'), findsOneWidget);
+    expect(find.descendant(of: find.byType(AlertDialog), matching: find.text('索引名 PRIMARY 重复了')), findsOneWidget);
     expect(find.text('确认要执行的 DDL'), findsNothing);
+    expect(source.applied, isEmpty);
+    await tester.tap(find.text('确定'));
+    await settle(tester);
+    expect(find.byType(AlertDialog), findsNothing);
+    expect(find.text('索引名 PRIMARY 重复了'), findsNothing);
+    expect(find.text('添加索引'), findsOneWidget);
+    expect(find.byKey(const ValueKey('column-name-display-1')), findsNothing);
+    expect(find.widgetWithText(TextField, 'PRIMARY'), findsNWidgets(2));
+
+    source.previewError = null;
+    await tester.enterText(find.widgetWithText(TextField, 'PRIMARY').last, 'idx_title_fixed');
+    await tester.tap(find.text('预览 DDL'));
+    await settle(tester);
+    expect(find.text('确认要执行的 DDL'), findsOneWidget);
+    expect(source.previews.last.indexes[1].name, 'idx_title_fixed');
+  });
+
+  testWidgets('索引前缀格式错误弹窗提示，不请求 core 预览', (tester) async {
+    final source = await openEditor(tester);
+    await tester.tap(find.text('索引 2').last);
+    await settle(tester);
+    await tester.enterText(find.widgetWithText(TextField, '10'), 'abc');
+    await tester.tap(find.text('预览 DDL'));
+    await settle(tester);
+    expect(find.text('预览失败'), findsOneWidget);
+    expect(find.descendant(of: find.byType(AlertDialog), matching: find.textContaining('前缀长度「abc」不是数字')), findsOneWidget);
+    expect(source.previews, isEmpty);
+    expect(source.applied, isEmpty);
+    await tester.tap(find.text('确定'));
+    await settle(tester);
+    expect(find.textContaining('前缀长度「abc」不是数字'), findsNothing);
+    expect(find.widgetWithText(TextField, 'abc'), findsOneWidget);
   });
 
   testWidgets('索引执行成功弹窗，确认后重读结构并保留索引页', (tester) async {
@@ -578,9 +614,11 @@ void main() {
     await settle(tester);
     await tester.tap(find.text('预览 DDL'));
     await settle(tester);
-    expect(find.textContaining('已经有叫 users 的表'), findsOneWidget);
+    expect(find.descendant(of: find.byType(AlertDialog), matching: find.textContaining('已经有叫 users 的表')), findsOneWidget);
     expect(find.text('确认要执行的 DDL'), findsNothing);
 
+    await tester.tap(find.text('确定'));
+    await settle(tester);
     await tester.tap(find.text('取消'));
     await settle(tester);
     expect(await result, isNull);
