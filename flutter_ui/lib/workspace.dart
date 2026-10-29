@@ -1,5 +1,6 @@
 import 'package:file_selector/file_selector.dart' show XTypeGroup, openFile;
 import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart' show DragStartBehavior;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -171,6 +172,7 @@ class WorkspaceView extends StatefulWidget {
 }
 
 class WorkspaceViewState extends State<WorkspaceView> {
+  double _sidebarWidth = 225;
   static const _library = RustSqlLibrary();
 
   /// 快捷键挂在这个节点上。切标签时旧标签被 IndexedStack 设成不可聚焦，焦点会退到路由那一层、
@@ -552,114 +554,148 @@ class WorkspaceViewState extends State<WorkspaceView> {
                   onClose: () => setState(() => _error = null),
                 ),
               Expanded(
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    TableSidebar(
-                      source: _ws.schema,
-                      database: tab.database,
-                      onlyDatabases: _ws.databases,
-                      selectedTable: tab.table,
-                      onDatabaseChanged: _switchDatabase,
-                      onTableSelected: _openTable,
-                      onShowStructure: _showStructureOf,
-                      onCreateTable: _createTable,
-                      onOpenInNewTab: (table) {
-                        setState(
-                          () => _addTab(database: tab.database, table: table),
-                        );
-                        widget.onSelectionChanged();
-                      },
-                      onTableAction: _afterTableAction,
-                      onImport: (table) async {
-                        final file = await openFile(
-                          acceptedTypeGroups: const [
-                            XTypeGroup(
-                              label: 'CSV / SQL',
-                              extensions: ['csv', 'tsv', 'txt', 'sql'],
-                            ),
-                          ],
-                        );
-                        if (file == null || !mounted) return false;
-
-                        final path = file.path;
-                        final extension = path.split('.').last.toLowerCase();
-                        final bool changed;
-                        if (extension == 'sql') {
-                          changed = await showSqlImportDialog(
-                            this.context,
-                            sessionId: _ws.schemaId,
-                            database: tab.database,
-                            initialPath: path,
-                          );
-                          if (changed && mounted) {
-                            await _ensureCatalog(tab, force: true);
-                          }
-                        } else if (extension == 'csv' ||
-                            extension == 'tsv' ||
-                            extension == 'txt') {
-                          if (table == null || tab.database.isEmpty) {
-                            setState(() => _error = '导入 CSV 请先在左侧右键选择目标表');
-                            return false;
-                          }
-                          // CSV 导入用侧栏会话的独占连接，不占查询标签的会话。
-                          changed = await showImportDialog(
-                            this.context,
-                            source: _ws.imports,
-                            database: tab.database,
-                            table: table,
-                            initialPath: path,
-                          );
-                        } else {
-                          setState(() => _error = '只支持 CSV、TSV、TXT 或 SQL 文件');
-                          return false;
-                        }
-                        if (changed &&
-                            mounted &&
-                            tab.mode == WorkspaceMode.content) {
-                          _loadTable(tab);
-                        }
-                        return changed;
-                      },
-                    ),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          MacTabStrip(
-                            tabs: [
-                              for (final (workspace, index) in _allTabs)
-                                MacTab(
-                                  key: ValueKey(
-                                    'tab-${workspace.tabs[index].id}',
-                                  ),
-                                  title: workspace.tabs[index].title,
-                                  tooltip:
-                                      '${workspace.name} · ${workspace.tabs[index].title}',
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final maxSidebarWidth = (constraints.maxWidth - 365).clamp(
+                      180.0,
+                      560.0,
+                    );
+                    final sidebarWidth = _sidebarWidth.clamp(
+                      180.0,
+                      maxSidebarWidth,
+                    );
+                    return Row(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        TableSidebar(
+                          width: sidebarWidth,
+                          source: _ws.schema,
+                          database: tab.database,
+                          onlyDatabases: _ws.databases,
+                          selectedTable: tab.table,
+                          onDatabaseChanged: _switchDatabase,
+                          onTableSelected: _openTable,
+                          onShowStructure: _showStructureOf,
+                          onCreateTable: _createTable,
+                          onOpenInNewTab: (table) {
+                            setState(
+                              () =>
+                                  _addTab(database: tab.database, table: table),
+                            );
+                            widget.onSelectionChanged();
+                          },
+                          onTableAction: _afterTableAction,
+                          onImport: (table) async {
+                            final file = await openFile(
+                              acceptedTypeGroups: const [
+                                XTypeGroup(
+                                  label: 'CSV / SQL',
+                                  extensions: ['csv', 'tsv', 'txt', 'sql'],
                                 ),
-                            ],
-                            active: _allTabs.indexOf((_ws, _ws.active)),
-                            onSelect: _selectAt,
-                            onClose: _closeAt,
-                            onReorder: _reorderAt,
-                            onAdd: duplicateTab,
-                            addTooltip:
-                                '新标签（${_isMac ? '⇧⌘T' : 'Ctrl+Shift+T'}）',
-                          ),
-                          Expanded(
-                            // 不在前台的标签也留着，切回来结果、编辑器内容、滚动位置都还在
-                            child: IndexedStack(
-                              index: _ws.active,
-                              children: [
-                                for (final item in _ws.tabs)
-                                  _buildTabBody(item),
                               ],
-                            ),
+                            );
+                            if (file == null || !mounted) return false;
+
+                            final path = file.path;
+                            final extension = path
+                                .split('.')
+                                .last
+                                .toLowerCase();
+                            final bool changed;
+                            if (extension == 'sql') {
+                              changed = await showSqlImportDialog(
+                                this.context,
+                                sessionId: _ws.schemaId,
+                                database: tab.database,
+                                initialPath: path,
+                              );
+                              if (changed && mounted) {
+                                await _ensureCatalog(tab, force: true);
+                              }
+                            } else if (extension == 'csv' ||
+                                extension == 'tsv' ||
+                                extension == 'txt') {
+                              if (table == null || tab.database.isEmpty) {
+                                setState(() => _error = '导入 CSV 请先在左侧右键选择目标表');
+                                return false;
+                              }
+                              // CSV 导入用侧栏会话的独占连接，不占查询标签的会话。
+                              changed = await showImportDialog(
+                                this.context,
+                                source: _ws.imports,
+                                database: tab.database,
+                                table: table,
+                                initialPath: path,
+                              );
+                            } else {
+                              setState(
+                                () => _error = '只支持 CSV、TSV、TXT 或 SQL 文件',
+                              );
+                              return false;
+                            }
+                            if (changed &&
+                                mounted &&
+                                tab.mode == WorkspaceMode.content) {
+                              _loadTable(tab);
+                            }
+                            return changed;
+                          },
+                        ),
+                        MouseRegion(
+                          cursor: SystemMouseCursors.resizeLeftRight,
+                          child: GestureDetector(
+                            key: const ValueKey('sidebar-resize-handle'),
+                            dragStartBehavior: DragStartBehavior.down,
+                            behavior: HitTestBehavior.opaque,
+                            onHorizontalDragStart: (_) =>
+                                _sidebarWidth = sidebarWidth,
+                            onHorizontalDragUpdate: (details) => setState(() {
+                              _sidebarWidth = (_sidebarWidth + details.delta.dx)
+                                  .clamp(180.0, maxSidebarWidth);
+                            }),
+                            child: const SizedBox(width: 5),
                           ),
-                        ],
-                      ),
-                    ),
-                  ],
+                        ),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              MacTabStrip(
+                                tabs: [
+                                  for (final (workspace, index) in _allTabs)
+                                    MacTab(
+                                      key: ValueKey(
+                                        'tab-${workspace.tabs[index].id}',
+                                      ),
+                                      title: workspace.tabs[index].title,
+                                      tooltip:
+                                          '${workspace.name} · ${workspace.tabs[index].title}',
+                                    ),
+                                ],
+                                active: _allTabs.indexOf((_ws, _ws.active)),
+                                onSelect: _selectAt,
+                                onClose: _closeAt,
+                                onReorder: _reorderAt,
+                                onAdd: duplicateTab,
+                                addTooltip:
+                                    '新标签（${_isMac ? '⇧⌘T' : 'Ctrl+Shift+T'}）',
+                              ),
+                              Expanded(
+                                // 不在前台的标签也留着，切回来结果、编辑器内容、滚动位置都还在
+                                child: IndexedStack(
+                                  index: _ws.active,
+                                  children: [
+                                    for (final item in _ws.tabs)
+                                      _buildTabBody(item),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    );
+                  },
                 ),
               ),
             ],

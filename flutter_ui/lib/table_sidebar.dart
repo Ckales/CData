@@ -13,6 +13,7 @@ import 'theme.dart';
 /// 选库、过滤、点表浏览数据，右键看结构、导入、新建表。
 class TableSidebar extends StatefulWidget {
   final SchemaSource source;
+  final double width;
   final String database;
 
   /// 非空时侧栏只列这些库。当前库即使不在里面也留着，避免打开的标签失去入口
@@ -46,6 +47,7 @@ class TableSidebar extends StatefulWidget {
   const TableSidebar({
     super.key,
     required this.source,
+    this.width = 225,
     required this.database,
     this.onlyDatabases = const [],
     this.selectedTable,
@@ -611,7 +613,7 @@ class _TableSidebarState extends State<TableSidebar> {
     final mac = MacColors.of(context);
 
     return Container(
-      width: 225,
+      width: widget.width,
       decoration: BoxDecoration(
         color: mac.sidebar,
         border: Border(right: BorderSide(color: mac.separator)),
@@ -716,6 +718,7 @@ class _TableSidebarState extends State<TableSidebar> {
                     itemBuilder: (context, index) {
                       final table = visible[index];
                       return SidebarItem(
+                        showOverflowTooltip: true,
                         icon: table.isView
                             ? Icons.visibility_outlined
                             : Icons.grid_on,

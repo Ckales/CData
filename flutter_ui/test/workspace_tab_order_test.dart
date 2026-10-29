@@ -1,4 +1,5 @@
 import 'package:cdata_flutter/mac_widgets.dart';
+import 'package:cdata_flutter/table_sidebar.dart';
 import 'package:cdata_flutter/src/rust/api/db.dart';
 import 'package:cdata_flutter/src/rust/api/options.dart';
 import 'package:cdata_flutter/src/rust/frb_generated.dart';
@@ -66,6 +67,19 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
+    final sidebar = find.byType(TableSidebar).first;
+    final handle = find.byKey(const ValueKey('sidebar-resize-handle')).first;
+    expect(tester.getSize(sidebar).width, 225);
+    await tester.drag(handle, const Offset(100, 0));
+    await tester.pumpAndSettle();
+    expect(tester.getSize(sidebar).width, 325);
+    await tester.drag(handle, const Offset(1000, 0));
+    await tester.pumpAndSettle();
+    expect(tester.getSize(sidebar).width, 435);
+    await tester.drag(handle, const Offset(-1000, 0));
+    await tester.pumpAndSettle();
+    expect(tester.getSize(sidebar).width, 180);
+    expect(tester.takeException(), isNull);
     keys[0].currentState!.duplicateTab();
     rebuild(() {});
     await tester.pumpAndSettle();

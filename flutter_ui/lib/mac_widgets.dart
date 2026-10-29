@@ -201,6 +201,7 @@ class SidebarItem extends StatelessWidget {
   final IconData icon;
   final Color iconColor;
   final String label;
+  final bool showOverflowTooltip;
   final String? trailing;
   final bool selected;
   final VoidCallback? onTap;
@@ -215,6 +216,7 @@ class SidebarItem extends StatelessWidget {
     required this.icon,
     required this.iconColor,
     required this.label,
+    this.showOverflowTooltip = false,
     this.trailing,
     this.selected = false,
     this.onTap,
@@ -254,15 +256,39 @@ class SidebarItem extends StatelessWidget {
                   ),
                   const SizedBox(width: 6),
                   Expanded(
-                    child: Text(
-                      label,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: foreground,
-                        fontWeight: selected ? FontWeight.w600 : null,
-                      ),
+                    child: LayoutBuilder(
+                      builder: (context, constraints) {
+                        final style = DefaultTextStyle.of(context).style.merge(
+                          TextStyle(
+                            fontSize: 12,
+                            color: foreground,
+                            fontWeight: selected ? FontWeight.w600 : null,
+                          ),
+                        );
+                        final text = Text(
+                          label,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: style,
+                        );
+                        if (!showOverflowTooltip) return text;
+                        final painter = TextPainter(
+                          text: TextSpan(text: label, style: style),
+                          maxLines: 1,
+                          ellipsis: '…',
+                          textDirection: Directionality.of(context),
+                          textScaler: MediaQuery.textScalerOf(context),
+                          locale: Localizations.maybeLocaleOf(context),
+                        )..layout(maxWidth: constraints.maxWidth);
+                        final truncated = painter.didExceedMaxLines;
+                        painter.dispose();
+                        if (!truncated) return text;
+                        return Tooltip(
+                          message: label,
+                          waitDuration: const Duration(milliseconds: 500),
+                          child: text,
+                        );
+                      },
                     ),
                   ),
                   if (trailing != null)

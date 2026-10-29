@@ -2,7 +2,7 @@
 
 import 'package:cdata_flutter/src/rust/api/schema.dart';
 import 'package:cdata_flutter/table_sidebar.dart';
-import 'package:flutter/gestures.dart' show kSecondaryButton;
+import 'package:flutter/gestures.dart' show kSecondaryButton, PointerDeviceKind;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -13,6 +13,7 @@ Future<void> pumpSidebar(
   WidgetTester tester,
   FakeSchemaSource source, {
   String database = 'shop',
+  double width = 225,
   void Function(String table)? onTableSelected,
   void Function(String database)? onDatabaseChanged,
   void Function(String table)? onShowStructure,
@@ -27,6 +28,7 @@ Future<void> pumpSidebar(
       home: Scaffold(
         body: TableSidebar(
           source: source,
+          width: width,
           database: database,
           onDatabaseChanged: onDatabaseChanged ?? (_) {},
           onTableSelected: onTableSelected ?? (_) {},
@@ -44,6 +46,44 @@ Future<void> pumpSidebar(
 }
 
 void main() {
+  testWidgets('鼠标悬停在省略的表名上显示完整名称', (tester) async {
+    const name = 'uf_project_credential_model_mapping';
+    final source = FakeSchemaSource(
+      dbs: ['shop'],
+      tablesByDb: {
+        'shop': [TableInfo(name: name, estimatedRows: BigInt.from(36), isView: false)],
+      },
+    );
+    await pumpSidebar(tester, source);
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    await mouse.addPointer(location: Offset.zero);
+    await mouse.moveTo(tester.getCenter(find.text(name)));
+    await tester.pump(const Duration(milliseconds: 800));
+    await tester.pumpAndSettle();
+    expect(find.text(name), findsNWidgets(2));
+    await mouse.moveTo(Offset.zero);
+    await tester.pumpAndSettle();
+    await pumpSidebar(tester, source, width: 560);
+    await mouse.moveTo(tester.getCenter(find.text(name)));
+    await tester.pump(const Duration(milliseconds: 800));
+    await tester.pumpAndSettle();
+    expect(find.text(name), findsOneWidget);
+    await mouse.removePointer();
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('完整显示的表名不弹出提示', (tester) async {
+    await pumpSidebar(tester, FakeSchemaSource.simple());
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    await mouse.addPointer(location: Offset.zero);
+    await mouse.moveTo(tester.getCenter(find.text('users')));
+    await tester.pump(const Duration(milliseconds: 800));
+    await tester.pumpAndSettle();
+    expect(find.text('users'), findsOneWidget);
+    await mouse.removePointer();
+    await tester.pumpAndSettle();
+  });
+
   testWidgets('勾选过的库才出现在选择器里', (tester) async {
     final source = FakeSchemaSource(
       dbs: ['shop', 'analytics', 'mysql'],
