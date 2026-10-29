@@ -552,6 +552,7 @@ class StructureEditorPanel extends StatefulWidget {
   /// 嵌入结构页时由父层持有页签控制器，刷新草稿不重置当前页签。
   final bool inheritTabController;
   final VoidCallback? onApplied;
+  final VoidCallback? onView;
   final VoidCallback? onCancel;
 
   const StructureEditorPanel({
@@ -563,6 +564,7 @@ class StructureEditorPanel extends StatefulWidget {
     this.dialog = false,
     this.inheritTabController = false,
     this.onApplied,
+    this.onView,
     this.onCancel,
   });
 
@@ -964,8 +966,15 @@ class _StructureEditorPanelState extends State<StructureEditorPanel> {
                         const Spacer(),
                         OutlinedButton(
                           onPressed: widget.dialog ? () => Navigator.of(context).pop() : widget.onCancel,
-                          child: Text(widget.dialog ? '取消' : '查看'),
+                          child: const Text('取消'),
                         ),
+                        if (!widget.dialog) ...[
+                          const SizedBox(width: 8),
+                          OutlinedButton(
+                            onPressed: widget.onView,
+                            child: const Text('查看'),
+                          ),
+                        ],
                         const SizedBox(width: 8),
                         FilledButton(
                           onPressed: _previewing ? null : _preview,
@@ -1713,6 +1722,7 @@ class _PreviewDialogState extends State<_PreviewDialog> {
     context: context,
     barrierDismissible: false,
     builder: (context) => AlertDialog(
+      constraints: const BoxConstraints(maxWidth: 600),
       title: Row(
         children: [
           Icon(

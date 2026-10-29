@@ -85,6 +85,25 @@ Future<void> pumpStructure(WidgetTester tester, FakeSchemaSource source, String 
 }
 
 void main() {
+  testWidgets('取消撤销未执行的索引修改并留在当前编辑页', (tester) async {
+    final source = FakeSchemaSource.simple()..structures['posts'] = sampleStructure();
+    await pumpStructure(tester, source, 'posts', editable: true);
+    await tester.tap(find.text('索引 2'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('添加索引'));
+    await tester.pumpAndSettle();
+    expect(find.text('索引 3'), findsOneWidget);
+
+    await tester.tap(find.text('取消'));
+    await tester.pumpAndSettle();
+    expect(find.text('编辑'), findsNothing);
+    expect(find.text('添加索引'), findsOneWidget);
+    expect(find.text('预览 DDL'), findsOneWidget);
+    expect(find.text('索引 2'), findsOneWidget);
+    expect(find.text('索引 3'), findsNothing);
+    expect(source.applied, isEmpty);
+  });
+
   testWidgets('只读结构超宽时显示可拖动的底部横向滚动条', (tester) async {
     final source = FakeSchemaSource.simple()..structures['posts'] = sampleStructure();
     await pumpStructure(tester, source, 'posts');

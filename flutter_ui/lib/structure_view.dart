@@ -150,7 +150,10 @@ class _StructurePanelState extends State<StructurePanel> {
             table: widget.table,
             structure: structure,
             onApplied: _afterApplied,
-            onCancel: () => setState(() => _editing = false),
+            onView: () => setState(() => _editing = false),
+            onCancel: () => setState(() {
+              _structureVersion++;
+            }),
           ) : const SizedBox.shrink(),
         ),
         _readOnly(structure),
