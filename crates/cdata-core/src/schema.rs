@@ -27,7 +27,10 @@ pub async fn list_databases(pool: &DbPool) -> Result<Vec<String>, mysql_async::E
 }
 
 /// 某个库的表和视图
-pub async fn list_tables(pool: &DbPool, database: &str) -> Result<Vec<TableInfo>, mysql_async::Error> {
+pub async fn list_tables(
+    pool: &DbPool,
+    database: &str,
+) -> Result<Vec<TableInfo>, mysql_async::Error> {
     let mut conn = pool.get_conn().await?;
     let rows: Vec<(String, Option<u64>, String)> = conn
         .exec(

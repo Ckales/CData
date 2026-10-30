@@ -28,7 +28,11 @@ fn config_from_env() -> Option<ConnectionConfig> {
 }
 
 fn leaf(column: &str, op: FilterOp, value: &str) -> FilterItem {
-    FilterItem::Condition(FilterCondition { column: column.to_string(), op, value: value.to_string() })
+    FilterItem::Condition(FilterCondition {
+        column: column.to_string(),
+        op,
+        value: value.to_string(),
+    })
 }
 
 fn group(match_all: bool, items: Vec<FilterItem>) -> FilterGroup {
@@ -37,7 +41,9 @@ fn group(match_all: bool, items: Vec<FilterItem>) -> FilterGroup {
 
 /// 手写 SQL 的 COUNT(*)，拿来和筛选结果比
 async fn count(session_id: u64, sql: &str) -> u64 {
-    cdata_core::session::execute(session_id, sql, 10).await.expect("计数失败");
+    cdata_core::session::execute(session_id, sql, 10)
+        .await
+        .expect("计数失败");
     let rows = cdata_core::session::fetch_window(session_id, 0, 1).expect("取窗口失败");
     match rows[0][0] {
         CellValue::Int(n) => n as u64,
@@ -73,12 +79,22 @@ async fn in_and_not_in_match_hand_written_where() {
     let rows = cdata_core::session::fetch_window(id, 0, 3).unwrap();
     assert_eq!(rows[0][0], CellValue::Int(1), "排序照样生效");
 
-    let filter = group(true, vec![leaf("id", FilterOp::LtEq, "10"), leaf("id", FilterOp::NotIn, "2\n4")]);
+    let filter = group(
+        true,
+        vec![
+            leaf("id", FilterOp::LtEq, "10"),
+            leaf("id", FilterOp::NotIn, "2\n4"),
+        ],
+    );
     assert_eq!(filtered(id, &filter).await, 8);
 
     // NOT IN 不命中 NULL 行，和手写的一样，不偷偷补 OR IS NULL
     let filter = group(true, vec![leaf("note", FilterOp::NotIn, "不会有这个值")]);
-    let expected = count(id, "SELECT COUNT(*) FROM big_rows WHERE note NOT IN ('不会有这个值')").await;
+    let expected = count(
+        id,
+        "SELECT COUNT(*) FROM big_rows WHERE note NOT IN ('不会有这个值')",
+    )
+    .await;
     let nulls = count(id, "SELECT COUNT(*) FROM big_rows WHERE note IS NULL").await;
     assert!(nulls > 0, "测试库里 note 要有 NULL，这条才有意义");
     assert_eq!(filtered(id, &filter).await, expected);
@@ -98,14 +114,23 @@ async fn nested_groups_match_hand_written_where() {
     let filter = group(
         false,
         vec![
-            FilterItem::Group(group(true, vec![leaf("id", FilterOp::LtEq, "100"), leaf("status", FilterOp::Eq, "1")])),
+            FilterItem::Group(group(
+                true,
+                vec![
+                    leaf("id", FilterOp::LtEq, "100"),
+                    leaf("status", FilterOp::Eq, "1"),
+                ],
+            )),
             FilterItem::Group(group(
                 true,
                 vec![
                     leaf("id", FilterOp::In, "200\n300"),
                     FilterItem::Group(group(
                         false,
-                        vec![leaf("note", FilterOp::IsNull, ""), leaf("note", FilterOp::StartsWith, "")],
+                        vec![
+                            leaf("note", FilterOp::IsNull, ""),
+                            leaf("note", FilterOp::StartsWith, ""),
+                        ],
                     )),
                 ],
             )),
@@ -130,7 +155,14 @@ async fn nested_groups_match_hand_written_where() {
     )
     .await
     .unwrap();
-    assert!(matches!(summary.editability, cdata_core::edit::Editability::Editable(_)), "{:?}", summary.editability);
+    assert!(
+        matches!(
+            summary.editability,
+            cdata_core::edit::Editability::Editable(_)
+        ),
+        "{:?}",
+        summary.editability
+    );
 
     cdata_core::session::close_session(id).await.ok();
 }
@@ -145,9 +177,15 @@ async fn bad_lists_are_refused_before_reaching_the_server() {
 
     for value in ["", "1\nNULL"] {
         let filter = group(true, vec![leaf("id", FilterOp::NotIn, value)]);
-        let err = cdata_core::session::execute_filtered_view(id, "SELECT * FROM big_rows", &filter, None, 10)
-            .await
-            .unwrap_err();
+        let err = cdata_core::session::execute_filtered_view(
+            id,
+            "SELECT * FROM big_rows",
+            &filter,
+            None,
+            10,
+        )
+        .await
+        .unwrap_err();
         assert!(err.to_string().contains("id："), "{err}");
     }
 

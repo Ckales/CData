@@ -65,11 +65,19 @@ async fn probe(name: &str) -> Option<Probe> {
     .unwrap();
     drop(conn);
 
-    let nanos = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
     let tag = format!("imp-{name}-{}-{nanos}", std::process::id());
     let dir = std::env::temp_dir().join(&tag);
     std::fs::create_dir_all(&dir).unwrap();
-    Some(Probe { pool, schema, tag, dir })
+    Some(Probe {
+        pool,
+        schema,
+        tag,
+        dir,
+    })
 }
 
 impl Probe {
@@ -86,14 +94,26 @@ impl Probe {
 
     async fn cleanup(&self) {
         let mut conn = self.pool.get_conn().await.unwrap();
-        conn.exec_drop("DELETE FROM import_probe WHERE run_tag LIKE ?", (format!("{}%", self.tag),))
-            .await
-            .unwrap();
+        conn.exec_drop(
+            "DELETE FROM import_probe WHERE run_tag LIKE ?",
+            (format!("{}%", self.tag),),
+        )
+        .await
+        .unwrap();
         std::fs::remove_dir_all(&self.dir).ok();
     }
 
-    async fn import(&self, path: &std::path::Path, options: ImportOptions, header: &[String], on_error: OnError, batch_rows: u32) -> ImportReport {
-        let target = import::prepare(&self.pool, &self.schema, "import_probe").await.unwrap();
+    async fn import(
+        &self,
+        path: &std::path::Path,
+        options: ImportOptions,
+        header: &[String],
+        on_error: OnError,
+        batch_rows: u32,
+    ) -> ImportReport {
+        let target = import::prepare(&self.pool, &self.schema, "import_probe")
+            .await
+            .unwrap();
         let request = ImportRequest {
             path: path.to_string_lossy().into_owned(),
             options,
@@ -136,12 +156,40 @@ async fn exported_csv_imports_back_identically() {
     };
     let source = format!("{}-src", probe.tag);
     let mut conn = probe.pool.get_conn().await.unwrap();
-    let rows: Vec<(Option<&str>, Option<&str>, Option<Vec<u8>>, i32, Option<&str>, Option<&str>)> = vec![
-        (Some("a,b \"q\""), Some("1234567.89"), Some(vec![0x00, 0xFF]), 1, Some("多\r\n行"), Some("2026-09-24 01:02:03.000004")),
+    let rows: Vec<(
+        Option<&str>,
+        Option<&str>,
+        Option<Vec<u8>>,
+        i32,
+        Option<&str>,
+        Option<&str>,
+    )> = vec![
+        (
+            Some("a,b \"q\""),
+            Some("1234567.89"),
+            Some(vec![0x00, 0xFF]),
+            1,
+            Some("多\r\n行"),
+            Some("2026-09-24 01:02:03.000004"),
+        ),
         (None, None, None, 2, Some(""), None),
-        (Some("NULL"), Some("0.00"), Some(vec![]), 3, Some("\\N"), None),
+        (
+            Some("NULL"),
+            Some("0.00"),
+            Some(vec![]),
+            3,
+            Some("\\N"),
+            None,
+        ),
         (Some(""), Some("-5.10"), None, 4, Some("中文；\t制表"), None),
-        (Some("\\N"), None, Some(vec![0x30]), -5, None, Some("2026-01-01 00:00:00.000000")),
+        (
+            Some("\\N"),
+            None,
+            Some(vec![0x30]),
+            -5,
+            None,
+            Some("2026-01-01 00:00:00.000000"),
+        ),
     ];
     for (txt, amount, bin, req, note, dt) in rows {
         conn.exec_drop(
@@ -189,7 +237,9 @@ async fn exported_csv_imports_back_identically() {
             null_text: null_text.to_string(),
         };
         let header = names(&["run_tag", "txt", "amount", "bin", "req", "note", "dt"]);
-        let report = probe.import(&path, options, &header, OnError::RollbackAll, 2).await;
+        let report = probe
+            .import(&path, options, &header, OnError::RollbackAll, 2)
+            .await;
         outcomes.push((format!("{encoding:?}"), report, probe.rows(&copy).await));
     }
     let original = probe.rows(&source).await;
@@ -197,10 +247,17 @@ async fn exported_csv_imports_back_identically() {
 
     assert_eq!(original.rows.len(), 5);
     for (label, report, copied) in outcomes {
-        assert_eq!(report.outcome, ImportOutcome::Completed, "{label}: {report:?}");
+        assert_eq!(
+            report.outcome,
+            ImportOutcome::Completed,
+            "{label}: {report:?}"
+        );
         assert_eq!(report.progress.rows_inserted, 5, "{label}");
         assert_eq!(report.progress.rows_failed, 0, "{label}");
-        assert_eq!(copied.rows, original.rows, "{label}：NULL、空串、\"NULL\"、二进制、换行都要原样回来");
+        assert_eq!(
+            copied.rows, original.rows,
+            "{label}：NULL、空串、\"NULL\"、二进制、换行都要原样回来"
+        );
     }
 }
 
@@ -235,7 +292,9 @@ async fn skip_mode_keeps_good_rows_and_collects_every_bad_one() {
     let header = names(&["run_tag", "txt", "amount", "req", "note"]);
 
     // 每批 2 行：坏行落在不同批里，要靠 SAVEPOINT 逐行重试才能找出来
-    let target = import::prepare(&probe.pool, &probe.schema, "import_probe").await.unwrap();
+    let target = import::prepare(&probe.pool, &probe.schema, "import_probe")
+        .await
+        .unwrap();
     let request = ImportRequest {
         path: path.to_string_lossy().into_owned(),
         options: utf8_options(),
@@ -264,10 +323,26 @@ async fn skip_mode_keeps_good_rows_and_collects_every_bad_one() {
     }
     failed_lines.sort();
     assert_eq!(failed_lines, [3, 4, 5, 6]);
-    let reason = |line: u64| report.errors.iter().find(|e| e.line == line).unwrap().reason.clone();
-    assert!(reason(3).contains("req") && reason(3).contains("NULL"), "{}", reason(3));
+    let reason = |line: u64| {
+        report
+            .errors
+            .iter()
+            .find(|e| e.line == line)
+            .unwrap()
+            .reason
+            .clone()
+    };
+    assert!(
+        reason(3).contains("req") && reason(3).contains("NULL"),
+        "{}",
+        reason(3)
+    );
     // 非 strict 下这两行会被 MySQL 静默改成 0 和截断，导入连接强制 strict 才会报错
-    assert!(reason(4).contains("1366") || reason(4).contains("decimal"), "{}", reason(4));
+    assert!(
+        reason(4).contains("1366") || reason(4).contains("decimal"),
+        "{}",
+        reason(4)
+    );
     assert!(reason(5).contains("1406"), "{}", reason(5));
     assert!(reason(6).contains("4 列"), "{}", reason(6));
 
@@ -292,8 +367,14 @@ async fn skip_mode_keeps_good_rows_and_collects_every_bad_one() {
     assert_eq!(saved.unwrap(), 4);
     let lines: Vec<&str> = error_csv.split("\r\n").collect();
     assert_eq!(lines[0], "run_tag,txt,amount,req,note,错误原因");
-    assert!(error_csv.contains(&format!("{},bad-null,2.00,NULL,b,第 3 行：", probe.tag)), "{error_csv}");
-    assert!(error_csv.contains(&format!("{},short,5.00,5,第 6 行：", probe.tag)), "{error_csv}");
+    assert!(
+        error_csv.contains(&format!("{},bad-null,2.00,NULL,b,第 3 行：", probe.tag)),
+        "{error_csv}"
+    );
+    assert!(
+        error_csv.contains(&format!("{},short,5.00,5,第 6 行：", probe.tag)),
+        "{error_csv}"
+    );
 }
 
 #[tokio::test]
@@ -305,7 +386,9 @@ async fn rollback_mode_writes_nothing_but_still_reports_every_bad_row() {
     let path = probe.dir.join("mixed.csv");
     std::fs::write(&path, MIXED.replace("TAG", &probe.tag)).unwrap();
     let header = names(&["run_tag", "txt", "amount", "req", "note"]);
-    let report = probe.import(&path, utf8_options(), &header, OnError::RollbackAll, 2).await;
+    let report = probe
+        .import(&path, utf8_options(), &header, OnError::RollbackAll, 2)
+        .await;
     let rows = probe.rows(&probe.tag).await;
     probe.cleanup().await;
 
@@ -321,15 +404,27 @@ async fn target_columns_and_sql_mode_are_read_from_the_server() {
         eprintln!("跳过：未配置 CDATA_TEST_* 环境变量");
         return;
     };
-    let target = import::prepare(&probe.pool, &probe.schema, "import_probe").await.unwrap();
+    let target = import::prepare(&probe.pool, &probe.schema, "import_probe")
+        .await
+        .unwrap();
     let mut conn = probe.pool.get_conn().await.unwrap();
-    let session_mode: String = conn.query_first("SELECT @@SESSION.sql_mode").await.unwrap().unwrap();
+    let session_mode: String = conn
+        .query_first("SELECT @@SESSION.sql_mode")
+        .await
+        .unwrap()
+        .unwrap();
     // 共享的测试库不能改全局 sql_mode，只在这条连接上模拟非 strict，验证导入连接加 strict 的语句
     let mut forced = Vec::new();
     for start in ["", "ONLY_FULL_GROUP_BY"] {
-        conn.exec_drop("SET SESSION sql_mode = ?", (start,)).await.unwrap();
+        conn.exec_drop("SET SESSION sql_mode = ?", (start,))
+            .await
+            .unwrap();
         conn.query_drop(import::FORCE_STRICT_SQL).await.unwrap();
-        let mode: String = conn.query_first("SELECT @@SESSION.sql_mode").await.unwrap().unwrap();
+        let mode: String = conn
+            .query_first("SELECT @@SESSION.sql_mode")
+            .await
+            .unwrap()
+            .unwrap();
         forced.push(mode);
     }
     // 改过会话变量的连接不还回池里
@@ -352,7 +447,14 @@ async fn target_columns_and_sql_mode_are_read_from_the_server() {
     let rows = probe.rows(&probe.tag).await;
     probe.cleanup().await;
 
-    let column = |name: &str| target.columns.iter().find(|c| c.name == name).unwrap().clone();
+    let column = |name: &str| {
+        target
+            .columns
+            .iter()
+            .find(|c| c.name == name)
+            .unwrap()
+            .clone()
+    };
     assert!(column("id").auto_increment && !column("id").mandatory);
     assert!(column("run_tag").mandatory);
     assert!(column("req").mandatory);
@@ -360,9 +462,15 @@ async fn target_columns_and_sql_mode_are_read_from_the_server() {
     assert!(column("bin").is_binary && !column("txt").is_binary);
     assert!(column("total").generated && !column("total").mandatory);
 
-    assert_eq!(forced, ["STRICT_ALL_TABLES", "ONLY_FULL_GROUP_BY,STRICT_ALL_TABLES"]);
+    assert_eq!(
+        forced,
+        ["STRICT_ALL_TABLES", "ONLY_FULL_GROUP_BY,STRICT_ALL_TABLES"]
+    );
     assert_eq!(target.sql_mode, session_mode);
-    assert_eq!(target.strict, session_mode.contains("STRICT_TRANS_TABLES") || session_mode.contains("STRICT_ALL_TABLES"));
+    assert_eq!(
+        target.strict,
+        session_mode.contains("STRICT_TRANS_TABLES") || session_mode.contains("STRICT_ALL_TABLES")
+    );
 
     assert!(missing.unwrap_err().to_string().contains("不存在"));
     let err = refused.unwrap_err().to_string();
@@ -384,7 +492,9 @@ async fn cancel_after_first_batch(job: u64) {
     for _ in 0..3000 {
         match import::status(job).unwrap() {
             ImportStatus::Running(progress) if progress.rows_inserted > 0 => break,
-            ImportStatus::Finished(report) => panic!("取消之前导入就结束了，文件不够大：{report:?}"),
+            ImportStatus::Finished(report) => {
+                panic!("取消之前导入就结束了，文件不够大：{report:?}")
+            }
             _ => tokio::time::sleep(Duration::from_millis(5)).await,
         }
     }
@@ -404,7 +514,9 @@ async fn cancel_in_rollback_mode_leaves_nothing_behind() {
     let path = probe.dir.join("many.csv");
     std::fs::write(&path, many_rows(&probe.tag, 50_000)).unwrap();
     let header = names(&["run_tag", "txt", "amount", "req", "note"]);
-    let target = import::prepare(&probe.pool, &probe.schema, "import_probe").await.unwrap();
+    let target = import::prepare(&probe.pool, &probe.schema, "import_probe")
+        .await
+        .unwrap();
     let request = ImportRequest {
         path: path.to_string_lossy().into_owned(),
         options: utf8_options(),
@@ -421,8 +533,14 @@ async fn cancel_in_rollback_mode_leaves_nothing_behind() {
     let rows = count_rows(&probe).await;
     probe.cleanup().await;
 
-    assert!(matches!(report.outcome, ImportOutcome::Stopped(ref reason) if reason.contains("已取消")), "{report:?}");
-    assert_eq!(report.progress.rows_inserted, 0, "整体回滚模式取消后报告的提交行数必须是 0");
+    assert!(
+        matches!(report.outcome, ImportOutcome::Stopped(ref reason) if reason.contains("已取消")),
+        "{report:?}"
+    );
+    assert_eq!(
+        report.progress.rows_inserted, 0,
+        "整体回滚模式取消后报告的提交行数必须是 0"
+    );
     assert_eq!(rows, 0, "整体回滚模式取消后表里不能留下任何一行");
 }
 
@@ -435,7 +553,9 @@ async fn cancel_in_skip_mode_keeps_exactly_the_committed_batches() {
     let path = probe.dir.join("many.csv");
     std::fs::write(&path, many_rows(&probe.tag, 50_000)).unwrap();
     let header = names(&["run_tag", "txt", "amount", "req", "note"]);
-    let target = import::prepare(&probe.pool, &probe.schema, "import_probe").await.unwrap();
+    let target = import::prepare(&probe.pool, &probe.schema, "import_probe")
+        .await
+        .unwrap();
     let request = ImportRequest {
         path: path.to_string_lossy().into_owned(),
         options: utf8_options(),
@@ -452,8 +572,14 @@ async fn cancel_in_skip_mode_keeps_exactly_the_committed_batches() {
     let rows = count_rows(&probe).await;
     probe.cleanup().await;
 
-    assert!(matches!(report.outcome, ImportOutcome::Stopped(_)), "{report:?}");
-    assert!(rows > 0 && rows < 50_000, "取消应该落在中途，实际写了 {rows} 行");
+    assert!(
+        matches!(report.outcome, ImportOutcome::Stopped(_)),
+        "{report:?}"
+    );
+    assert!(
+        rows > 0 && rows < 50_000,
+        "取消应该落在中途，实际写了 {rows} 行"
+    );
     // 报告说提交了多少，表里就必须正好有多少：用户靠这个数决定从哪里续导
     assert_eq!(report.progress.rows_inserted as usize, rows);
     assert_eq!(rows % 5, 0, "跳过模式按批提交，取消只会停在批与批之间");

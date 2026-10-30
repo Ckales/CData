@@ -225,7 +225,9 @@ impl<R: Read> CsvReader<R> {
         let has_bom = head == UTF8_BOM;
         match (options.encoding, has_bom) {
             (ExportEncoding::Utf8Bom, false) => {
-                return Err("编码选的是 UTF-8（带 BOM），但文件开头没有 BOM，请改选 UTF-8".to_string())
+                return Err(
+                    "编码选的是 UTF-8（带 BOM），但文件开头没有 BOM，请改选 UTF-8".to_string(),
+                )
             }
             (ExportEncoding::Utf8, true) => {
                 return Err("文件开头有 UTF-8 的 BOM，编码请选 UTF-8（带 BOM）".to_string())
@@ -283,8 +285,11 @@ impl<R: Read> CsvReader<R> {
                     .max_utf8_buffer_length_without_replacement(src.len() - offset)
                     .expect("一块 64KB 算缓冲长度不会溢出");
                 self.text.reserve(needed);
-                let (result, consumed) =
-                    self.decoder.decode_to_string_without_replacement(&src[offset..], &mut self.text, last);
+                let (result, consumed) = self.decoder.decode_to_string_without_replacement(
+                    &src[offset..],
+                    &mut self.text,
+                    last,
+                );
                 offset += consumed;
                 match result {
                     DecoderResult::InputEmpty => break,
@@ -315,7 +320,10 @@ impl<R: Read> CsvReader<R> {
                 return Ok(None);
             }
         }
-        let ch = self.text[self.pos..].chars().next().expect("pos 在字符边界上");
+        let ch = self.text[self.pos..]
+            .chars()
+            .next()
+            .expect("pos 在字符边界上");
         self.pos += ch.len_utf8();
         if ch == '\n' {
             self.line += 1;
@@ -331,7 +339,11 @@ impl<R: Read> CsvReader<R> {
         };
         let mut fields = Vec::new();
         loop {
-            let (field, end) = if ch == '"' { self.quoted_field()? } else { self.unquoted_field(ch)? };
+            let (field, end) = if ch == '"' {
+                self.quoted_field()?
+            } else {
+                self.unquoted_field(ch)?
+            };
             fields.push(field);
             if let FieldEnd::Record = end {
                 return Ok(Some(Record { line, fields }));
@@ -340,7 +352,10 @@ impl<R: Read> CsvReader<R> {
                 Some(next) => ch = next,
                 // `a,b,` 结尾：最后还有一个空字段
                 None => {
-                    fields.push(Field { text: String::new(), quoted: false });
+                    fields.push(Field {
+                        text: String::new(),
+                        quoted: false,
+                    });
                     return Ok(Some(Record { line, fields }));
                 }
             }
@@ -370,7 +385,13 @@ impl<R: Read> CsvReader<R> {
                 }
             };
             if let Some(end) = end {
-                return Ok((Field { text, quoted: false }, end));
+                return Ok((
+                    Field {
+                        text,
+                        quoted: false,
+                    },
+                    end,
+                ));
             }
             current = self.next_char()?;
         }
@@ -412,7 +433,10 @@ impl<R: Read> CsvReader<R> {
     fn expect_line_feed(&mut self) -> std::result::Result<(), String> {
         match self.next_char()? {
             Some('\n') => Ok(()),
-            _ => Err(format!("第 {} 行：\\r 后面没有 \\n，只认 \\n 和 \\r\\n 两种换行", self.line)),
+            _ => Err(format!(
+                "第 {} 行：\\r 后面没有 \\n，只认 \\n 和 \\r\\n 两种换行",
+                self.line
+            )),
         }
     }
 }
@@ -426,14 +450,24 @@ fn parse_delimiter(delimiter: &str) -> std::result::Result<char, String> {
     }
 }
 
-fn open_file(path: &str, options: &ImportOptions) -> std::result::Result<(CsvReader<File>, u64), String> {
+fn open_file(
+    path: &str,
+    options: &ImportOptions,
+) -> std::result::Result<(CsvReader<File>, u64), String> {
     let file = File::open(path).map_err(|e| format!("打不开文件：{e}"))?;
-    let total = file.metadata().map_err(|e| format!("读文件信息失败：{e}"))?.len();
+    let total = file
+        .metadata()
+        .map_err(|e| format!("读文件信息失败：{e}"))?
+        .len();
     Ok((CsvReader::open(file, options)?, total))
 }
 
 /// 读前 limit 行给界面预览。有表头时表头不算在 limit 里
-pub fn preview(path: &str, options: &ImportOptions, limit: usize) -> std::result::Result<CsvPreview, String> {
+pub fn preview(
+    path: &str,
+    options: &ImportOptions,
+    limit: usize,
+) -> std::result::Result<CsvPreview, String> {
     let (reader, _) = open_file(path, options)?;
     preview_from(reader, options, limit)
 }
@@ -443,7 +477,12 @@ fn preview_from<R: Read>(
     options: &ImportOptions,
     limit: usize,
 ) -> std::result::Result<CsvPreview, String> {
-    let mut preview = CsvPreview { header: Vec::new(), column_count: 0, rows: Vec::new(), error: None };
+    let mut preview = CsvPreview {
+        header: Vec::new(),
+        column_count: 0,
+        rows: Vec::new(),
+        error: None,
+    };
     if options.header {
         match reader.next_record() {
             Ok(Some(record)) => {
@@ -476,12 +515,22 @@ fn preview_from<R: Read>(
         let mut cells = Vec::with_capacity(record.fields.len());
         for field in &record.fields {
             if is_null(field, &options.null_text) {
-                cells.push(DisplayCell { text: "NULL".to_string(), placeholder: true });
+                cells.push(DisplayCell {
+                    text: "NULL".to_string(),
+                    placeholder: true,
+                });
             } else {
-                cells.push(DisplayCell { text: field.text.clone(), placeholder: false });
+                cells.push(DisplayCell {
+                    text: field.text.clone(),
+                    placeholder: false,
+                });
             }
         }
-        preview.rows.push(PreviewRow { line: record.line, cells, error });
+        preview.rows.push(PreviewRow {
+            line: record.line,
+            cells,
+            error,
+        });
     }
     Ok(preview)
 }
@@ -494,13 +543,20 @@ fn column_count_error(record: &Record, expected: usize) -> Option<String> {
     if record.fields.len() == expected {
         return None;
     }
-    Some(format!("有 {} 列，应该是 {expected} 列", record.fields.len()))
+    Some(format!(
+        "有 {} 列，应该是 {expected} 列",
+        record.fields.len()
+    ))
 }
 
 // ---------------------------------------------------------------- 值与映射
 
 /// 一个字段按目标列解释成单元格值。和 export.rs 的写法一一对应
-fn field_value(field: &Field, is_binary: bool, null_text: &str) -> std::result::Result<CellValue, String> {
+fn field_value(
+    field: &Field,
+    is_binary: bool,
+    null_text: &str,
+) -> std::result::Result<CellValue, String> {
     if is_null(field, null_text) {
         return Ok(CellValue::Null);
     }
@@ -650,7 +706,9 @@ pub async fn prepare(pool: &DbPool, schema: &str, table: &str) -> Result<ImportT
         return Err(Error::BadInput(format!("表 {schema}.{table} 不存在")));
     };
     if table_type != "BASE TABLE" {
-        return Err(Error::BadInput(format!("{table} 不是表（{table_type}），只能导入到表")));
+        return Err(Error::BadInput(format!(
+            "{table} 不是表（{table_type}），只能导入到表"
+        )));
     }
     if transactions.as_deref() != Some("YES") {
         return Err(Error::BadInput(format!(
@@ -685,8 +743,12 @@ pub async fn prepare(pool: &DbPool, schema: &str, table: &str) -> Result<ImportT
     for (def, meta) in defs.into_iter().zip(metas) {
         let auto_increment = def.extra.contains("auto_increment");
         // EXTRA 里 DEFAULT_GENERATED 是表达式默认值，VIRTUAL / STORED GENERATED 才是生成列
-        let generated = def.extra.contains("VIRTUAL GENERATED") || def.extra.contains("STORED GENERATED");
-        let mandatory = !def.nullable && def.default == DefaultValue::NoDefault && !auto_increment && !generated;
+        let generated =
+            def.extra.contains("VIRTUAL GENERATED") || def.extra.contains("STORED GENERATED");
+        let mandatory = !def.nullable
+            && def.default == DefaultValue::NoDefault
+            && !auto_increment
+            && !generated;
         columns.push(TargetColumn {
             name: def.name,
             column_type: def.column_type,
@@ -699,7 +761,13 @@ pub async fn prepare(pool: &DbPool, schema: &str, table: &str) -> Result<ImportT
     }
 
     let strict = sql_mode.contains("STRICT_TRANS_TABLES") || sql_mode.contains("STRICT_ALL_TABLES");
-    Ok(ImportTarget { schema: schema.to_string(), table: table.to_string(), columns, sql_mode, strict })
+    Ok(ImportTarget {
+        schema: schema.to_string(),
+        table: table.to_string(),
+        columns,
+        sql_mode,
+        strict,
+    })
 }
 
 // ---------------------------------------------------------------- 任务
@@ -740,7 +808,8 @@ pub async fn start(pool: DbPool, request: ImportRequest) -> Result<u64> {
     if request.batch_rows == 0 {
         return Err(Error::BadInput("每批行数至少是 1".to_string()));
     }
-    let (mut reader, total_bytes) = open_file(&request.path, &request.options).map_err(Error::BadInput)?;
+    let (mut reader, total_bytes) =
+        open_file(&request.path, &request.options).map_err(Error::BadInput)?;
 
     let mut header = None;
     if request.options.header {
@@ -761,9 +830,15 @@ pub async fn start(pool: DbPool, request: ImportRequest) -> Result<u64> {
     static NEXT_JOB: AtomicU64 = AtomicU64::new(1);
     let job_id = NEXT_JOB.fetch_add(1, Ordering::Relaxed);
     let job = Arc::new(ImportJob {
-        status: Mutex::new(ImportStatus::Running(ImportProgress { total_bytes, ..Default::default() })),
+        status: Mutex::new(ImportStatus::Running(ImportProgress {
+            total_bytes,
+            ..Default::default()
+        })),
         cancel: AtomicBool::new(false),
-        error_path: std::env::temp_dir().join(format!("cdata-import-errors-{}-{job_id}.csv", std::process::id())),
+        error_path: std::env::temp_dir().join(format!(
+            "cdata-import-errors-{}-{job_id}.csv",
+            std::process::id()
+        )),
     });
     jobs().lock().unwrap().insert(job_id, job.clone());
 
@@ -779,7 +854,10 @@ pub async fn start(pool: DbPool, request: ImportRequest) -> Result<u64> {
         target,
         pairs,
         request,
-        progress: ImportProgress { total_bytes, ..Default::default() },
+        progress: ImportProgress {
+            total_bytes,
+            ..Default::default()
+        },
         pending: 0,
         errors: Vec::new(),
         error_file: errors,
@@ -865,7 +943,11 @@ struct Run {
 }
 
 impl Run {
-    async fn execute<R: Read>(&mut self, pool: &DbPool, reader: CsvReader<R>) -> std::result::Result<(), Stop> {
+    async fn execute<R: Read>(
+        &mut self,
+        pool: &DbPool,
+        reader: CsvReader<R>,
+    ) -> std::result::Result<(), Stop> {
         // 导入独占一条连接，结束后断开而不是还回池里：
         // 临时改的 sql_mode 和没收尾的事务都不会漏到用户后面的查询里
         let mut conn = pool.get_conn().await?;
@@ -891,7 +973,9 @@ impl Run {
 
         let column_count = self.request.mapping.len();
         // 一条语句的占位符有上限，列多的表每批少放几行
-        let batch_rows = (self.request.batch_rows as usize).min(MAX_PLACEHOLDERS / self.pairs.len()).max(1);
+        let batch_rows = (self.request.batch_rows as usize)
+            .min(MAX_PLACEHOLDERS / self.pairs.len())
+            .max(1);
         let mut batch: Vec<(Record, Vec<Value>)> = Vec::with_capacity(batch_rows);
 
         conn.query_drop("START TRANSACTION").await?;
@@ -906,7 +990,12 @@ impl Run {
 
             let checked = match column_count_error(&record, column_count) {
                 Some(reason) => Err(reason),
-                None => row_params(&record, &self.pairs, &self.target.columns, &self.request.options.null_text),
+                None => row_params(
+                    &record,
+                    &self.pairs,
+                    &self.target.columns,
+                    &self.request.options.null_text,
+                ),
             };
             match checked {
                 Ok(params) => batch.push((record, params)),
@@ -945,7 +1034,11 @@ impl Run {
     }
 
     /// 整批一条 INSERT。失败就退回批前的 SAVEPOINT，逐行重试，找出到底是哪几行
-    async fn flush(&mut self, conn: &mut Conn, batch: &mut Vec<(Record, Vec<Value>)>) -> std::result::Result<(), Stop> {
+    async fn flush(
+        &mut self,
+        conn: &mut Conn,
+        batch: &mut Vec<(Record, Vec<Value>)>,
+    ) -> std::result::Result<(), Stop> {
         if batch.is_empty() {
             return Ok(());
         }
@@ -961,7 +1054,10 @@ impl Run {
             params.extend(row.iter().cloned());
         }
         conn.query_drop("SAVEPOINT cdata_batch").await?;
-        match conn.exec_drop(insert_sql(schema, table, &names, batch.len()), params).await {
+        match conn
+            .exec_drop(insert_sql(schema, table, &names, batch.len()), params)
+            .await
+        {
             Ok(()) => {
                 expect_affected(conn, batch.len())?;
                 self.pending += batch.len() as u64;
@@ -997,7 +1093,10 @@ impl Run {
         self.progress.rows_failed += 1;
         self.error_file.write(record, &reason).map_err(Stop::File)?;
         if self.errors.len() < MAX_REPORTED_ERRORS {
-            self.errors.push(RowError { line: record.line, reason });
+            self.errors.push(RowError {
+                line: record.line,
+                reason,
+            });
         }
         Ok(())
     }
@@ -1012,19 +1111,34 @@ impl Run {
         let flushed = self.error_file.finish();
         let committed = self.progress.rows_inserted;
         let outcome = match (result, flushed) {
-            (Ok(()), Err(message)) | (Err(Stop::File(message)), _) => ImportOutcome::Stopped(stopped_message(&message, committed)),
-            (Err(Stop::Database(err)), _) => ImportOutcome::Stopped(stopped_message(&err.to_string(), committed)),
-            (Err(Stop::Cancelled), _) => ImportOutcome::Stopped(stopped_message("已取消", committed)),
+            (Ok(()), Err(message)) | (Err(Stop::File(message)), _) => {
+                ImportOutcome::Stopped(stopped_message(&message, committed))
+            }
+            (Err(Stop::Database(err)), _) => {
+                ImportOutcome::Stopped(stopped_message(&err.to_string(), committed))
+            }
+            (Err(Stop::Cancelled), _) => {
+                ImportOutcome::Stopped(stopped_message("已取消", committed))
+            }
             (Err(Stop::Commit(err, rows)), _) => ImportOutcome::Stopped(stopped_message(
-                &format!("{err}。提交最后 {rows} 行时出错，这 {rows} 行有没有写进去不确定，请查询确认"),
+                &format!(
+                    "{err}。提交最后 {rows} 行时出错，这 {rows} 行有没有写进去不确定，请查询确认"
+                ),
                 committed,
             )),
-            (Ok(()), Ok(())) if self.request.on_error == OnError::RollbackAll && self.progress.rows_failed > 0 => {
+            (Ok(()), Ok(()))
+                if self.request.on_error == OnError::RollbackAll
+                    && self.progress.rows_failed > 0 =>
+            {
                 ImportOutcome::RolledBack
             }
             (Ok(()), Ok(())) => ImportOutcome::Completed,
         };
-        let report = ImportReport { progress: self.progress.clone(), outcome, errors: std::mem::take(&mut self.errors) };
+        let report = ImportReport {
+            progress: self.progress.clone(),
+            outcome,
+            errors: std::mem::take(&mut self.errors),
+        };
         *self.job.status.lock().unwrap() = ImportStatus::Finished(report);
     }
 }
@@ -1040,7 +1154,9 @@ fn stopped_message(reason: &str, committed: u64) -> String {
 fn expect_affected(conn: &Conn, rows: usize) -> std::result::Result<(), Stop> {
     let affected = conn.affected_rows();
     if affected != rows as u64 {
-        return Err(Stop::Database(Error::EditFailed(format!("预期插入 {rows} 行，实际 {affected} 行"))));
+        return Err(Stop::Database(Error::EditFailed(format!(
+            "预期插入 {rows} 行，实际 {affected} 行"
+        ))));
     }
     Ok(())
 }
@@ -1068,7 +1184,10 @@ impl ErrorFile {
         let delimiter = parse_delimiter(&self.options.delimiter)?;
         if self.out.is_none() {
             let file = File::create(&self.path).map_err(|e| format!("创建错误行文件失败：{e}"))?;
-            let mut out = Encoder { writer: BufWriter::new(file), encoding: self.options.encoding };
+            let mut out = Encoder {
+                writer: BufWriter::new(file),
+                encoding: self.options.encoding,
+            };
             if self.options.encoding == ExportEncoding::Utf8Bom {
                 out.raw(&UTF8_BOM)?;
             }
@@ -1087,7 +1206,9 @@ impl ErrorFile {
 
     fn finish(&mut self) -> std::result::Result<(), String> {
         match self.out.as_mut() {
-            Some(out) => std::io::Write::flush(&mut out.writer).map_err(|e| format!("写错误行文件失败：{e}")),
+            Some(out) => {
+                std::io::Write::flush(&mut out.writer).map_err(|e| format!("写错误行文件失败：{e}"))
+            }
             None => Ok(()),
         }
     }
@@ -1124,7 +1245,10 @@ mod tests {
         }
     }
 
-    fn records_from(bytes: &[u8], options: &ImportOptions) -> std::result::Result<Vec<Record>, String> {
+    fn records_from(
+        bytes: &[u8],
+        options: &ImportOptions,
+    ) -> std::result::Result<Vec<Record>, String> {
         let mut reader = CsvReader::open(bytes, options)?;
         let mut records = Vec::new();
         while let Some(record) = reader.next_record()? {
@@ -1160,11 +1284,23 @@ mod tests {
         let input = "a,\"b,1\",\"say \"\"hi\"\"\"\r\n\"多\r\n行\",,\"\"\r\nx,y,\n";
         let records = records_from(input.as_bytes(), &options("NULL")).unwrap();
         assert_eq!(records.len(), 3);
-        assert_eq!(texts(&records[0]), [("a", false), ("b,1", true), ("say \"hi\"", true)]);
-        assert_eq!(texts(&records[1]), [("多\r\n行", true), ("", false), ("", true)]);
+        assert_eq!(
+            texts(&records[0]),
+            [("a", false), ("b,1", true), ("say \"hi\"", true)]
+        );
+        assert_eq!(
+            texts(&records[1]),
+            [("多\r\n行", true), ("", false), ("", true)]
+        );
         // 字段里的换行不算新记录，但行号要按文件里的物理行算
-        assert_eq!((records[0].line, records[1].line, records[2].line), (1, 2, 4));
-        assert_eq!(texts(&records[2]), [("x", false), ("y", false), ("", false)]);
+        assert_eq!(
+            (records[0].line, records[1].line, records[2].line),
+            (1, 2, 4)
+        );
+        assert_eq!(
+            texts(&records[2]),
+            [("x", false), ("y", false), ("", false)]
+        );
     }
 
     #[test]
@@ -1213,26 +1349,63 @@ mod tests {
 
         // null_text 为空时：空字段是 NULL，"" 是空串
         let records = records_from(b",\"\"\r\n", &options("")).unwrap();
-        assert_eq!(field_value(&records[0].fields[0], false, "").unwrap(), CellValue::Null);
-        assert_eq!(field_value(&records[0].fields[1], false, "").unwrap(), CellValue::Text(String::new()));
+        assert_eq!(
+            field_value(&records[0].fields[0], false, "").unwrap(),
+            CellValue::Null
+        );
+        assert_eq!(
+            field_value(&records[0].fields[1], false, "").unwrap(),
+            CellValue::Text(String::new())
+        );
 
         // \N 也一样，加了引号的 "\N" 是文本
         let records = records_from(b"\\N,\"\\N\"\r\n", &options("\\N")).unwrap();
-        assert_eq!(field_value(&records[0].fields[0], false, "\\N").unwrap(), CellValue::Null);
-        assert_eq!(field_value(&records[0].fields[1], false, "\\N").unwrap(), CellValue::Text("\\N".into()));
+        assert_eq!(
+            field_value(&records[0].fields[0], false, "\\N").unwrap(),
+            CellValue::Null
+        );
+        assert_eq!(
+            field_value(&records[0].fields[1], false, "\\N").unwrap(),
+            CellValue::Text("\\N".into())
+        );
     }
 
     #[test]
     fn binary_columns_take_unquoted_hex_only() {
-        let field = |text: &str, quoted| Field { text: text.to_string(), quoted };
-        assert_eq!(field_value(&field("0x00FF", false), true, "NULL").unwrap(), CellValue::Bytes(vec![0, 255]));
-        assert_eq!(field_value(&field("0x", false), true, "NULL").unwrap(), CellValue::Bytes(vec![]));
-        assert_eq!(field_value(&field("NULL", false), true, "NULL").unwrap(), CellValue::Null);
-        for bad in [field("0x00FF", true), field("abc", false), field("0x0", false), field("0x+1", false)] {
-            assert!(field_value(&bad, true, "NULL").unwrap_err().contains("十六进制"), "{bad:?}");
+        let field = |text: &str, quoted| Field {
+            text: text.to_string(),
+            quoted,
+        };
+        assert_eq!(
+            field_value(&field("0x00FF", false), true, "NULL").unwrap(),
+            CellValue::Bytes(vec![0, 255])
+        );
+        assert_eq!(
+            field_value(&field("0x", false), true, "NULL").unwrap(),
+            CellValue::Bytes(vec![])
+        );
+        assert_eq!(
+            field_value(&field("NULL", false), true, "NULL").unwrap(),
+            CellValue::Null
+        );
+        for bad in [
+            field("0x00FF", true),
+            field("abc", false),
+            field("0x0", false),
+            field("0x+1", false),
+        ] {
+            assert!(
+                field_value(&bad, true, "NULL")
+                    .unwrap_err()
+                    .contains("十六进制"),
+                "{bad:?}"
+            );
         }
         // 文本列里的 0x 就是文本
-        assert_eq!(field_value(&field("0x00FF", false), false, "NULL").unwrap(), CellValue::Text("0x00FF".into()));
+        assert_eq!(
+            field_value(&field("0x00FF", false), false, "NULL").unwrap(),
+            CellValue::Text("0x00FF".into())
+        );
     }
 
     #[test]
@@ -1244,7 +1417,10 @@ mod tests {
         assert!(err.contains("第 2 行") && err.contains("双引号"), "{err}");
 
         let err = records_from(b"a\n\"x\"y\n", &options("")).unwrap_err();
-        assert!(err.contains("第 2 行") && err.contains("引号闭合后"), "{err}");
+        assert!(
+            err.contains("第 2 行") && err.contains("引号闭合后"),
+            "{err}"
+        );
 
         let err = records_from(b"a\rb\n", &options("")).unwrap_err();
         assert!(err.contains("第 1 行") && err.contains("\\r"), "{err}");
@@ -1298,8 +1474,14 @@ mod tests {
         let mut bom = options("");
         bom.encoding = ExportEncoding::Utf8Bom;
         let records = records_from(&with_bom, &bom).unwrap();
-        assert_eq!(texts(&records[0]), [("id", false)], "BOM 不能混进第一个列名");
-        assert!(records_from(b"id\r\n", &bom).unwrap_err().contains("没有 BOM"));
+        assert_eq!(
+            texts(&records[0]),
+            [("id", false)],
+            "BOM 不能混进第一个列名"
+        );
+        assert!(records_from(b"id\r\n", &bom)
+            .unwrap_err()
+            .contains("没有 BOM"));
     }
 
     #[test]
@@ -1355,9 +1537,18 @@ mod tests {
         let mut generated = target("total");
         generated.generated = true;
         let columns = vec![target("id"), target("Name"), generated];
-        let header = vec!["name".to_string(), "ID".to_string(), "total".to_string(), "extra".to_string(), "id".to_string()];
+        let header = vec![
+            "name".to_string(),
+            "ID".to_string(),
+            "total".to_string(),
+            "extra".to_string(),
+            "id".to_string(),
+        ];
         // 生成列不建议；同一列不会被建议两次
-        assert_eq!(suggest_mapping(&header, &columns), [Some(1), Some(0), None, None, None]);
+        assert_eq!(
+            suggest_mapping(&header, &columns),
+            [Some(1), Some(0), None, None, None]
+        );
     }
 
     #[test]
@@ -1368,12 +1559,25 @@ mod tests {
         generated.generated = true;
         let columns = vec![target("id"), required, generated];
 
-        assert_eq!(validate_mapping(&columns, &[Some(1), None, Some(0)]).unwrap(), [(0, 1), (2, 0)]);
-        assert!(validate_mapping(&columns, &[None, None]).unwrap_err().contains("没有映射"));
-        assert!(validate_mapping(&columns, &[Some(0)]).unwrap_err().contains("req"));
-        assert!(validate_mapping(&columns, &[Some(1), Some(1)]).unwrap_err().contains("不止一次"));
-        assert!(validate_mapping(&columns, &[Some(1), Some(2)]).unwrap_err().contains("生成列"));
-        assert!(validate_mapping(&columns, &[Some(1), Some(9)]).unwrap_err().contains("越界"));
+        assert_eq!(
+            validate_mapping(&columns, &[Some(1), None, Some(0)]).unwrap(),
+            [(0, 1), (2, 0)]
+        );
+        assert!(validate_mapping(&columns, &[None, None])
+            .unwrap_err()
+            .contains("没有映射"));
+        assert!(validate_mapping(&columns, &[Some(0)])
+            .unwrap_err()
+            .contains("req"));
+        assert!(validate_mapping(&columns, &[Some(1), Some(1)])
+            .unwrap_err()
+            .contains("不止一次"));
+        assert!(validate_mapping(&columns, &[Some(1), Some(2)])
+            .unwrap_err()
+            .contains("生成列"));
+        assert!(validate_mapping(&columns, &[Some(1), Some(9)])
+            .unwrap_err()
+            .contains("越界"));
     }
 
     #[test]
@@ -1386,7 +1590,16 @@ mod tests {
         let columns = vec![auto, strict];
         let record = Record {
             line: 7,
-            fields: vec![Field { text: "NULL".into(), quoted: false }, Field { text: "NULL".into(), quoted: false }],
+            fields: vec![
+                Field {
+                    text: "NULL".into(),
+                    quoted: false,
+                },
+                Field {
+                    text: "NULL".into(),
+                    quoted: false,
+                },
+            ],
         };
         // 自增列写 NULL 合法
         assert!(row_params(&record, &[(0, 0)], &columns, "NULL").is_ok());
@@ -1405,11 +1618,23 @@ mod tests {
     #[test]
     fn error_line_keeps_original_quoting() {
         let fields = vec![
-            Field { text: "NULL".into(), quoted: false },
-            Field { text: "NULL".into(), quoted: true },
-            Field { text: "a\"b".into(), quoted: true },
+            Field {
+                text: "NULL".into(),
+                quoted: false,
+            },
+            Field {
+                text: "NULL".into(),
+                quoted: true,
+            },
+            Field {
+                text: "a\"b".into(),
+                quoted: true,
+            },
         ];
-        assert_eq!(error_line(&fields, "第 3 行：x,y", ',', "NULL"), "NULL,\"NULL\",\"a\"\"b\",\"第 3 行：x,y\"\r\n");
+        assert_eq!(
+            error_line(&fields, "第 3 行：x,y", ',', "NULL"),
+            "NULL,\"NULL\",\"a\"\"b\",\"第 3 行：x,y\"\r\n"
+        );
     }
 
     fn meta(name: &str, is_binary: bool) -> ColumnMeta {
@@ -1419,7 +1644,11 @@ mod tests {
             org_table: "t".to_string(),
             schema: "s".to_string(),
             is_binary,
-            kind: if is_binary { ColumnKind::Binary } else { ColumnKind::Text },
+            kind: if is_binary {
+                ColumnKind::Binary
+            } else {
+                ColumnKind::Text
+            },
             decimals: 0,
         }
     }
@@ -1438,17 +1667,46 @@ mod tests {
     fn export_then_import_gives_back_the_same_values() {
         let columns = vec![meta("id", false), meta("备注", false), meta("bin", true)];
         let rows = vec![
-            vec![CellValue::Int(-1), CellValue::Text("a,b \"引号\"\r\n换行".into()), CellValue::Bytes(vec![0, 0xFF])],
-            vec![CellValue::UInt(u64::MAX), CellValue::Null, CellValue::Bytes(vec![])],
-            vec![CellValue::Double(0.1), CellValue::Text(String::new()), CellValue::Null],
-            vec![CellValue::Int(3), CellValue::Text("NULL".into()), CellValue::Bytes(vec![0x30])],
-            vec![CellValue::Int(4), CellValue::Text("\\N".into()), CellValue::Null],
-            vec![CellValue::Int(5), CellValue::Text("中文；\t制表".into()), CellValue::Null],
+            vec![
+                CellValue::Int(-1),
+                CellValue::Text("a,b \"引号\"\r\n换行".into()),
+                CellValue::Bytes(vec![0, 0xFF]),
+            ],
+            vec![
+                CellValue::UInt(u64::MAX),
+                CellValue::Null,
+                CellValue::Bytes(vec![]),
+            ],
+            vec![
+                CellValue::Double(0.1),
+                CellValue::Text(String::new()),
+                CellValue::Null,
+            ],
+            vec![
+                CellValue::Int(3),
+                CellValue::Text("NULL".into()),
+                CellValue::Bytes(vec![0x30]),
+            ],
+            vec![
+                CellValue::Int(4),
+                CellValue::Text("\\N".into()),
+                CellValue::Null,
+            ],
+            vec![
+                CellValue::Int(5),
+                CellValue::Text("中文；\t制表".into()),
+                CellValue::Null,
+            ],
         ];
-        let dir = std::env::temp_dir().join(format!("cdata-import-roundtrip-{}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("cdata-import-roundtrip-{}", std::process::id()));
         fs::create_dir_all(&dir).unwrap();
 
-        for encoding in [ExportEncoding::Utf8, ExportEncoding::Utf8Bom, ExportEncoding::Gbk] {
+        for encoding in [
+            ExportEncoding::Utf8,
+            ExportEncoding::Utf8Bom,
+            ExportEncoding::Gbk,
+        ] {
             for null_text in ["", "NULL", "\\N"] {
                 for delimiter in [",", ";", "\t"] {
                     let label = format!("{encoding:?} null={null_text:?} delimiter={delimiter:?}");
@@ -1470,14 +1728,24 @@ mod tests {
                         null_text: null_text.to_string(),
                     };
                     let bytes = fs::read(&path).unwrap();
-                    let records = records_from(&bytes, &import).unwrap_or_else(|e| panic!("{label}: {e}"));
-                    assert_eq!(texts(&records[0]), [("id", false), ("备注", false), ("bin", false)], "{label}");
+                    let records =
+                        records_from(&bytes, &import).unwrap_or_else(|e| panic!("{label}: {e}"));
+                    assert_eq!(
+                        texts(&records[0]),
+                        [("id", false), ("备注", false), ("bin", false)],
+                        "{label}"
+                    );
                     assert_eq!(records.len(), rows.len() + 1, "{label}");
                     for (record, row) in records[1..].iter().zip(&rows) {
                         for (index, (field, cell)) in record.fields.iter().zip(row).enumerate() {
                             let value = field_value(field, columns[index].is_binary, null_text)
                                 .unwrap_or_else(|e| panic!("{label}: {e}"));
-                            assert_eq!(value, expected_after_import(cell), "{label} 第 {} 行", record.line);
+                            assert_eq!(
+                                value,
+                                expected_after_import(cell),
+                                "{label} 第 {} 行",
+                                record.line
+                            );
                         }
                     }
                 }

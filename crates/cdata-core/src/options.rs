@@ -60,10 +60,13 @@ impl Default for SslOptions {
 impl SslOptions {
     /// 选项组合是否说得通。说不通就拒绝，不悄悄忽略某个填了的字段
     pub fn validate(&self) -> Result<(), String> {
-        let has_any_path = self.ca_path.is_some() || self.cert_path.is_some() || self.key_path.is_some();
+        let has_any_path =
+            self.ca_path.is_some() || self.cert_path.is_some() || self.key_path.is_some();
         if self.mode == SslMode::Disabled {
             if has_any_path {
-                return Err("SSL 已关闭，但填了证书路径。请清空证书路径，或者选一个加密模式".to_string());
+                return Err(
+                    "SSL 已关闭，但填了证书路径。请清空证书路径，或者选一个加密模式".to_string(),
+                );
             }
             return Ok(());
         }
@@ -122,11 +125,13 @@ impl TimeoutOptions {
     }
 
     pub fn connect(&self) -> Option<Duration> {
-        self.connect_secs.map(|secs| Duration::from_secs(u64::from(secs)))
+        self.connect_secs
+            .map(|secs| Duration::from_secs(u64::from(secs)))
     }
 
     pub fn query(&self) -> Option<Duration> {
-        self.query_secs.map(|secs| Duration::from_secs(u64::from(secs)))
+        self.query_secs
+            .map(|secs| Duration::from_secs(u64::from(secs)))
     }
 }
 
@@ -160,7 +165,9 @@ impl SshHop {
 pub enum SshAuth {
     Password,
     /// 私钥文件路径。有没有口令看 ssh_secrets 里给没给
-    PrivateKey { path: String },
+    PrivateKey {
+        path: String,
+    },
     /// 用 ssh-agent（macOS / Linux 读 SSH_AUTH_SOCK，Windows 用 OpenSSH 的命名管道）
     Agent,
 }
@@ -201,7 +208,8 @@ mod tests {
     use super::*;
 
     fn temp_file(name: &str) -> String {
-        let path = std::env::temp_dir().join(format!("cdata-options-{}-{name}", std::process::id()));
+        let path =
+            std::env::temp_dir().join(format!("cdata-options-{}-{name}", std::process::id()));
         std::fs::write(&path, b"x").unwrap();
         path.to_string_lossy().into_owned()
     }
@@ -224,11 +232,20 @@ mod tests {
     fn ssl_combinations_that_do_not_make_sense_are_rejected() {
         let ca = temp_file("ca.pem");
 
-        let disabled_with_path = SslOptions { ca_path: Some(ca.clone()), ..SslOptions::default() };
-        assert!(disabled_with_path.validate().is_err(), "关闭 SSL 时填的证书不能被悄悄忽略");
+        let disabled_with_path = SslOptions {
+            ca_path: Some(ca.clone()),
+            ..SslOptions::default()
+        };
+        assert!(
+            disabled_with_path.validate().is_err(),
+            "关闭 SSL 时填的证书不能被悄悄忽略"
+        );
 
-        let required_with_ca =
-            SslOptions { mode: SslMode::Required, ca_path: Some(ca.clone()), ..SslOptions::default() };
+        let required_with_ca = SslOptions {
+            mode: SslMode::Required,
+            ca_path: Some(ca.clone()),
+            ..SslOptions::default()
+        };
         let err = required_with_ca.validate().unwrap_err();
         assert!(err.contains("VerifyIdentity"), "{err}");
 
@@ -246,16 +263,31 @@ mod tests {
         };
         assert!(missing_file.validate().unwrap_err().contains("不存在"));
 
-        let ok = SslOptions { mode: SslMode::VerifyIdentity, ca_path: Some(ca.clone()), ..SslOptions::default() };
+        let ok = SslOptions {
+            mode: SslMode::VerifyIdentity,
+            ca_path: Some(ca.clone()),
+            ..SslOptions::default()
+        };
         assert!(ok.validate().is_ok());
         std::fs::remove_file(&ca).ok();
     }
 
     #[test]
     fn zero_timeout_is_rejected() {
-        let zero = TimeoutOptions { connect_secs: Some(0), query_secs: None };
-        assert!(zero.validate().is_err(), "0 秒是「立即超时」还是「不限」说不清，直接拒绝");
-        assert!(TimeoutOptions { connect_secs: None, query_secs: None }.validate().is_ok());
+        let zero = TimeoutOptions {
+            connect_secs: Some(0),
+            query_secs: None,
+        };
+        assert!(
+            zero.validate().is_err(),
+            "0 秒是「立即超时」还是「不限」说不清，直接拒绝"
+        );
+        assert!(TimeoutOptions {
+            connect_secs: None,
+            query_secs: None
+        }
+        .validate()
+        .is_ok());
     }
 
     #[test]
@@ -266,18 +298,33 @@ mod tests {
             user: "ops".into(),
             auth: SshAuth::Agent,
         };
-        assert!(SshOptions { hops: vec![hop.clone()] }.validate().is_ok());
+        assert!(SshOptions {
+            hops: vec![hop.clone()]
+        }
+        .validate()
+        .is_ok());
 
-        let no_user = SshHop { user: " ".into(), ..hop.clone() };
-        assert!(SshOptions { hops: vec![hop.clone(), no_user] }
-            .validate()
-            .unwrap_err()
-            .contains("第 2 跳"));
+        let no_user = SshHop {
+            user: " ".into(),
+            ..hop.clone()
+        };
+        assert!(SshOptions {
+            hops: vec![hop.clone(), no_user]
+        }
+        .validate()
+        .unwrap_err()
+        .contains("第 2 跳"));
 
         let missing_key = SshHop {
-            auth: SshAuth::PrivateKey { path: "/nonexistent/id_ed25519".into() },
+            auth: SshAuth::PrivateKey {
+                path: "/nonexistent/id_ed25519".into(),
+            },
             ..hop
         };
-        assert!(SshOptions { hops: vec![missing_key] }.validate().is_err());
+        assert!(SshOptions {
+            hops: vec![missing_key]
+        }
+        .validate()
+        .is_err());
     }
 }

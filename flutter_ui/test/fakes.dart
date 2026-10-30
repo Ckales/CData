@@ -277,6 +277,9 @@ class FakeGridSource implements GridSource {
     return ExportSummary(rowsWritten: BigInt.from(written), sourceTruncated: exportTruncated);
   }
 
+  @override
+  Future<FileProgress> fileProgress() async => FileProgress(done: BigInt.zero, total: BigInt.zero);
+
   /// 和 Rust 侧 display_cell 保持一致的显示规则
   DisplayCell _display(CellValue cell) {
     return switch (cell) {
@@ -540,6 +543,9 @@ class FakeSchemaSource implements SchemaSource {
     sqlDumps.add((database: database, tables: tables, path: path, options: options));
     return 5000;
   }
+
+  @override
+  Future<FileProgress> fileProgress() async => FileProgress(done: BigInt.zero, total: BigInt.zero);
 
   DatabaseOptions databaseOptionsValue = const DatabaseOptions(
     charsets: [

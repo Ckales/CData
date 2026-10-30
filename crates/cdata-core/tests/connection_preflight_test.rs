@@ -31,12 +31,25 @@ fn send_packet(stream: &mut TcpStream, seq: u8, body: &[u8]) {
 }
 
 fn ok_packet(stream: &mut TcpStream, seq: u8) {
-    // OK, affected rows 0, insert id 0, status AUTOCOMMIT, warnings 0.
-    send_packet(stream, seq, &[0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00]);
+    ok_packet_status(stream, seq, false);
+}
+
+/// 一批里有多条语句时，除最后一条外都带 SERVER_MORE_RESULTS_EXISTS，客户端才会把后续结果读完。
+fn ok_packets_for_query(stream: &mut TcpStream, sql: &str) {
+    let parts: Vec<&str> = sql.split("\n;").collect();
+    for (index, _) in parts.iter().enumerate() {
+        ok_packet_status(stream, (index as u8) + 1, index + 1 < parts.len());
+    }
+}
+
+fn ok_packet_status(stream: &mut TcpStream, seq: u8, more: bool) {
+    // OK, affected rows 0, insert id 0, status AUTOCOMMIT [| MORE_RESULTS], warnings 0.
+    let status = if more { 0x0a } else { 0x02 };
+    send_packet(stream, seq, &[0x00, 0x00, 0x00, status, 0x00, 0x00, 0x00]);
 }
 
 fn handshake(stream: &mut TcpStream, id: u32) {
-    const CAPS: u32 = 0x0008_8200; // PROTOCOL_41 | SECURE_CONNECTION | PLUGIN_AUTH
+    const CAPS: u32 = 0x000b_8200; // PROTOCOL_41 | SECURE_CONNECTION | PLUGIN_AUTH | MULTI_STATEMENTS | MULTI_RESULTS
     let mut greeting = vec![10];
     greeting.extend_from_slice(b"8.0.0-test\0");
     greeting.extend_from_slice(&id.to_le_bytes());
@@ -108,7 +121,7 @@ fn query_reply(stream: &mut TcpStream, payload: &[u8]) {
         send_packet(stream, 5, &row);
         eof_packet(stream, 6);
     } else {
-        ok_packet(stream, 1);
+        ok_packets_for_query(stream, &String::from_utf8_lossy(payload));
     }
 }
 
@@ -340,10 +353,8 @@ async fn import_retries_failed_preflight_then_runs_each_statement_once() {
                 ok_packet(&mut fresh, 1);
             } else {
                 business_queries.push(sql);
-                ok_packet(&mut fresh, 1);
-                if business_queries.len() == 2 {
-                    break;
-                }
+                ok_packets_for_query(&mut fresh, business_queries.last().unwrap());
+                break;
             }
         }
         business_queries
@@ -360,13 +371,27 @@ async fn import_retries_failed_preflight_then_runs_each_statement_once() {
             line: 3,
         },
     ];
-    let summary = run_sql_import(&pool, &statements, "synthetic_db")
-        .await
-        .unwrap();
+    let seen = std::sync::Mutex::new(Vec::new());
+    let summary = run_sql_import(&pool, &statements, "synthetic_db", &|done, total| {
+        seen.lock().unwrap().push((done, total));
+    })
+    .await
+    .unwrap();
     assert_eq!(summary.executed, 2);
     assert_eq!(summary.failure, None);
     assert_eq!(
-        server.join().unwrap(),
+        *seen.lock().unwrap(),
+        vec![(0, 2), (2, 2)],
+        "进度按原文件的语句数走，不按批次"
+    );
+    let received = server.join().unwrap();
+    assert_eq!(
+        received.len(),
+        1,
+        "both statements should share one round trip"
+    );
+    assert_eq!(
+        received[0].split("\n;").collect::<Vec<_>>(),
         ["INSERT INTO t VALUES (1)", "INSERT INTO t VALUES (2)"]
     );
 }
@@ -398,7 +423,15 @@ async fn import_does_not_reconnect_or_replay_after_connection_drops_during_sql()
         ok_packet(&mut stream, 1);
         let (command, payload) = next_command(&mut stream);
         assert_eq!(command, 0x03);
-        assert_eq!(payload, b"INSERT INTO t VALUES ('bad')");
+        let sql = String::from_utf8(payload).unwrap();
+        assert!(
+            sql.starts_with("INSERT INTO t VALUES ('bad')"),
+            "first statement must be sent before any later one, got {sql}"
+        );
+        assert!(
+            sql.contains("INSERT INTO t VALUES (2)"),
+            "later statement must ride in the same batch, got {sql}"
+        );
         // The server has received the statement but disconnects before responding. Since the
         // outcome is ambiguous, the importer must report failure without replaying it elsewhere.
         drop(stream);
@@ -426,7 +459,7 @@ async fn import_does_not_reconnect_or_replay_after_connection_drops_during_sql()
             line: 6,
         },
     ];
-    let summary = run_sql_import(&pool, &statements, "synthetic_db")
+    let summary = run_sql_import(&pool, &statements, "synthetic_db", &|_, _| {})
         .await
         .unwrap();
     assert_eq!(summary.executed, 0);
@@ -472,7 +505,10 @@ async fn import_recovers_when_initial_checkout_disconnects() {
                 0x0e => ok_packet(&mut fresh, 1),
                 0x03 => {
                     if payload.starts_with(b"INSERT ") {
-                        imported.push(String::from_utf8(payload.clone()).unwrap());
+                        let sql = String::from_utf8(payload.clone()).unwrap();
+                        for part in sql.split("\n;") {
+                            imported.push(part.to_string());
+                        }
                     }
                     query_reply(&mut fresh, &payload);
                 }
@@ -492,7 +528,7 @@ async fn import_recovers_when_initial_checkout_disconnects() {
             line: 2,
         },
     ];
-    let result = run_sql_import(&pool, &statements, "synthetic_db").await;
+    let result = run_sql_import(&pool, &statements, "synthetic_db", &|_, _| {}).await;
     let imported = server.join().expect("replacement server");
     let summary = result.expect("first import should reconnect without a user retry");
     assert_eq!(summary.executed, 2);
@@ -514,7 +550,7 @@ async fn failed_checkout_reconnect_is_reported_after_two_attempts() {
         }
     });
     let pool = open_pool(&config(port, 3)).await.unwrap();
-    let result = run_sql_import(&pool, &[], "synthetic_db").await;
+    let result = run_sql_import(&pool, &[], "synthetic_db", &|_, _| {}).await;
     assert!(matches!(result, Err(mysql_async::Error::Other(ref err))
         if err.downcast_ref::<cdata_core::db::ConnectFailed>().is_some()));
     server.join().unwrap();

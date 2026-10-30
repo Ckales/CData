@@ -30,15 +30,40 @@ const ER_TABLEACCESS_DENIED: u16 = 1142;
 /// 库级能授的静态权限（MySQL 手册「Permissible Privileges for GRANT and REVOKE」）。
 /// SHOW PRIVILEGES 的 Context 列粒度不够（比如 Select 只写了 Tables），分层按手册来，再和服务器的清单取交集
 const DATABASE_PRIVILEGES: &[&str] = &[
-    "ALTER", "ALTER ROUTINE", "CREATE", "CREATE ROUTINE", "CREATE TEMPORARY TABLES", "CREATE VIEW", "DELETE",
-    "DROP", "EVENT", "EXECUTE", "INDEX", "INSERT", "LOCK TABLES", "REFERENCES", "SELECT", "SHOW VIEW", "TRIGGER",
+    "ALTER",
+    "ALTER ROUTINE",
+    "CREATE",
+    "CREATE ROUTINE",
+    "CREATE TEMPORARY TABLES",
+    "CREATE VIEW",
+    "DELETE",
+    "DROP",
+    "EVENT",
+    "EXECUTE",
+    "INDEX",
+    "INSERT",
+    "LOCK TABLES",
+    "REFERENCES",
+    "SELECT",
+    "SHOW VIEW",
+    "TRIGGER",
     "UPDATE",
 ];
 
 /// 表级能授的静态权限
 const TABLE_PRIVILEGES: &[&str] = &[
-    "ALTER", "CREATE", "CREATE VIEW", "DELETE", "DROP", "INDEX", "INSERT", "REFERENCES", "SELECT", "SHOW VIEW",
-    "TRIGGER", "UPDATE",
+    "ALTER",
+    "CREATE",
+    "CREATE VIEW",
+    "DELETE",
+    "DROP",
+    "INDEX",
+    "INSERT",
+    "REFERENCES",
+    "SELECT",
+    "SHOW VIEW",
+    "TRIGGER",
+    "UPDATE",
 ];
 
 /// 一个 MySQL 账号。用户名区分大小写，主机名不区分
@@ -143,15 +168,40 @@ pub enum GrantLevel {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum UserChange {
     /// plugin 为 None 用服务器默认
-    Create { account: Account, plugin: Option<String> },
-    SetPassword { account: Account },
-    SetLocked { account: Account, locked: bool },
-    Drop { account: Account },
-    Grant { account: Account, level: GrantLevel, privileges: Vec<String>, with_grant_option: bool },
+    Create {
+        account: Account,
+        plugin: Option<String>,
+    },
+    SetPassword {
+        account: Account,
+    },
+    SetLocked {
+        account: Account,
+        locked: bool,
+    },
+    Drop {
+        account: Account,
+    },
+    Grant {
+        account: Account,
+        level: GrantLevel,
+        privileges: Vec<String>,
+        with_grant_option: bool,
+    },
     /// privileges 里可以有 GRANT OPTION
-    Revoke { account: Account, level: GrantLevel, privileges: Vec<String> },
-    GrantRole { account: Account, role: Account },
-    RevokeRole { account: Account, role: Account },
+    Revoke {
+        account: Account,
+        level: GrantLevel,
+        privileges: Vec<String>,
+    },
+    GrantRole {
+        account: Account,
+        role: Account,
+    },
+    RevokeRole {
+        account: Account,
+        role: Account,
+    },
 }
 
 impl UserChange {
@@ -169,7 +219,10 @@ impl UserChange {
     }
 
     fn needs_password(&self) -> bool {
-        matches!(self, UserChange::Create { .. } | UserChange::SetPassword { .. })
+        matches!(
+            self,
+            UserChange::Create { .. } | UserChange::SetPassword { .. }
+        )
     }
 }
 
@@ -203,10 +256,14 @@ struct Context {
 pub async fn load(conn: &mut Conn) -> Result<UserAdmin> {
     check_version(conn).await?;
     let current = current_account(conn).await?;
-    let (global_privileges, database_privileges, table_privileges) = server_privileges(conn).await?;
+    let (global_privileges, database_privileges, table_privileges) =
+        server_privileges(conn).await?;
     let plugins = auth_plugins(conn).await?;
 
-    let default_lifetime: u32 = conn.query_first("SELECT @@GLOBAL.default_password_lifetime").await?.unwrap_or(0);
+    let default_lifetime: u32 = conn
+        .query_first("SELECT @@GLOBAL.default_password_lifetime")
+        .await?
+        .unwrap_or(0);
     let listed: std::result::Result<Vec<(String, String, String, String, String, Option<u32>, Option<i64>)>, _> = conn
         .query(
             "SELECT User, Host, plugin, account_locked, password_expired, password_lifetime, \
@@ -225,7 +282,12 @@ pub async fn load(conn: &mut Conn) -> Result<UserAdmin> {
                     account,
                     plugin,
                     locked: locked == "Y",
-                    password_expired: password_expired(&expired, lifetime, default_lifetime, since_change),
+                    password_expired: password_expired(
+                        &expired,
+                        lifetime,
+                        default_lifetime,
+                        since_change,
+                    ),
                 });
             }
         }
@@ -253,23 +315,37 @@ pub async fn load(conn: &mut Conn) -> Result<UserAdmin> {
 /// 一个账号的 SHOW GRANTS，逐条解析成分层的项，原文一并带上
 pub async fn account_grants(conn: &mut Conn, account: &Account) -> Result<AccountGrants> {
     check_account(account).map_err(Error::BadInput)?;
-    let statements: Vec<String> = conn.query(format!("SHOW GRANTS FOR {}", account.sql())).await?;
+    let statements: Vec<String> = conn
+        .query(format!("SHOW GRANTS FOR {}", account.sql()))
+        .await?;
     let mut entries = Vec::new();
     for statement in &statements {
         entries.extend(parse_grant(statement));
     }
-    Ok(AccountGrants { entries, statements })
+    Ok(AccountGrants {
+        entries,
+        statements,
+    })
 }
 
 /// 预览一次变更。当前登录账号的删除、锁定、回收在这里就拒绝
-pub async fn preview_change(conn: &mut Conn, change: &UserChange, password: Option<&str>) -> Result<ChangePlan> {
+pub async fn preview_change(
+    conn: &mut Conn,
+    change: &UserChange,
+    password: Option<&str>,
+) -> Result<ChangePlan> {
     let context = read_context(conn, change).await?;
     plan(change, &context, password).map_err(Error::BadInput)
 }
 
 /// 执行预览过的变更。在这条连接上重新读状态、重新生成，和预览的语句不一致就不执行；
 /// 带密码的那条按这条连接的 sql_mode 转义
-pub async fn apply_change(conn: &mut Conn, change: &UserChange, password: Option<&str>, previewed: &str) -> Result<()> {
+pub async fn apply_change(
+    conn: &mut Conn,
+    change: &UserChange,
+    password: Option<&str>,
+    previewed: &str,
+) -> Result<()> {
     let context = read_context(conn, change).await?;
     let plan = plan(change, &context, password).map_err(Error::BadInput)?;
     if plan.statement != previewed {
@@ -278,20 +354,30 @@ pub async fn apply_change(conn: &mut Conn, change: &UserChange, password: Option
         ));
     }
 
-    let sql_mode: String = conn.query_first("SELECT @@SESSION.sql_mode").await?.unwrap_or_default();
-    let no_backslash_escapes = sql_mode.split(',').any(|mode| mode == "NO_BACKSLASH_ESCAPES");
+    let sql_mode: String = conn
+        .query_first("SELECT @@SESSION.sql_mode")
+        .await?
+        .unwrap_or_default();
+    let no_backslash_escapes = sql_mode
+        .split(',')
+        .any(|mode| mode == "NO_BACKSLASH_ESCAPES");
     // 不带密码的变更用不到这个字面量
     let password_sql = match password {
         Some(password) => crate::alter::sql_string(password, no_backslash_escapes),
         None => MASKED_PASSWORD.to_string(),
     };
     let sql = statement(change, &context, &password_sql).map_err(Error::BadInput)?;
-    conn.query_drop(&sql).await.map_err(|err| scrub(err, password))
+    conn.query_drop(&sql)
+        .await
+        .map_err(|err| scrub(err, password))
 }
 
 /// 用户管理和结构编辑同一道门槛：MySQL 8.0.13+，MariaDB 的账号表和角色语法都不一样
 async fn check_version(conn: &mut Conn) -> Result<()> {
-    let version: String = conn.query_first("SELECT VERSION()").await?.unwrap_or_default();
+    let version: String = conn
+        .query_first("SELECT VERSION()")
+        .await?
+        .unwrap_or_default();
     if !crate::alter::supports_alter(&version) {
         return Err(Error::BadInput(format!(
             "用户管理只支持 MySQL 8.0.13 及以上（当前 {version}）：更早的版本和 MariaDB 的账号表、SHOW GRANTS 格式不同"
@@ -309,7 +395,10 @@ async fn current_account(conn: &mut Conn) -> Result<Account> {
     let (user, host) = text
         .rsplit_once('@')
         .ok_or_else(|| Error::BadInput(format!("CURRENT_USER() 返回了看不懂的值：{text}")))?;
-    Ok(Account { user: user.to_string(), host: host.to_string() })
+    Ok(Account {
+        user: user.to_string(),
+        host: host.to_string(),
+    })
 }
 
 /// SHOW PRIVILEGES 分成全局 / 库 / 表三层。USAGE 不是权限，PROXY 语法不同，GRANT OPTION 单独勾
@@ -358,15 +447,22 @@ async fn read_context(conn: &mut Conn, change: &UserChange) -> Result<Context> {
         }
     }
 
-    let (global_privileges, database_privileges, table_privileges) = server_privileges(conn).await?;
+    let (global_privileges, database_privileges, table_privileges) =
+        server_privileges(conn).await?;
     let plugins = auth_plugins(conn).await?;
-    let partial_revokes: i64 = conn.query_first("SELECT @@GLOBAL.partial_revokes").await?.unwrap_or(0);
+    let partial_revokes: i64 = conn
+        .query_first("SELECT @@GLOBAL.partial_revokes")
+        .await?
+        .unwrap_or(0);
 
     let mut connections = 0;
     if let UserChange::Drop { account } = change {
         // 进程列表只有用户名没有账号的主机部分；没有 PROCESS 权限时只看得到自己的连接
         connections = conn
-            .exec_first("SELECT COUNT(*) FROM information_schema.PROCESSLIST WHERE USER = ?", (account.user.as_str(),))
+            .exec_first(
+                "SELECT COUNT(*) FROM information_schema.PROCESSLIST WHERE USER = ?",
+                (account.user.as_str(),),
+            )
             .await?
             .unwrap_or(0);
     }
@@ -384,7 +480,12 @@ async fn read_context(conn: &mut Conn, change: &UserChange) -> Result<Context> {
 }
 
 /// 密码过期的原因。password_lifetime 为 NULL 跟随全局 default_password_lifetime，0 表示永不过期
-fn password_expired(flag: &str, lifetime: Option<u32>, default_lifetime: u32, seconds_since_change: Option<i64>) -> Option<String> {
+fn password_expired(
+    flag: &str,
+    lifetime: Option<u32>,
+    default_lifetime: u32,
+    seconds_since_change: Option<i64>,
+) -> Option<String> {
     if flag == "Y" {
         return Some("已被设为过期，下次登录必须先改密码".to_string());
     }
@@ -403,7 +504,11 @@ fn password_expired(flag: &str, lifetime: Option<u32>, default_lifetime: u32, se
 }
 
 /// 生成预览：校验、拦截当前账号、列出风险和须知
-fn plan(change: &UserChange, context: &Context, password: Option<&str>) -> std::result::Result<ChangePlan, String> {
+fn plan(
+    change: &UserChange,
+    context: &Context,
+    password: Option<&str>,
+) -> std::result::Result<ChangePlan, String> {
     check_password(change, password)?;
     let target = change.account();
     let label = target.label();
@@ -412,10 +517,14 @@ fn plan(change: &UserChange, context: &Context, password: Option<&str>) -> std::
 
     match change {
         UserChange::Drop { .. } if is_self => {
-            return Err(format!("{label} 是当前登录的账号，不能删除：删掉之后这条连接一断就再也登不回来"));
+            return Err(format!(
+                "{label} 是当前登录的账号，不能删除：删掉之后这条连接一断就再也登不回来"
+            ));
         }
         UserChange::SetLocked { locked: true, .. } if is_self => {
-            return Err(format!("{label} 是当前登录的账号，不能锁定：锁上之后新连接（包括断线重连）都登不上"));
+            return Err(format!(
+                "{label} 是当前登录的账号，不能锁定：锁上之后新连接（包括断线重连）都登不上"
+            ));
         }
         UserChange::Revoke { .. } | UserChange::RevokeRole { .. } if is_self => {
             return Err(format!(
@@ -452,9 +561,10 @@ fn plan(change: &UserChange, context: &Context, password: Option<&str>) -> std::
         UserChange::SetLocked { locked: false, .. } => {}
         UserChange::Drop { account } => {
             dangers.push(format!("删除账号 {label}：它的全部权限一起删掉，撤不回来"));
-            let mut kept = "DROP USER 不会断开这个账号已有的连接：已经连着的会话照常可用，直到它自己断开；\
+            let mut kept =
+                "DROP USER 不会断开这个账号已有的连接：已经连着的会话照常可用，直到它自己断开；\
                             要立刻切断，请到进程列表里 KILL 它的连接"
-                .to_string();
+                    .to_string();
             if context.connections > 0 {
                 kept.push_str(&format!(
                     "。进程列表里现在能看到 {} 个用户名为 {} 的连接",
@@ -463,20 +573,32 @@ fn plan(change: &UserChange, context: &Context, password: Option<&str>) -> std::
             }
             dangers.push(kept);
         }
-        UserChange::Grant { level, with_grant_option, .. } => {
+        UserChange::Grant {
+            level,
+            with_grant_option,
+            ..
+        } => {
             if *with_grant_option {
-                notes.push("WITH GRANT OPTION：这个账号可以把它在这一层的权限再授予别人".to_string());
+                notes.push(
+                    "WITH GRANT OPTION：这个账号可以把它在这一层的权限再授予别人".to_string(),
+                );
             }
             level_notes(level, context, &mut notes);
         }
-        UserChange::Revoke { level, privileges, .. } => {
+        UserChange::Revoke {
+            level, privileges, ..
+        } => {
             for privilege in privileges {
                 let upper = privilege.to_ascii_uppercase();
                 if upper == ALL_PRIVILEGES {
-                    dangers.push(format!("回收 ALL PRIVILEGES：{label} 在这一层的全部权限都会被收回"));
+                    dangers.push(format!(
+                        "回收 ALL PRIVILEGES：{label} 在这一层的全部权限都会被收回"
+                    ));
                 }
                 if upper == GRANT_OPTION {
-                    dangers.push(format!("回收 GRANT OPTION：{label} 之后不能再把这一层的权限授予别人"));
+                    dangers.push(format!(
+                        "回收 GRANT OPTION：{label} 之后不能再把这一层的权限授予别人"
+                    ));
                 }
             }
             level_notes(level, context, &mut notes);
@@ -488,7 +610,10 @@ fn plan(change: &UserChange, context: &Context, password: Option<&str>) -> std::
             );
         }
         UserChange::RevokeRole { .. } => {
-            notes.push("已经 SET ROLE 激活了这个角色的会话，要重新设置角色或重新连接才失去它的权限".to_string());
+            notes.push(
+                "已经 SET ROLE 激活了这个角色的会话，要重新设置角色或重新连接才失去它的权限"
+                    .to_string(),
+            );
         }
     }
 
@@ -499,7 +624,11 @@ fn plan(change: &UserChange, context: &Context, password: Option<&str>) -> std::
         ));
     }
 
-    Ok(ChangePlan { statement, dangers, notes })
+    Ok(ChangePlan {
+        statement,
+        dangers,
+        notes,
+    })
 }
 
 fn level_notes(level: &GrantLevel, context: &Context, notes: &mut Vec<String>) {
@@ -519,7 +648,9 @@ fn check_password(change: &UserChange, password: Option<&str>) -> std::result::R
     match (change.needs_password(), password) {
         (true, None) => Err("要填密码".to_string()),
         (true, Some("")) => Err("密码不能为空：空密码的账号知道用户名就能登录".to_string()),
-        (true, Some(password)) if password.contains('\0') => Err("密码里不能有 NUL 字符".to_string()),
+        (true, Some(password)) if password.contains('\0') => {
+            Err("密码里不能有 NUL 字符".to_string())
+        }
         (false, Some(_)) => Err("这个操作不需要密码".to_string()),
         _ => Ok(()),
     }
@@ -539,7 +670,11 @@ fn check_account(account: &Account) -> std::result::Result<(), String> {
 }
 
 /// 生成语句。password_sql 是已经转义好的字面量，预览时是 `'***'`
-fn statement(change: &UserChange, context: &Context, password_sql: &str) -> std::result::Result<String, String> {
+fn statement(
+    change: &UserChange,
+    context: &Context,
+    password_sql: &str,
+) -> std::result::Result<String, String> {
     check_account(change.account())?;
     let sql = match change {
         UserChange::Create { account, plugin } => {
@@ -559,21 +694,43 @@ fn statement(change: &UserChange, context: &Context, password_sql: &str) -> std:
                     format!(" WITH {plugin}")
                 }
             };
-            format!("CREATE USER {} IDENTIFIED{with} BY {password_sql}", account.sql())
+            format!(
+                "CREATE USER {} IDENTIFIED{with} BY {password_sql}",
+                account.sql()
+            )
         }
-        UserChange::SetPassword { account } => format!("ALTER USER {} IDENTIFIED BY {password_sql}", account.sql()),
+        UserChange::SetPassword { account } => {
+            format!("ALTER USER {} IDENTIFIED BY {password_sql}", account.sql())
+        }
         UserChange::SetLocked { account, locked } => {
-            format!("ALTER USER {} ACCOUNT {}", account.sql(), if *locked { "LOCK" } else { "UNLOCK" })
+            format!(
+                "ALTER USER {} ACCOUNT {}",
+                account.sql(),
+                if *locked { "LOCK" } else { "UNLOCK" }
+            )
         }
         UserChange::Drop { account } => format!("DROP USER {}", account.sql()),
-        UserChange::Grant { account, level, privileges, with_grant_option } => format!(
+        UserChange::Grant {
+            account,
+            level,
+            privileges,
+            with_grant_option,
+        } => format!(
             "GRANT {} ON {} TO {}{}",
             privilege_list(level, privileges, context, false)?,
             level_sql(level, context.partial_revokes)?,
             account.sql(),
-            if *with_grant_option { " WITH GRANT OPTION" } else { "" }
+            if *with_grant_option {
+                " WITH GRANT OPTION"
+            } else {
+                ""
+            }
         ),
-        UserChange::Revoke { account, level, privileges } => format!(
+        UserChange::Revoke {
+            account,
+            level,
+            privileges,
+        } => format!(
             "REVOKE {} ON {} FROM {}",
             privilege_list(level, privileges, context, true)?,
             level_sql(level, context.partial_revokes)?,
@@ -585,7 +742,9 @@ fn statement(change: &UserChange, context: &Context, password_sql: &str) -> std:
                 return Err("不能把账号作为角色授予它自己".to_string());
             }
             match change {
-                UserChange::GrantRole { .. } => format!("GRANT {} TO {}", role.sql(), account.sql()),
+                UserChange::GrantRole { .. } => {
+                    format!("GRANT {} TO {}", role.sql(), account.sql())
+                }
                 _ => format!("REVOKE {} FROM {}", role.sql(), account.sql()),
             }
         }
@@ -612,8 +771,12 @@ fn privilege_list(
     let mut names: Vec<String> = Vec::new();
     for privilege in privileges {
         let upper = privilege.to_ascii_uppercase();
-        let known = upper == ALL_PRIVILEGES || (revoke && upper == GRANT_OPTION) || allowed.contains(&upper);
-        let plain = upper.chars().all(|ch| ch.is_ascii_alphanumeric() || ch == '_' || ch == ' ');
+        let known = upper == ALL_PRIVILEGES
+            || (revoke && upper == GRANT_OPTION)
+            || allowed.contains(&upper);
+        let plain = upper
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || ch == '_' || ch == ' ');
         if !known || !plain {
             if upper == GRANT_OPTION {
                 return Err("授予 GRANT OPTION 请勾选 WITH GRANT OPTION".to_string());
@@ -625,7 +788,11 @@ fn privilege_list(
         }
     }
     let has_all = names.iter().any(|name| name == ALL_PRIVILEGES);
-    if has_all && names.iter().any(|name| name != ALL_PRIVILEGES && name != GRANT_OPTION) {
+    if has_all
+        && names
+            .iter()
+            .any(|name| name != ALL_PRIVILEGES && name != GRANT_OPTION)
+    {
         return Err("ALL PRIVILEGES 已经包含这一层的其他权限，不要和它们一起选".to_string());
     }
     Ok(names.join(", "))
@@ -645,7 +812,9 @@ fn level_sql(level: &GrantLevel, partial_revokes: bool) -> std::result::Result<S
                 return Ok(format!("{}.*", quote_ident(database)));
             }
             if database.contains('\\') {
-                return Err(format!("库名 {database} 里有反斜杠：它在库级授权里是转义符，没法保证只匹配这一个库"));
+                return Err(format!(
+                    "库名 {database} 里有反斜杠：它在库级授权里是转义符，没法保证只匹配这一个库"
+                ));
             }
             let escaped = database.replace('_', "\\_").replace('%', "\\%");
             Ok(format!("{}.*", quote_ident(&escaped)))
@@ -681,7 +850,11 @@ fn scrub(err: mysql_async::Error, password: Option<&str>) -> Error {
         password.to_string(),
     ] {
         // 两种转义形式去掉外面那对引号，最后是原文
-        let inner = if form.starts_with('\'') { &form[1..form.len() - 1] } else { form.as_str() };
+        let inner = if form.starts_with('\'') {
+            &form[1..form.len() - 1]
+        } else {
+            form.as_str()
+        };
         message = message.replace(inner, "***");
     }
     Error::EditFailed(message)
@@ -749,9 +922,13 @@ fn is_word(token: Option<&Token>, word: &str) -> bool {
 /// `user`@`host`，返回账号和下一个位置
 fn account_at(tokens: &[Token], pos: usize) -> Option<(Account, usize)> {
     match (tokens.get(pos)?, tokens.get(pos + 1)?, tokens.get(pos + 2)?) {
-        (Token::Quoted(user), Token::Symbol('@'), Token::Quoted(host)) => {
-            Some((Account { user: user.clone(), host: host.clone() }, pos + 3))
-        }
+        (Token::Quoted(user), Token::Symbol('@'), Token::Quoted(host)) => Some((
+            Account {
+                user: user.clone(),
+                host: host.clone(),
+            },
+            pos + 3,
+        )),
         _ => None,
     }
 }
@@ -807,7 +984,13 @@ fn parse_grant_tokens(line: &str) -> Option<Vec<GrantEntry>> {
         let admin = tail_option(&tokens[next..], "ADMIN")?;
         let mut entries = Vec::new();
         for role in roles {
-            entries.push(entry(GrantScope::Role, role.label(), Vec::new(), admin, Some(role)));
+            entries.push(entry(
+                GrantScope::Role,
+                role.label(),
+                Vec::new(),
+                admin,
+                Some(role),
+            ));
         }
         return Some(entries);
     }
@@ -831,7 +1014,9 @@ fn parse_grant_tokens(line: &str) -> Option<Vec<GrantEntry>> {
         if tokens.get(pos) == Some(&Token::Symbol('(')) {
             pos += 1;
             loop {
-                let Token::Quoted(column) = tokens.get(pos)? else { return None };
+                let Token::Quoted(column) = tokens.get(pos)? else {
+                    return None;
+                };
                 columns.push(column.clone());
                 pos += 1;
                 match tokens.get(pos)? {
@@ -863,7 +1048,13 @@ fn parse_grant_tokens(line: &str) -> Option<Vec<GrantEntry>> {
         }
         let (_, next) = account_at(&tokens, next + 1)?;
         let grant_option = tail_option(&tokens[next..], "GRANT")?;
-        return Some(vec![entry(GrantScope::Proxy, proxied.label(), vec!["PROXY".to_string()], grant_option, None)]);
+        return Some(vec![entry(
+            GrantScope::Proxy,
+            proxied.label(),
+            vec!["PROXY".to_string()],
+            grant_option,
+            None,
+        )]);
     }
 
     let mut routine = None;
@@ -901,7 +1092,9 @@ fn parse_grant_tokens(line: &str) -> Option<Vec<GrantEntry>> {
         (None, None, None) => (GrantScope::Global, "*.*".to_string()),
         (None, Some(database), None) => (GrantScope::Database, format!("{database}.*")),
         (None, Some(database), Some(table)) => (GrantScope::Table, format!("{database}.{table}")),
-        (Some(kind), Some(database), Some(name)) => (GrantScope::Routine, format!("{kind} {database}.{name}")),
+        (Some(kind), Some(database), Some(name)) => {
+            (GrantScope::Routine, format!("{kind} {database}.{name}"))
+        }
         _ => return None,
     };
 
@@ -928,7 +1121,13 @@ fn parse_grant_tokens(line: &str) -> Option<Vec<GrantEntry>> {
         entries.push(entry(scope, target.clone(), own, grant_option, None));
     }
     for (column, privileges) in columns {
-        entries.push(entry(GrantScope::Column, format!("{target}.{column}"), privileges, grant_option, None));
+        entries.push(entry(
+            GrantScope::Column,
+            format!("{target}.{column}"),
+            privileges,
+            grant_option,
+            None,
+        ));
     }
     Some(entries)
 }
@@ -937,7 +1136,9 @@ fn parse_grant_tokens(line: &str) -> Option<Vec<GrantEntry>> {
 fn tail_option(tail: &[Token], kind: &str) -> Option<bool> {
     match tail {
         [] => Some(false),
-        [Token::Word(with), Token::Word(what), Token::Word(option)] if with == "WITH" && what == kind && option == "OPTION" => {
+        [Token::Word(with), Token::Word(what), Token::Word(option)]
+            if with == "WITH" && what == kind && option == "OPTION" =>
+        {
             Some(true)
         }
         _ => None,
@@ -949,15 +1150,29 @@ mod tests {
     use super::*;
 
     fn account(user: &str, host: &str) -> Account {
-        Account { user: user.to_string(), host: host.to_string() }
+        Account {
+            user: user.to_string(),
+            host: host.to_string(),
+        }
     }
 
     fn context() -> Context {
-        let strings = |names: &[&str]| names.iter().map(|name| name.to_string()).collect::<Vec<_>>();
+        let strings = |names: &[&str]| {
+            names
+                .iter()
+                .map(|name| name.to_string())
+                .collect::<Vec<_>>()
+        };
         Context {
             current: account("admin", "%"),
             current_roles: vec![account("app_role", "%")],
-            global_privileges: strings(&["SELECT", "INSERT", "RELOAD", "CREATE USER", "BACKUP_ADMIN"]),
+            global_privileges: strings(&[
+                "SELECT",
+                "INSERT",
+                "RELOAD",
+                "CREATE USER",
+                "BACKUP_ADMIN",
+            ]),
             database_privileges: strings(&["SELECT", "INSERT"]),
             table_privileges: strings(&["SELECT", "INSERT"]),
             plugins: strings(&["caching_sha2_password", "sha256_password"]),
@@ -985,7 +1200,8 @@ mod tests {
 
     #[test]
     fn parses_global_database_table_and_column_layers() {
-        let global = parse_grant("GRANT SELECT, RELOAD ON *.* TO `bob`@`localhost` WITH GRANT OPTION");
+        let global =
+            parse_grant("GRANT SELECT, RELOAD ON *.* TO `bob`@`localhost` WITH GRANT OPTION");
         assert_eq!(global.len(), 1);
         assert_eq!(global[0].scope, GrantScope::Global);
         assert_eq!(global[0].target, "*.*");
@@ -995,16 +1211,32 @@ mod tests {
         let dynamic = parse_grant("GRANT BACKUP_ADMIN,CLONE_ADMIN ON *.* TO `bob`@`localhost`");
         assert_eq!(dynamic[0].privileges, vec!["BACKUP_ADMIN", "CLONE_ADMIN"]);
 
-        let database = parse_grant("GRANT CREATE TEMPORARY TABLES, LOCK TABLES ON `cdata\\_dev`.* TO `bob`@`localhost`");
+        let database = parse_grant(
+            "GRANT CREATE TEMPORARY TABLES, LOCK TABLES ON `cdata\\_dev`.* TO `bob`@`localhost`",
+        );
         assert_eq!(database[0].scope, GrantScope::Database);
-        assert_eq!(database[0].target, "cdata\\_dev.*", "库名保持 MySQL 存的样子，反斜杠说明 _ 不是通配符");
-        assert_eq!(database[0].privileges, vec!["CREATE TEMPORARY TABLES", "LOCK TABLES"]);
+        assert_eq!(
+            database[0].target, "cdata\\_dev.*",
+            "库名保持 MySQL 存的样子，反斜杠说明 _ 不是通配符"
+        );
+        assert_eq!(
+            database[0].privileges,
+            vec!["CREATE TEMPORARY TABLES", "LOCK TABLES"]
+        );
 
-        let mixed = parse_grant("GRANT SELECT (`a`, `b``c`), INSERT, UPDATE (`a`) ON `shop`.`orders` TO `bob`@`%`");
+        let mixed = parse_grant(
+            "GRANT SELECT (`a`, `b``c`), INSERT, UPDATE (`a`) ON `shop`.`orders` TO `bob`@`%`",
+        );
         assert_eq!(mixed.len(), 3, "{mixed:?}");
-        assert_eq!((mixed[0].scope, mixed[0].target.as_str()), (GrantScope::Table, "shop.orders"));
+        assert_eq!(
+            (mixed[0].scope, mixed[0].target.as_str()),
+            (GrantScope::Table, "shop.orders")
+        );
         assert_eq!(mixed[0].privileges, vec!["INSERT"]);
-        assert_eq!((mixed[1].scope, mixed[1].target.as_str()), (GrantScope::Column, "shop.orders.a"));
+        assert_eq!(
+            (mixed[1].scope, mixed[1].target.as_str()),
+            (GrantScope::Column, "shop.orders.a")
+        );
         assert_eq!(mixed[1].privileges, vec!["SELECT", "UPDATE"]);
         assert_eq!(mixed[2].target, "shop.orders.b`c", "反引号双写要还原");
         assert_eq!(mixed[2].privileges, vec!["SELECT"]);
@@ -1012,7 +1244,8 @@ mod tests {
 
     #[test]
     fn parses_roles_proxy_routines_and_partial_revokes() {
-        let roles = parse_grant("GRANT `r1`@`%`,`r2`@`localhost` TO `bob`@`localhost` WITH ADMIN OPTION");
+        let roles =
+            parse_grant("GRANT `r1`@`%`,`r2`@`localhost` TO `bob`@`localhost` WITH ADMIN OPTION");
         assert_eq!(roles.len(), 2);
         assert_eq!(roles[0].scope, GrantScope::Role);
         assert_eq!(roles[1].role, Some(account("r2", "localhost")));
@@ -1022,8 +1255,12 @@ mod tests {
         assert_eq!(proxy[0].scope, GrantScope::Proxy);
         assert!(proxy[0].grant_option);
 
-        let routine = parse_grant("GRANT EXECUTE, ALTER ROUTINE ON PROCEDURE `shop`.`refund` TO `bob`@`%`");
-        assert_eq!((routine[0].scope, routine[0].target.as_str()), (GrantScope::Routine, "PROCEDURE shop.refund"));
+        let routine =
+            parse_grant("GRANT EXECUTE, ALTER ROUTINE ON PROCEDURE `shop`.`refund` TO `bob`@`%`");
+        assert_eq!(
+            (routine[0].scope, routine[0].target.as_str()),
+            (GrantScope::Routine, "PROCEDURE shop.refund")
+        );
 
         let revoked = parse_grant("REVOKE INSERT ON `mysql`.* FROM `bob`@`%`");
         assert_eq!(revoked[0].scope, GrantScope::Database);
@@ -1046,138 +1283,345 @@ mod tests {
 
     #[test]
     fn preview_masks_the_password_and_accounts_are_backtick_quoted() {
-        let change = UserChange::Create { account: account("o'k`x", "10.0.%"), plugin: None };
+        let change = UserChange::Create {
+            account: account("o'k`x", "10.0.%"),
+            plugin: None,
+        };
         let plan = plan(&change, &context(), Some("s3cret'\\")).unwrap();
-        assert_eq!(plan.statement, "CREATE USER `o'k``x`@`10.0.%` IDENTIFIED BY '***'");
+        assert_eq!(
+            plan.statement,
+            "CREATE USER `o'k``x`@`10.0.%` IDENTIFIED BY '***'"
+        );
         assert!(!plan.statement.contains("s3cret"));
 
-        let with_plugin = UserChange::Create { account: account("bob", "localhost"), plugin: Some("sha256_password".into()) };
+        let with_plugin = UserChange::Create {
+            account: account("bob", "localhost"),
+            plugin: Some("sha256_password".into()),
+        };
         let plan = super::plan(&with_plugin, &context(), Some("pw")).unwrap();
-        assert_eq!(plan.statement, "CREATE USER `bob`@`localhost` IDENTIFIED WITH sha256_password BY '***'");
+        assert_eq!(
+            plan.statement,
+            "CREATE USER `bob`@`localhost` IDENTIFIED WITH sha256_password BY '***'"
+        );
 
         let unknown = UserChange::Create {
             account: account("bob", "localhost"),
             plugin: Some("x BY 'a'; DROP USER root".into()),
         };
-        assert!(super::plan(&unknown, &context(), Some("pw")).is_err(), "插件名只认服务器启用的");
+        assert!(
+            super::plan(&unknown, &context(), Some("pw")).is_err(),
+            "插件名只认服务器启用的"
+        );
     }
 
     #[test]
     fn password_rules() {
-        let change = UserChange::SetPassword { account: account("bob", "localhost") };
+        let change = UserChange::SetPassword {
+            account: account("bob", "localhost"),
+        };
         assert!(plan(&change, &context(), None).is_err());
         assert!(plan(&change, &context(), Some("")).is_err());
         assert!(plan(&change, &context(), Some("a\0b")).is_err());
-        let lock = UserChange::SetLocked { account: account("bob", "localhost"), locked: true };
-        assert!(plan(&lock, &context(), Some("pw")).is_err(), "不需要密码的操作不收密码");
-        assert!(plan(&UserChange::Create { account: account("", "localhost"), plugin: None }, &context(), Some("pw")).is_err());
-        assert!(plan(&UserChange::Create { account: account("bob", ""), plugin: None }, &context(), Some("pw")).is_err());
+        let lock = UserChange::SetLocked {
+            account: account("bob", "localhost"),
+            locked: true,
+        };
+        assert!(
+            plan(&lock, &context(), Some("pw")).is_err(),
+            "不需要密码的操作不收密码"
+        );
+        assert!(plan(
+            &UserChange::Create {
+                account: account("", "localhost"),
+                plugin: None
+            },
+            &context(),
+            Some("pw")
+        )
+        .is_err());
+        assert!(plan(
+            &UserChange::Create {
+                account: account("bob", ""),
+                plugin: None
+            },
+            &context(),
+            Some("pw")
+        )
+        .is_err());
     }
 
     #[test]
     fn current_account_cannot_be_dropped_locked_or_revoked() {
         let me = account("admin", "%");
-        assert!(plan(&UserChange::Drop { account: me.clone() }, &context(), None).unwrap_err().contains("当前登录"));
-        assert!(plan(&UserChange::SetLocked { account: me.clone(), locked: true }, &context(), None).is_err());
+        assert!(plan(
+            &UserChange::Drop {
+                account: me.clone()
+            },
+            &context(),
+            None
+        )
+        .unwrap_err()
+        .contains("当前登录"));
+        assert!(plan(
+            &UserChange::SetLocked {
+                account: me.clone(),
+                locked: true
+            },
+            &context(),
+            None
+        )
+        .is_err());
         assert!(plan(&revoke(me.clone(), &["SELECT"]), &context(), None).is_err());
-        let role = UserChange::RevokeRole { account: me.clone(), role: account("app_role", "%") };
+        let role = UserChange::RevokeRole {
+            account: me.clone(),
+            role: account("app_role", "%"),
+        };
         assert!(plan(&role, &context(), None).is_err());
         // 主机名不区分大小写
         let mut local = context();
         local.current = account("admin", "localhost");
-        assert!(plan(&UserChange::Drop { account: account("admin", "LOCALHOST") }, &local, None).is_err());
+        assert!(plan(
+            &UserChange::Drop {
+                account: account("admin", "LOCALHOST")
+            },
+            &local,
+            None
+        )
+        .is_err());
 
-        let unlock = plan(&UserChange::SetLocked { account: me.clone(), locked: false }, &context(), None).unwrap();
+        let unlock = plan(
+            &UserChange::SetLocked {
+                account: me.clone(),
+                locked: false,
+            },
+            &context(),
+            None,
+        )
+        .unwrap();
         assert_eq!(unlock.statement, "ALTER USER `admin`@`%` ACCOUNT UNLOCK");
-        let password = plan(&UserChange::SetPassword { account: me }, &context(), Some("new")).unwrap();
-        assert!(password.dangers.iter().any(|d| d.contains("连接设置")), "{:?}", password.dangers);
+        let password = plan(
+            &UserChange::SetPassword { account: me },
+            &context(),
+            Some("new"),
+        )
+        .unwrap();
+        assert!(
+            password.dangers.iter().any(|d| d.contains("连接设置")),
+            "{:?}",
+            password.dangers
+        );
 
         // 同名不同主机不是自己
-        assert!(plan(&UserChange::Drop { account: account("admin", "localhost") }, &context(), None).is_ok());
+        assert!(plan(
+            &UserChange::Drop {
+                account: account("admin", "localhost")
+            },
+            &context(),
+            None
+        )
+        .is_ok());
     }
 
     #[test]
     fn dangers_for_drop_revoke_all_grant_option_and_own_role() {
         let mut ctx = context();
         ctx.connections = 2;
-        let drop = plan(&UserChange::Drop { account: account("bob", "localhost") }, &ctx, None).unwrap();
+        let drop = plan(
+            &UserChange::Drop {
+                account: account("bob", "localhost"),
+            },
+            &ctx,
+            None,
+        )
+        .unwrap();
         assert_eq!(drop.statement, "DROP USER `bob`@`localhost`");
-        assert!(drop.dangers.iter().any(|d| d.contains("不会断开") && d.contains("2 个")), "{:?}", drop.dangers);
+        assert!(
+            drop.dangers
+                .iter()
+                .any(|d| d.contains("不会断开") && d.contains("2 个")),
+            "{:?}",
+            drop.dangers
+        );
 
-        let all = plan(&revoke(account("bob", "localhost"), &["all privileges", "grant option"]), &context(), None).unwrap();
-        assert_eq!(all.statement, "REVOKE ALL PRIVILEGES, GRANT OPTION ON *.* FROM `bob`@`localhost`");
+        let all = plan(
+            &revoke(
+                account("bob", "localhost"),
+                &["all privileges", "grant option"],
+            ),
+            &context(),
+            None,
+        )
+        .unwrap();
+        assert_eq!(
+            all.statement,
+            "REVOKE ALL PRIVILEGES, GRANT OPTION ON *.* FROM `bob`@`localhost`"
+        );
         assert!(all.dangers.iter().any(|d| d.contains("ALL PRIVILEGES")));
         assert!(all.dangers.iter().any(|d| d.contains("GRANT OPTION")));
 
-        let own_role = plan(&revoke(account("app_role", "%"), &["SELECT"]), &context(), None).unwrap();
-        assert!(own_role.dangers.iter().any(|d| d.contains("角色")), "{:?}", own_role.dangers);
-        let drop_role = plan(&UserChange::Drop { account: account("app_role", "%") }, &context(), None).unwrap();
+        let own_role = plan(
+            &revoke(account("app_role", "%"), &["SELECT"]),
+            &context(),
+            None,
+        )
+        .unwrap();
+        assert!(
+            own_role.dangers.iter().any(|d| d.contains("角色")),
+            "{:?}",
+            own_role.dangers
+        );
+        let drop_role = plan(
+            &UserChange::Drop {
+                account: account("app_role", "%"),
+            },
+            &context(),
+            None,
+        )
+        .unwrap();
         assert!(drop_role.dangers.iter().any(|d| d.contains("的角色")));
     }
 
     #[test]
     fn privileges_are_whitelisted_per_level() {
-        let ok = plan(&grant(GrantLevel::Global, &["select", "BACKUP_ADMIN", "select"]), &context(), None).unwrap();
-        assert_eq!(ok.statement, "GRANT SELECT, BACKUP_ADMIN ON *.* TO `bob`@`localhost`");
+        let ok = plan(
+            &grant(GrantLevel::Global, &["select", "BACKUP_ADMIN", "select"]),
+            &context(),
+            None,
+        )
+        .unwrap();
+        assert_eq!(
+            ok.statement,
+            "GRANT SELECT, BACKUP_ADMIN ON *.* TO `bob`@`localhost`"
+        );
 
-        let database = GrantLevel::Database { database: "shop".into() };
-        assert!(plan(&grant(database.clone(), &["RELOAD"]), &context(), None).is_err(), "RELOAD 只有全局");
-        assert!(plan(&grant(GrantLevel::Global, &["SELECT ON *.* TO x; DROP USER root; --"]), &context(), None).is_err());
+        let database = GrantLevel::Database {
+            database: "shop".into(),
+        };
+        assert!(
+            plan(&grant(database.clone(), &["RELOAD"]), &context(), None).is_err(),
+            "RELOAD 只有全局"
+        );
+        assert!(plan(
+            &grant(
+                GrantLevel::Global,
+                &["SELECT ON *.* TO x; DROP USER root; --"]
+            ),
+            &context(),
+            None
+        )
+        .is_err());
         assert!(plan(&grant(GrantLevel::Global, &[]), &context(), None).is_err());
-        assert!(plan(&grant(GrantLevel::Global, &["ALL PRIVILEGES", "SELECT"]), &context(), None).is_err());
-        assert!(plan(&grant(GrantLevel::Global, &["GRANT OPTION"]), &context(), None).unwrap_err().contains("WITH GRANT OPTION"));
+        assert!(plan(
+            &grant(GrantLevel::Global, &["ALL PRIVILEGES", "SELECT"]),
+            &context(),
+            None
+        )
+        .is_err());
+        assert!(plan(
+            &grant(GrantLevel::Global, &["GRANT OPTION"]),
+            &context(),
+            None
+        )
+        .unwrap_err()
+        .contains("WITH GRANT OPTION"));
 
         let with_option = UserChange::Grant {
             account: account("bob", "localhost"),
-            level: GrantLevel::Table { database: "shop".into(), table: "or`ders".into() },
+            level: GrantLevel::Table {
+                database: "shop".into(),
+                table: "or`ders".into(),
+            },
             privileges: vec!["ALL PRIVILEGES".into()],
             with_grant_option: true,
         };
         let plan = plan(&with_option, &context(), None).unwrap();
-        assert_eq!(plan.statement, "GRANT ALL PRIVILEGES ON `shop`.`or``ders` TO `bob`@`localhost` WITH GRANT OPTION");
+        assert_eq!(
+            plan.statement,
+            "GRANT ALL PRIVILEGES ON `shop`.`or``ders` TO `bob`@`localhost` WITH GRANT OPTION"
+        );
     }
 
     #[test]
     fn database_level_wildcards_are_escaped_unless_partial_revokes() {
-        let level = GrantLevel::Database { database: "cdata_dev%".into() };
+        let level = GrantLevel::Database {
+            database: "cdata_dev%".into(),
+        };
         let escaped = plan(&grant(level.clone(), &["SELECT"]), &context(), None).unwrap();
-        assert_eq!(escaped.statement, "GRANT SELECT ON `cdata\\_dev\\%`.* TO `bob`@`localhost`");
+        assert_eq!(
+            escaped.statement,
+            "GRANT SELECT ON `cdata\\_dev\\%`.* TO `bob`@`localhost`"
+        );
         assert!(escaped.notes.iter().any(|n| n.contains("通配符")));
 
         let mut ctx = context();
         ctx.partial_revokes = true;
         let literal = plan(&grant(level, &["SELECT"]), &ctx, None).unwrap();
-        assert_eq!(literal.statement, "GRANT SELECT ON `cdata_dev%`.* TO `bob`@`localhost`");
+        assert_eq!(
+            literal.statement,
+            "GRANT SELECT ON `cdata_dev%`.* TO `bob`@`localhost`"
+        );
 
-        let backslash = GrantLevel::Database { database: "a\\b".into() };
+        let backslash = GrantLevel::Database {
+            database: "a\\b".into(),
+        };
         assert!(plan(&grant(backslash, &["SELECT"]), &context(), None).is_err());
         // 表级授权里的库名不是通配模式
-        let table = GrantLevel::Table { database: "cdata_dev".into(), table: "t_1".into() };
+        let table = GrantLevel::Table {
+            database: "cdata_dev".into(),
+            table: "t_1".into(),
+        };
         assert_eq!(
-            plan(&grant(table, &["SELECT"]), &context(), None).unwrap().statement,
+            plan(&grant(table, &["SELECT"]), &context(), None)
+                .unwrap()
+                .statement,
             "GRANT SELECT ON `cdata_dev`.`t_1` TO `bob`@`localhost`"
         );
     }
 
     #[test]
     fn real_statement_escapes_the_password_by_sql_mode() {
-        let change = UserChange::SetPassword { account: account("bob", "localhost") };
+        let change = UserChange::SetPassword {
+            account: account("bob", "localhost"),
+        };
         let password = "a'b\\c";
-        let normal = statement(&change, &context(), &crate::alter::sql_string(password, false)).unwrap();
-        assert_eq!(normal, "ALTER USER `bob`@`localhost` IDENTIFIED BY 'a''b\\\\c'");
-        let no_backslash = statement(&change, &context(), &crate::alter::sql_string(password, true)).unwrap();
-        assert_eq!(no_backslash, "ALTER USER `bob`@`localhost` IDENTIFIED BY 'a''b\\c'");
+        let normal = statement(
+            &change,
+            &context(),
+            &crate::alter::sql_string(password, false),
+        )
+        .unwrap();
+        assert_eq!(
+            normal,
+            "ALTER USER `bob`@`localhost` IDENTIFIED BY 'a''b\\\\c'"
+        );
+        let no_backslash = statement(
+            &change,
+            &context(),
+            &crate::alter::sql_string(password, true),
+        )
+        .unwrap();
+        assert_eq!(
+            no_backslash,
+            "ALTER USER `bob`@`localhost` IDENTIFIED BY 'a''b\\c'"
+        );
     }
 
     #[test]
     fn errors_never_carry_the_password() {
         let server = |code, message: &str| {
-            mysql_async::Error::Server(mysql_async::ServerError { code, message: message.to_string(), state: "HY000".into() })
+            mysql_async::Error::Server(mysql_async::ServerError {
+                code,
+                message: message.to_string(),
+                state: "HY000".into(),
+            })
         };
         let parse = scrub(server(1064, "near 'Sup3r' at line 1"), Some("xxSup3r"));
         assert!(!parse.to_string().contains("Sup3r"), "{parse}");
 
-        let other = scrub(server(1819, "policy rejected 'it''s\\\\x' and it's\\x"), Some("it's\\x"));
+        let other = scrub(
+            server(1819, "policy rejected 'it''s\\\\x' and it's\\x"),
+            Some("it's\\x"),
+        );
         let text = other.to_string();
         assert!(!text.contains("it's") && !text.contains("it''s"), "{text}");
         assert!(text.contains("***"));
@@ -1185,10 +1629,22 @@ mod tests {
 
     #[test]
     fn password_expiry() {
-        assert!(password_expired("Y", None, 0, None).unwrap().contains("设为过期"));
-        assert_eq!(password_expired("N", None, 0, Some(10_000_000)), None, "全局 0 永不过期");
-        assert!(password_expired("N", None, 90, Some(91 * 86_400)).unwrap().contains("90 天"));
-        assert_eq!(password_expired("N", Some(0), 90, Some(91 * 86_400)), None, "账号 0 覆盖全局");
+        assert!(password_expired("Y", None, 0, None)
+            .unwrap()
+            .contains("设为过期"));
+        assert_eq!(
+            password_expired("N", None, 0, Some(10_000_000)),
+            None,
+            "全局 0 永不过期"
+        );
+        assert!(password_expired("N", None, 90, Some(91 * 86_400))
+            .unwrap()
+            .contains("90 天"));
+        assert_eq!(
+            password_expired("N", Some(0), 90, Some(91 * 86_400)),
+            None,
+            "账号 0 覆盖全局"
+        );
         assert_eq!(password_expired("N", Some(30), 0, Some(29 * 86_400)), None);
         assert!(password_expired("N", Some(30), 0, Some(31 * 86_400)).is_some());
     }

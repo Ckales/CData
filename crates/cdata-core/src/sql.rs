@@ -42,7 +42,11 @@ pub fn limit_query(sql: &str, limit: u64) -> String {
 fn is_limitable_query(sql: &str) -> bool {
     let units: Vec<u16> = sql.encode_utf16().collect();
     let tokens = crate::lexer::tokenize(sql);
-    let mut cursor = TokenCursor { units: &units, tokens: &tokens, index: 0 };
+    let mut cursor = TokenCursor {
+        units: &units,
+        tokens: &tokens,
+        index: 0,
+    };
     let Some(first) = cursor.bump() else {
         return false;
     };
@@ -114,7 +118,9 @@ impl TokenCursor<'_> {
             if token.kind == crate::lexer::SqlTokenKind::Comment {
                 continue;
             }
-            return Some(String::from_utf16_lossy(&self.units[token.start as usize..token.end as usize]));
+            return Some(String::from_utf16_lossy(
+                &self.units[token.start as usize..token.end as usize],
+            ));
         }
         None
     }
@@ -217,7 +223,10 @@ pub fn build_filtered_view(
     sort: Option<(&str, bool)>,
 ) -> Result<Statement, String> {
     if filter.items.is_empty() && sort.is_none() {
-        return Ok(Statement { sql: sql.to_string(), params: Vec::new() });
+        return Ok(Statement {
+            sql: sql.to_string(),
+            params: Vec::new(),
+        });
     }
 
     let mut params = Vec::new();
@@ -307,9 +316,14 @@ fn condition_sql(condition: &FilterCondition, params: &mut Vec<Value>) -> Result
         FilterOp::IsNull => (format!("{column} IS NULL"), Vec::new()),
         FilterOp::IsNotNull => (format!("{column} IS NOT NULL"), Vec::new()),
         FilterOp::In | FilterOp::NotIn => {
-            let values = filter_in_values(value).map_err(|err| format!("{}：{err}", condition.column))?;
+            let values =
+                filter_in_values(value).map_err(|err| format!("{}：{err}", condition.column))?;
             let marks = vec!["?"; values.len()].join(", ");
-            let keyword = if condition.op == FilterOp::In { "IN" } else { "NOT IN" };
+            let keyword = if condition.op == FilterOp::In {
+                "IN"
+            } else {
+                "NOT IN"
+            };
             (format!("{column} {keyword} ({marks})"), values)
         }
     };
@@ -338,7 +352,10 @@ pub fn filter_in_values(text: &str) -> Result<Vec<String>, String> {
     for (index, line) in body.split('\n').enumerate() {
         let line = line.strip_suffix('\r').unwrap_or(line);
         if line.is_empty() {
-            return Err(format!("IN 列表第 {} 行是空的；要匹配空字符串请用「=」", index + 1));
+            return Err(format!(
+                "IN 列表第 {} 行是空的；要匹配空字符串请用「=」",
+                index + 1
+            ));
         }
         if line.eq_ignore_ascii_case("NULL") {
             return Err(format!(
@@ -369,7 +386,11 @@ mod tests {
     use super::*;
 
     fn condition(column: &str, op: FilterOp, value: &str) -> FilterCondition {
-        FilterCondition { column: column.to_string(), op, value: value.to_string() }
+        FilterCondition {
+            column: column.to_string(),
+            op,
+            value: value.to_string(),
+        }
     }
 
     fn text(s: &str) -> Value {
@@ -407,9 +428,18 @@ mod tests {
     #[test]
     fn limit_wraps_queries_including_with_select() {
         assert!(limit_query("SELECT 1", 2).starts_with("SELECT * FROM ("));
-        assert!(limit_query("WITH c AS (SELECT 1) SELECT * FROM c", 2).starts_with("SELECT * FROM ("));
-        assert!(limit_query("WITH RECURSIVE c AS (SELECT 1) SELECT * FROM c", 2).starts_with("SELECT * FROM ("));
-        assert!(limit_query("WITH c (a) AS (SELECT 1), d AS (SELECT 2) SELECT a FROM c", 2).starts_with("SELECT * FROM ("));
+        assert!(
+            limit_query("WITH c AS (SELECT 1) SELECT * FROM c", 2).starts_with("SELECT * FROM (")
+        );
+        assert!(
+            limit_query("WITH RECURSIVE c AS (SELECT 1) SELECT * FROM c", 2)
+                .starts_with("SELECT * FROM (")
+        );
+        assert!(limit_query(
+            "WITH c (a) AS (SELECT 1), d AS (SELECT 2) SELECT a FROM c",
+            2
+        )
+        .starts_with("SELECT * FROM ("));
         assert!(limit_query("(SELECT 1) UNION (SELECT 2)", 2).starts_with("SELECT * FROM ("));
     }
 
@@ -435,7 +465,10 @@ mod tests {
     #[test]
     fn order_by_wraps_instead_of_rewriting() {
         let stmt = build_view("SELECT * FROM orders", &[], true, Some(("amount", false))).unwrap();
-        assert_eq!(stmt.sql, "SELECT * FROM (\nSELECT * FROM orders\n) AS cdata_view ORDER BY `amount` DESC");
+        assert_eq!(
+            stmt.sql,
+            "SELECT * FROM (\nSELECT * FROM orders\n) AS cdata_view ORDER BY `amount` DESC"
+        );
     }
 
     #[test]
@@ -453,7 +486,13 @@ mod tests {
 
     #[test]
     fn trailing_line_comment_does_not_swallow_the_paren() {
-        let stmt = build_view("SELECT * FROM orders -- 看这里", &[], true, Some(("id", true))).unwrap();
+        let stmt = build_view(
+            "SELECT * FROM orders -- 看这里",
+            &[],
+            true,
+            Some(("id", true)),
+        )
+        .unwrap();
         assert!(stmt.sql.contains("-- 看这里\n)"), "{}", stmt.sql);
     }
 
@@ -464,7 +503,13 @@ mod tests {
             condition("note", FilterOp::IsNull, "被忽略"),
             condition("name", FilterOp::Eq, "'; DROP TABLE orders; --"),
         ];
-        let stmt = build_view("SELECT * FROM orders", &conditions, true, Some(("id", false))).unwrap();
+        let stmt = build_view(
+            "SELECT * FROM orders",
+            &conditions,
+            true,
+            Some(("id", false)),
+        )
+        .unwrap();
 
         assert_eq!(
             stmt.sql,
@@ -472,14 +517,24 @@ mod tests {
              WHERE (`amount` >= ?) AND (`note` IS NULL) AND (`name` = ?) ORDER BY `id` DESC"
         );
         // 值走参数，绝不拼进 SQL；IS NULL 不占参数
-        assert_eq!(stmt.params, vec![text("10.5"), text("'; DROP TABLE orders; --")]);
+        assert_eq!(
+            stmt.params,
+            vec![text("10.5"), text("'; DROP TABLE orders; --")]
+        );
     }
 
     #[test]
     fn any_match_uses_or() {
-        let conditions = vec![condition("a", FilterOp::Eq, "1"), condition("b", FilterOp::Eq, "2")];
+        let conditions = vec![
+            condition("a", FilterOp::Eq, "1"),
+            condition("b", FilterOp::Eq, "2"),
+        ];
         let stmt = build_view("SELECT * FROM t", &conditions, false, None).unwrap();
-        assert!(stmt.sql.ends_with("WHERE (`a` = ?) OR (`b` = ?)"), "{}", stmt.sql);
+        assert!(
+            stmt.sql.ends_with("WHERE (`a` = ?) OR (`b` = ?)"),
+            "{}",
+            stmt.sql
+        );
     }
 
     #[test]
@@ -491,7 +546,11 @@ mod tests {
         ];
         let stmt = build_view("SELECT * FROM t", &conditions, true, None).unwrap();
 
-        assert!(stmt.sql.contains("`name` LIKE ? ESCAPE '|'"), "{}", stmt.sql);
+        assert!(
+            stmt.sql.contains("`name` LIKE ? ESCAPE '|'"),
+            "{}",
+            stmt.sql
+        );
         assert_eq!(
             stmt.params,
             vec![text("%50|%|_off||x%"), text("张%"), text("%三")]
@@ -508,7 +567,9 @@ mod tests {
     #[test]
     fn condition_without_column_is_refused() {
         let conditions = vec![condition("", FilterOp::Eq, "1")];
-        assert!(build_view("SELECT * FROM t", &conditions, true, None).unwrap_err().contains("列"));
+        assert!(build_view("SELECT * FROM t", &conditions, true, None)
+            .unwrap_err()
+            .contains("列"));
     }
 
     fn leaf(column: &str, op: FilterOp, value: &str) -> FilterItem {
@@ -527,12 +588,22 @@ mod tests {
         ];
         let stmt = build_view("SELECT * FROM t", &conditions, true, None).unwrap();
         assert!(
-            stmt.sql.ends_with("WHERE (`id` IN (?, ?, ?)) AND (`name` NOT IN (?, ?))"),
+            stmt.sql
+                .ends_with("WHERE (`id` IN (?, ?, ?)) AND (`name` NOT IN (?, ?))"),
             "{}",
             stmt.sql
         );
         // 逗号不是分隔符；末尾换行和 \r 是粘贴带进来的，不算值
-        assert_eq!(stmt.params, vec![text("1"), text("2,5"), text("3"), text("张三"), text("李四")]);
+        assert_eq!(
+            stmt.params,
+            vec![
+                text("1"),
+                text("2,5"),
+                text("3"),
+                text("张三"),
+                text("李四")
+            ]
+        );
     }
 
     #[test]
@@ -541,7 +612,9 @@ mod tests {
             let err = filter_in_values(value).unwrap_err();
             assert!(err.contains("至少要写一个值"), "{value:?} → {err}");
         }
-        assert!(filter_in_values("1\n\n2").unwrap_err().contains("第 2 行是空的"));
+        assert!(filter_in_values("1\n\n2")
+            .unwrap_err()
+            .contains("第 2 行是空的"));
         // NOT IN (…, NULL) 永远不为真，不能让它静默地返回空结果
         let err = filter_in_values("1\nnull").unwrap_err();
         assert!(err.contains("第 2 行是 NULL"), "{err}");
@@ -554,7 +627,10 @@ mod tests {
     #[test]
     fn in_list_keeps_values_verbatim() {
         // 前后空格、LIKE 通配符都原样绑定，IN 不是 LIKE
-        assert_eq!(filter_in_values(" a \n50%_\nNULLABLE").unwrap(), [" a ", "50%_", "NULLABLE"]);
+        assert_eq!(
+            filter_in_values(" a \n50%_\nNULLABLE").unwrap(),
+            [" a ", "50%_", "NULLABLE"]
+        );
     }
 
     #[test]
@@ -563,12 +639,21 @@ mod tests {
         let filter = FilterGroup {
             match_all: false,
             items: vec![
-                group(true, vec![leaf("a", FilterOp::Eq, "1"), leaf("b", FilterOp::Eq, "2")]),
+                group(
+                    true,
+                    vec![leaf("a", FilterOp::Eq, "1"), leaf("b", FilterOp::Eq, "2")],
+                ),
                 group(
                     true,
                     vec![
                         leaf("c", FilterOp::In, "3\n4"),
-                        group(false, vec![leaf("d", FilterOp::IsNull, ""), leaf("d", FilterOp::Lt, "5")]),
+                        group(
+                            false,
+                            vec![
+                                leaf("d", FilterOp::IsNull, ""),
+                                leaf("d", FilterOp::Lt, "5"),
+                            ],
+                        ),
                     ],
                 ),
             ],
@@ -580,27 +665,50 @@ mod tests {
              ((`a` = ?) AND (`b` = ?)) OR ((`c` IN (?, ?)) AND ((`d` IS NULL) OR (`d` < ?))) ORDER BY `a` ASC"
         );
         // 参数顺序和占位符出现的顺序一致
-        assert_eq!(stmt.params, vec![text("1"), text("2"), text("3"), text("4"), text("5")]);
+        assert_eq!(
+            stmt.params,
+            vec![text("1"), text("2"), text("3"), text("4"), text("5")]
+        );
     }
 
     #[test]
     fn flat_build_view_matches_a_single_group() {
-        let conditions = vec![condition("a", FilterOp::Eq, "1"), condition("b", FilterOp::Contains, "x")];
+        let conditions = vec![
+            condition("a", FilterOp::Eq, "1"),
+            condition("b", FilterOp::Contains, "x"),
+        ];
         let flat = build_view("SELECT * FROM t", &conditions, false, None).unwrap();
         let filter = FilterGroup {
             match_all: false,
-            items: vec![leaf("a", FilterOp::Eq, "1"), leaf("b", FilterOp::Contains, "x")],
+            items: vec![
+                leaf("a", FilterOp::Eq, "1"),
+                leaf("b", FilterOp::Contains, "x"),
+            ],
         };
-        assert_eq!(flat, build_filtered_view("SELECT * FROM t", &filter, None).unwrap());
+        assert_eq!(
+            flat,
+            build_filtered_view("SELECT * FROM t", &filter, None).unwrap()
+        );
     }
 
     #[test]
     fn empty_inner_group_is_refused_but_empty_top_level_means_no_filter() {
-        let filter = FilterGroup { match_all: true, items: vec![leaf("a", FilterOp::Eq, "1"), group(false, vec![])] };
-        assert!(build_filtered_view("SELECT 1", &filter, None).unwrap_err().contains("分组里没有条件"));
+        let filter = FilterGroup {
+            match_all: true,
+            items: vec![leaf("a", FilterOp::Eq, "1"), group(false, vec![])],
+        };
+        assert!(build_filtered_view("SELECT 1", &filter, None)
+            .unwrap_err()
+            .contains("分组里没有条件"));
 
-        let empty = FilterGroup { match_all: true, items: vec![] };
-        assert_eq!(build_filtered_view("SELECT 1;", &empty, None).unwrap().sql, "SELECT 1;");
+        let empty = FilterGroup {
+            match_all: true,
+            items: vec![],
+        };
+        assert_eq!(
+            build_filtered_view("SELECT 1;", &empty, None).unwrap().sql,
+            "SELECT 1;"
+        );
     }
 
     #[test]

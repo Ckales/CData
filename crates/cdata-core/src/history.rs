@@ -172,7 +172,13 @@ fn push_history(entries: &mut Vec<HistoryEntry>, sql: &str, limit: usize) {
     if entries.first().is_some_and(|last| last.sql == sql) {
         entries.remove(0);
     }
-    entries.insert(0, HistoryEntry { sql: sql.to_string(), executed_at: now_millis() });
+    entries.insert(
+        0,
+        HistoryEntry {
+            sql: sql.to_string(),
+            executed_at: now_millis(),
+        },
+    );
     entries.truncate(limit);
 }
 
@@ -448,23 +454,37 @@ mod tests {
         add_history("SELECT 2").unwrap();
         add_history("   ").unwrap();
         let sqls: Vec<String> = history().unwrap().into_iter().map(|e| e.sql).collect();
-        assert_eq!(sqls, ["SELECT 2", "SELECT 1"], "最新的在前，连着重复的只留一条，空的不记");
+        assert_eq!(
+            sqls,
+            ["SELECT 2", "SELECT 1"],
+            "最新的在前，连着重复的只留一条，空的不记"
+        );
 
         for i in 0..505 {
             add_history(&format!("SELECT {i}")).unwrap();
         }
-        assert_eq!(history().unwrap().len(), preferences::load().unwrap().transcript_history_limit as usize);
+        assert_eq!(
+            history().unwrap().len(),
+            preferences::load().unwrap().transcript_history_limit as usize
+        );
 
         for i in 0..105 {
             add_query_history(&format!("SELECT query_{i}")).unwrap();
         }
         assert_eq!(query_history().unwrap().len(), 100);
         let saved = std::fs::read_to_string(dir.join("query_history.json")).unwrap();
-        preferences::save(&preferences::Preferences { save_query_history: false, ..preferences::Preferences::default() }).unwrap();
+        preferences::save(&preferences::Preferences {
+            save_query_history: false,
+            ..preferences::Preferences::default()
+        })
+        .unwrap();
         assert!(query_history().unwrap().is_empty());
         add_query_history("SELECT session_only").unwrap();
         assert_eq!(query_history().unwrap()[0].sql, "SELECT session_only");
-        assert_eq!(std::fs::read_to_string(dir.join("query_history.json")).unwrap(), saved);
+        assert_eq!(
+            std::fs::read_to_string(dir.join("query_history.json")).unwrap(),
+            saved
+        );
 
         let id = save_favorite("日报", "SELECT * FROM daily").unwrap();
         let same = save_favorite("日报", "SELECT * FROM daily_v2").unwrap();

@@ -12,7 +12,10 @@ use mysql_async::Conn;
 use serde::{Deserialize, Serialize};
 
 use crate::sql::quote_ident;
-use crate::structure::{mysql_at_least, CheckDef, ColumnDef, DefaultValue, ForeignKeyDef, IndexDef, IndexPart, TableStructure};
+use crate::structure::{
+    mysql_at_least, CheckDef, ColumnDef, DefaultValue, ForeignKeyDef, IndexDef, IndexPart,
+    TableStructure,
+};
 
 /// 可编辑的一列
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -112,9 +115,31 @@ pub struct AlterPlan {
     pub notes: Vec<String>,
 }
 
-const TEXT_TYPES: &[&str] = &["char", "varchar", "tinytext", "text", "mediumtext", "longtext", "enum", "set"];
-const FK_ACTIONS: &[&str] = &["RESTRICT", "CASCADE", "SET NULL", "NO ACTION", "SET DEFAULT"];
-const ROW_FORMATS: &[&str] = &["DEFAULT", "DYNAMIC", "FIXED", "COMPRESSED", "REDUNDANT", "COMPACT"];
+const TEXT_TYPES: &[&str] = &[
+    "char",
+    "varchar",
+    "tinytext",
+    "text",
+    "mediumtext",
+    "longtext",
+    "enum",
+    "set",
+];
+const FK_ACTIONS: &[&str] = &[
+    "RESTRICT",
+    "CASCADE",
+    "SET NULL",
+    "NO ACTION",
+    "SET DEFAULT",
+];
+const ROW_FORMATS: &[&str] = &[
+    "DEFAULT",
+    "DYNAMIC",
+    "FIXED",
+    "COMPRESSED",
+    "REDUNDANT",
+    "COMPACT",
+];
 
 /// 读到的结构转成草稿。锁定原因在这里一次定下来
 pub fn table_draft(structure: &TableStructure) -> TableDraft {
@@ -129,9 +154,21 @@ pub fn table_draft(structure: &TableStructure) -> TableDraft {
         });
     }
     TableDraft {
-        columns: structure.columns.iter().map(|column| column_draft(column, table_collation)).collect(),
-        indexes: structure.indexes.iter().map(|index| index_draft(index, &structure.create_sql)).collect(),
-        foreign_keys: structure.foreign_keys.iter().map(foreign_key_draft).collect(),
+        columns: structure
+            .columns
+            .iter()
+            .map(|column| column_draft(column, table_collation))
+            .collect(),
+        indexes: structure
+            .indexes
+            .iter()
+            .map(|index| index_draft(index, &structure.create_sql))
+            .collect(),
+        foreign_keys: structure
+            .foreign_keys
+            .iter()
+            .map(foreign_key_draft)
+            .collect(),
         checks,
         options: TableOptionsDraft {
             engine: structure.engine.clone().unwrap_or_default(),
@@ -164,7 +201,11 @@ pub fn new_table_draft() -> TableDraft {
             original_name: None,
             name: "PRIMARY".to_string(),
             kind: IndexKind::Primary,
-            parts: vec![IndexPart { column: Some("id".to_string()), prefix: None, descending: false }],
+            parts: vec![IndexPart {
+                column: Some("id".to_string()),
+                prefix: None,
+                descending: false,
+            }],
             comment: String::new(),
             locked: None,
         }],
@@ -233,7 +274,9 @@ fn parse_extra(extra: &str) -> Result<(bool, Option<String>), String> {
             on_update = Some(words[i + 2].to_string());
             i += 3;
         } else {
-            return Err(format!("列属性「{extra}」没法原样重建（生成列、不可见列等），只能删除或改名"));
+            return Err(format!(
+                "列属性「{extra}」没法原样重建（生成列、不可见列等），只能删除或改名"
+            ));
         }
     }
     Ok((auto_increment, on_update))
@@ -254,12 +297,17 @@ fn index_draft(index: &IndexDef, create_sql: &str) -> IndexDraft {
 
     let mut locked = None;
     if !matches!(index.index_type.as_str(), "BTREE" | "FULLTEXT" | "SPATIAL") {
-        locked = Some(format!("索引类型 {} 没法原样重建，只能删除或改名", index.index_type));
+        locked = Some(format!(
+            "索引类型 {} 没法原样重建，只能删除或改名",
+            index.index_type
+        ));
     } else if index.parts.iter().any(|part| part.column.is_none()) {
         locked = Some("函数索引读不到表达式，没法原样重建，只能删除或改名".to_string());
     } else if index_line_has_version_comment(create_sql, &index.name) {
         // SHOW CREATE 里 INVISIBLE、WITH PARSER 这些都写在 /*!… */ 里，information_schema 读不全
-        locked = Some("索引带有 INVISIBLE / WITH PARSER 之类的属性，没法原样重建，只能删除或改名".to_string());
+        locked = Some(
+            "索引带有 INVISIBLE / WITH PARSER 之类的属性，没法原样重建，只能删除或改名".to_string(),
+        );
     }
 
     IndexDraft {
@@ -274,7 +322,9 @@ fn index_draft(index: &IndexDef, create_sql: &str) -> IndexDraft {
 
 fn index_line_has_version_comment(create_sql: &str, name: &str) -> bool {
     let marker = format!("KEY {} (", quote_ident(name));
-    create_sql.lines().any(|line| line.contains(&marker) && line.contains("/*!"))
+    create_sql
+        .lines()
+        .any(|line| line.contains(&marker) && line.contains("/*!"))
 }
 
 fn foreign_key_draft(fk: &ForeignKeyDef) -> ForeignKeyDraft {
@@ -324,7 +374,9 @@ fn check_fragment(text: &str, what: &str) -> Result<(), String> {
         return Err(format!("{what}不能为空"));
     }
     if text.contains('\\') {
-        return Err(format!("{what}「{text}」里有反斜杠：它的含义随 NO_BACKSLASH_ESCAPES 变，没法保证照原样执行"));
+        return Err(format!(
+            "{what}「{text}」里有反斜杠：它的含义随 NO_BACKSLASH_ESCAPES 变，没法保证照原样执行"
+        ));
     }
     let chars: Vec<char> = text.chars().collect();
     let mut depth = 0;
@@ -359,8 +411,12 @@ fn check_fragment(text: &str, what: &str) -> Result<(), String> {
             }
             ',' if depth == 0 => return Err(format!("{what}「{text}」里有括号外的逗号")),
             ';' | '#' => return Err(format!("{what}「{text}」里不能有 {ch}")),
-            '-' if chars.get(i + 1) == Some(&'-') => return Err(format!("{what}「{text}」里不能有注释")),
-            '/' if chars.get(i + 1) == Some(&'*') => return Err(format!("{what}「{text}」里不能有注释")),
+            '-' if chars.get(i + 1) == Some(&'-') => {
+                return Err(format!("{what}「{text}」里不能有注释"))
+            }
+            '/' if chars.get(i + 1) == Some(&'*') => {
+                return Err(format!("{what}「{text}」里不能有注释"))
+            }
             _ => {}
         }
         i += 1;
@@ -374,7 +430,9 @@ fn check_fragment(text: &str, what: &str) -> Result<(), String> {
 /// `varchar(20)` → `varchar`
 fn base_type(column_type: &str) -> String {
     let trimmed = column_type.trim();
-    let end = trimmed.find(|c: char| c == '(' || c.is_whitespace()).unwrap_or(trimmed.len());
+    let end = trimmed
+        .find(|c: char| c == '(' || c.is_whitespace())
+        .unwrap_or(trimmed.len());
     trimmed[..end].to_ascii_lowercase()
 }
 
@@ -431,7 +489,10 @@ fn column_definition(
     let base = base_type(&column.column_type);
     let mut sql = column.column_type.trim().to_string();
 
-    let explicit_collation = column.collation.as_deref().filter(|collation| Some(*collation) != table_collation);
+    let explicit_collation = column
+        .collation
+        .as_deref()
+        .filter(|collation| Some(*collation) != table_collation);
     if let Some(collation) = explicit_collation {
         if !TEXT_TYPES.contains(&base.as_str()) {
             return Err(format!(
@@ -439,14 +500,22 @@ fn column_definition(
                 column.name
             ));
         }
-        if collation.is_empty() || !collation.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+        if collation.is_empty()
+            || !collation
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '_')
+        {
             return Err(format!("列 {}：排序规则「{collation}」不合法", column.name));
         }
         sql.push_str(" COLLATE ");
         sql.push_str(collation);
     }
 
-    sql.push_str(if column.nullable { " NULL" } else { " NOT NULL" });
+    sql.push_str(if column.nullable {
+        " NULL"
+    } else {
+        " NOT NULL"
+    });
 
     match effective_default(column) {
         DefaultValue::NoDefault => {}
@@ -485,7 +554,10 @@ fn column_definition(
     }
     if let Some(on_update) = &column.on_update {
         if !is_current_timestamp(on_update) {
-            return Err(format!("列 {}：ON UPDATE 只能是 CURRENT_TIMESTAMP[(n)]", column.name));
+            return Err(format!(
+                "列 {}：ON UPDATE 只能是 CURRENT_TIMESTAMP[(n)]",
+                column.name
+            ));
         }
         sql.push_str(" ON UPDATE ");
         sql.push_str(on_update.trim());
@@ -499,7 +571,12 @@ fn column_definition(
 
 /// 比较定义时忽略名字、身份和锁定标记，默认值、排序规则按生效的比。
 /// 表的默认排序规则可能在同一次里改掉，原列按旧的算、草稿按新的算
-fn same_definition(before: &ColumnDraft, after: &ColumnDraft, old_collation: Option<&str>, new_collation: Option<&str>) -> bool {
+fn same_definition(
+    before: &ColumnDraft,
+    after: &ColumnDraft,
+    old_collation: Option<&str>,
+    new_collation: Option<&str>,
+) -> bool {
     before.column_type.trim() == after.column_type.trim()
         && before.nullable == after.nullable
         && effective_default(before) == effective_default(after)
@@ -611,9 +688,14 @@ fn type_change_danger(name: &str, old_type: &str, new_type: &str) -> Option<Stri
         return None;
     }
     let old_base = base_type(old_type);
-    let same_family = old_base == base_type(new_type) && matches!(old_base.as_str(), "char" | "varchar" | "binary" | "varbinary");
+    let same_family = old_base == base_type(new_type)
+        && matches!(
+            old_base.as_str(),
+            "char" | "varchar" | "binary" | "varbinary"
+        );
     if same_family {
-        if let (Some(old_length), Some(new_length)) = (type_length(old_type), type_length(new_type)) {
+        if let (Some(old_length), Some(new_length)) = (type_length(old_type), type_length(new_type))
+        {
             if new_length >= old_length {
                 return None;
             }
@@ -622,7 +704,9 @@ fn type_change_danger(name: &str, old_type: &str, new_type: &str) -> Option<Stri
             ));
         }
     }
-    Some(format!("列 {name} 类型 {old_type} → {new_type}：已有的值可能被截断、舍入或转换失败"))
+    Some(format!(
+        "列 {name} 类型 {old_type} → {new_type}：已有的值可能被截断、舍入或转换失败"
+    ))
 }
 
 fn lower(name: &str) -> String {
@@ -668,7 +752,11 @@ fn check_sql(check: &CheckDraft) -> Result<String, String> {
     let mut sql = if check.name.trim().is_empty() {
         format!("CHECK ({})", check.expression.trim())
     } else {
-        format!("CONSTRAINT {} CHECK ({})", quote_ident(&check.name), check.expression.trim())
+        format!(
+            "CONSTRAINT {} CHECK ({})",
+            quote_ident(&check.name),
+            check.expression.trim()
+        )
     };
     if !check.enforced {
         sql.push_str(" NOT ENFORCED");
@@ -679,7 +767,10 @@ fn check_sql(check: &CheckDraft) -> Result<String, String> {
 fn row_format_word(row_format: &str) -> Result<String, String> {
     let upper = row_format.trim().to_ascii_uppercase();
     if !ROW_FORMATS.contains(&upper.as_str()) {
-        return Err(format!("ROW_FORMAT「{row_format}」不认识，可选：{}", ROW_FORMATS.join("、")));
+        return Err(format!(
+            "ROW_FORMAT「{row_format}」不认识，可选：{}",
+            ROW_FORMATS.join("、")
+        ));
     }
     Ok(upper)
 }
@@ -724,7 +815,11 @@ fn backslash_note(statements: &[String], no_backslash_escapes: bool) -> Option<S
     if !statements.iter().any(|statement| statement.contains('\\')) {
         return None;
     }
-    let mode = if no_backslash_escapes { "已开启" } else { "未开启" };
+    let mode = if no_backslash_escapes {
+        "已开启"
+    } else {
+        "未开启"
+    };
     Some(format!(
         "字符串里的反斜杠按当前连接的 sql_mode（NO_BACKSLASH_ESCAPES {mode}）转义。复制到别处执行前，先确认那边的 sql_mode 一致。"
     ))
@@ -742,14 +837,21 @@ fn check_draft(draft: &TableDraft) -> Result<(), String> {
             return Err("有一列没有名字".to_string());
         }
         if !draft_names.insert(lower(&column.name)) {
-            return Err(format!("列名 {} 重复了（MySQL 的列名不区分大小写）", column.name));
+            return Err(format!(
+                "列名 {} 重复了（MySQL 的列名不区分大小写）",
+                column.name
+            ));
         }
     }
 
     let mut index_names = HashSet::new();
     let mut primary_count = 0;
     for index in &draft.indexes {
-        let name = if index.kind == IndexKind::Primary { "PRIMARY" } else { index.name.as_str() };
+        let name = if index.kind == IndexKind::Primary {
+            "PRIMARY"
+        } else {
+            index.name.as_str()
+        };
         if index.kind == IndexKind::Primary {
             primary_count += 1;
         } else if name.trim().is_empty() {
@@ -789,7 +891,10 @@ fn check_draft(draft: &TableDraft) -> Result<(), String> {
             return Err(format!("外键名 {} 重复了", fk.name));
         }
         if fk.columns.is_empty() || fk.columns.len() != fk.referenced_columns.len() {
-            return Err(format!("外键 {}：本表的列和引用的列要一样多，且至少一列", fk.name));
+            return Err(format!(
+                "外键 {}：本表的列和引用的列要一样多，且至少一列",
+                fk.name
+            ));
         }
         for column in &fk.columns {
             if !draft_names.contains(&lower(column)) {
@@ -846,23 +951,35 @@ pub fn plan_alter(
 
     // ---- 表的默认字符集：先定下来，改列时要用 ----
     let old_collation = original.table_collation.as_deref();
-    let charset_changed = !same_word(options.charset.as_deref(), original.table_charset.as_deref())
-        || !same_word(options.collation.as_deref(), old_collation);
-    let new_collation = if charset_changed { options.collation.as_deref() } else { old_collation };
+    let charset_changed = !same_word(
+        options.charset.as_deref(),
+        original.table_charset.as_deref(),
+    ) || !same_word(options.collation.as_deref(), old_collation);
+    let new_collation = if charset_changed {
+        options.collation.as_deref()
+    } else {
+        old_collation
+    };
     let mut charset_clause = None;
     if charset_changed || options.convert_charset {
-        let (Some(charset), Some(collation)) = (options.charset.as_deref(), options.collation.as_deref()) else {
+        let (Some(charset), Some(collation)) =
+            (options.charset.as_deref(), options.collation.as_deref())
+        else {
             return Err("改表的字符集要同时填字符集和排序规则".to_string());
         };
         check_charset_pair(charset, collation)?;
         if options.convert_charset {
-            charset_clause = Some(format!("CONVERT TO CHARACTER SET {charset} COLLATE {collation}"));
+            charset_clause = Some(format!(
+                "CONVERT TO CHARACTER SET {charset} COLLATE {collation}"
+            ));
             dangers.push(format!(
                 "CONVERT TO CHARACTER SET {charset}：重写整张表，所有字符串列的数据转换成 {collation}；\
                  新字符集表示不了的字符会报错或变成 ?，TEXT 类的列可能被自动换成更大的类型（比如 TEXT → MEDIUMTEXT）"
             ));
         } else {
-            charset_clause = Some(format!("DEFAULT CHARACTER SET {charset} COLLATE {collation}"));
+            charset_clause = Some(format!(
+                "DEFAULT CHARACTER SET {charset} COLLATE {collation}"
+            ));
             extra_notes.push(format!(
                 "只改表的默认字符集：已有的列不转换，之后新加的、没指定排序规则的列才用 {collation}。\
                  要连已有数据一起转换，勾选「转换已有列」（CONVERT TO CHARACTER SET）。"
@@ -934,7 +1051,10 @@ pub fn plan_alter(
 
         let Some(original_name) = &column.original_name else {
             let definition = render_column(column, new_collation, charset_changed, nbe)?;
-            column_clauses.push(format!("ADD COLUMN {} {definition}{placement}", quote_ident(&column.name)));
+            column_clauses.push(format!(
+                "ADD COLUMN {} {definition}{placement}",
+                quote_ident(&column.name)
+            ));
             continue;
         };
 
@@ -970,15 +1090,23 @@ pub fn plan_alter(
                 quote_ident(&column.name)
             ));
         } else {
-            column_clauses.push(format!("MODIFY COLUMN {} {definition}{placement}", quote_ident(&column.name)));
+            column_clauses.push(format!(
+                "MODIFY COLUMN {} {definition}{placement}",
+                quote_ident(&column.name)
+            ));
         }
 
-        if let Some(danger) = type_change_danger(original_name, &before.column_type, &column.column_type) {
+        if let Some(danger) =
+            type_change_danger(original_name, &before.column_type, &column.column_type)
+        {
             dangers.push(danger);
         }
         let old_column_collation = effective_collation(before, old_collation);
         let new_column_collation = effective_collation(column, new_collation);
-        if old_column_collation.is_some() && new_column_collation.is_some() && old_column_collation != new_column_collation {
+        if old_column_collation.is_some()
+            && new_column_collation.is_some()
+            && old_column_collation != new_column_collation
+        {
             dangers.push(format!(
                 "列 {original_name} 排序规则 {} → {}：已有的数据要转换字符集，转换不了的字符会报错或变成 ?",
                 old_column_collation.unwrap_or_default(),
@@ -1038,11 +1166,21 @@ pub fn plan_alter(
                 }
             }
         }
-        let new_name = if index.kind == IndexKind::Primary { "PRIMARY" } else { index.name.as_str() };
-        let unchanged = before.kind == index.kind && expected_parts == index.parts && before.comment == index.comment;
+        let new_name = if index.kind == IndexKind::Primary {
+            "PRIMARY"
+        } else {
+            index.name.as_str()
+        };
+        let unchanged = before.kind == index.kind
+            && expected_parts == index.parts
+            && before.comment == index.comment;
         if unchanged {
             if new_name != original_name {
-                rename_indexes.push(format!("RENAME INDEX {} TO {}", quote_ident(original_name), quote_ident(new_name)));
+                rename_indexes.push(format!(
+                    "RENAME INDEX {} TO {}",
+                    quote_ident(original_name),
+                    quote_ident(new_name)
+                ));
             }
             continue;
         }
@@ -1117,24 +1255,39 @@ pub fn plan_alter(
         let Some(original_name) = &check.original_name else {
             add_checks.push(format!("ADD {}", check_sql(check)?));
             if check.enforced {
-                extra_notes.push("新加的 CHECK 约束会检查现有的每一行，有一行不满足整条 ALTER 就失败。".to_string());
+                extra_notes.push(
+                    "新加的 CHECK 约束会检查现有的每一行，有一行不满足整条 ALTER 就失败。"
+                        .to_string(),
+                );
             }
             continue;
         };
         let Some(before) = original_checks.iter().find(|c| &c.name == original_name) else {
-            return Err(format!("原表里没有 CHECK 约束 {original_name}，请重新打开编辑器"));
+            return Err(format!(
+                "原表里没有 CHECK 约束 {original_name}，请重新打开编辑器"
+            ));
         };
         if !used_checks.insert(original_name.clone()) {
-            return Err(format!("原来的 CHECK 约束 {original_name} 在草稿里出现了两次"));
+            return Err(format!(
+                "原来的 CHECK 约束 {original_name} 在草稿里出现了两次"
+            ));
         }
-        if check.name != before.name || check.expression != before.expression || check.enforced != before.enforced {
-            return Err(format!("CHECK 约束 {original_name} 不能修改：删掉它再新加一条"));
+        if check.name != before.name
+            || check.expression != before.expression
+            || check.enforced != before.enforced
+        {
+            return Err(format!(
+                "CHECK 约束 {original_name} 不能修改：删掉它再新加一条"
+            ));
         }
     }
     for check in original_checks {
         if !used_checks.contains(&check.name) {
             drop_checks.push(format!("DROP CHECK {}", quote_ident(&check.name)));
-            dangers.push(format!("删除 CHECK 约束 {}：之后写入不再检查 {}", check.name, check.expression));
+            dangers.push(format!(
+                "删除 CHECK 约束 {}：之后写入不再检查 {}",
+                check.name, check.expression
+            ));
         }
     }
 
@@ -1158,9 +1311,15 @@ pub fn plan_alter(
             return Err("AUTO_INCREMENT 要从 1 起".to_string());
         }
         option_clauses.push(format!("AUTO_INCREMENT = {auto_increment}"));
-        extra_notes.push("AUTO_INCREMENT 设得不比现有最大值大时，MySQL 会自动改成最大值 + 1，不会报错。".to_string());
+        extra_notes.push(
+            "AUTO_INCREMENT 设得不比现有最大值大时，MySQL 会自动改成最大值 + 1，不会报错。"
+                .to_string(),
+        );
     }
-    if !same_word(options.row_format.as_deref(), original.row_format.as_deref()) {
+    if !same_word(
+        options.row_format.as_deref(),
+        original.row_format.as_deref(),
+    ) {
         // 清空就是回到引擎默认
         let row_format = row_format_word(options.row_format.as_deref().unwrap_or("DEFAULT"))?;
         option_clauses.push(format!("ROW_FORMAT = {row_format}"));
@@ -1170,10 +1329,11 @@ pub fn plan_alter(
 
     // ---- 合成语句 ----
     let target = format!("{}.{}", quote_ident(schema), quote_ident(table));
-    let readded_same_name = draft
-        .foreign_keys
-        .iter()
-        .any(|fk| dropped_fk_names.iter().any(|dropped| dropped.eq_ignore_ascii_case(&fk.name)));
+    let readded_same_name = draft.foreign_keys.iter().any(|fk| {
+        dropped_fk_names
+            .iter()
+            .any(|dropped| dropped.eq_ignore_ascii_case(&fk.name))
+    });
 
     let mut statements = Vec::new();
     let mut main_clauses = Vec::new();
@@ -1216,7 +1376,14 @@ pub fn plan_alter(
     }
     notes.extend(backslash_note(&statements, nbe));
 
-    Ok((AlterPlan { statements, dangers, notes }, not_null_columns))
+    Ok((
+        AlterPlan {
+            statements,
+            dangers,
+            notes,
+        },
+        not_null_columns,
+    ))
 }
 
 /// 新建表：草稿渲染成一条 CREATE TABLE。表是不是已经存在由调用方在执行的连接上查。
@@ -1236,7 +1403,10 @@ pub fn plan_create(
     check_draft(draft)?;
     let has_original = draft.columns.iter().any(|c| c.original_name.is_some())
         || draft.indexes.iter().any(|i| i.original_name.is_some())
-        || draft.foreign_keys.iter().any(|fk| fk.original_name.is_some())
+        || draft
+            .foreign_keys
+            .iter()
+            .any(|fk| fk.original_name.is_some())
         || draft.checks.iter().any(|c| c.original_name.is_some());
     if has_original {
         return Err("新建表的草稿里不该有原来的列、索引或约束，请重新打开新建表".to_string());
@@ -1254,7 +1424,11 @@ pub fn plan_create(
     let table_collation = options.collation.as_deref();
     let mut lines = Vec::new();
     for column in &draft.columns {
-        lines.push(format!("{} {}", quote_ident(&column.name), column_definition(column, table_collation, nbe)?));
+        lines.push(format!(
+            "{} {}",
+            quote_ident(&column.name),
+            column_definition(column, table_collation, nbe)?
+        ));
     }
     for index in &draft.indexes {
         lines.push(index_sql(index, nbe)?);
@@ -1306,7 +1480,11 @@ pub fn plan_create(
     let statements = vec![statement];
     let mut notes = vec!["CREATE TABLE 会隐式提交当前事务。".to_string()];
     notes.extend(backslash_note(&statements, nbe));
-    Ok(AlterPlan { statements, dangers: Vec::new(), notes })
+    Ok(AlterPlan {
+        statements,
+        dangers: Vec::new(),
+        notes,
+    })
 }
 
 fn alter_statement(target: &str, clauses: &[String]) -> String {
@@ -1314,9 +1492,14 @@ fn alter_statement(target: &str, clauses: &[String]) -> String {
 }
 
 /// 在给定连接上依次执行。失败时返回失败的是第几条（从 0 数）和错误，前面的已经生效
-pub async fn run_statements(conn: &mut Conn, statements: &[String]) -> Result<(), (usize, mysql_async::Error)> {
+pub async fn run_statements(
+    conn: &mut Conn,
+    statements: &[String],
+) -> Result<(), (usize, mysql_async::Error)> {
     for (index, statement) in statements.iter().enumerate() {
-        conn.query_drop(statement).await.map_err(|err| (index, err))?;
+        conn.query_drop(statement)
+            .await
+            .map_err(|err| (index, err))?;
     }
     Ok(())
 }
@@ -1338,7 +1521,11 @@ mod tests {
     }
 
     fn part(column: &str) -> IndexPart {
-        IndexPart { column: Some(column.to_string()), prefix: None, descending: false }
+        IndexPart {
+            column: Some(column.to_string()),
+            prefix: None,
+            descending: false,
+        }
     }
 
     fn index(name: &str, unique: bool, columns: &[&str]) -> IndexDef {
@@ -1356,19 +1543,37 @@ mod tests {
     fn sample() -> TableStructure {
         let mut id = column("id", "int unsigned", false, DefaultValue::NoDefault);
         id.extra = "auto_increment".to_string();
-        let mut code = column("code", "varchar(20)", false, DefaultValue::Literal("a'b".to_string()));
+        let mut code = column(
+            "code",
+            "varchar(20)",
+            false,
+            DefaultValue::Literal("a'b".to_string()),
+        );
         code.collation = Some("latin1_bin".to_string());
         code.comment = "说明".to_string();
         let mut note = column("note", "varchar(50)", true, DefaultValue::Null);
         note.collation = Some("utf8mb4_0900_ai_ci".to_string());
         note.comment = "c\\d".to_string();
-        let mut ts = column("ts", "datetime(3)", false, DefaultValue::Expression("CURRENT_TIMESTAMP(3)".to_string()));
+        let mut ts = column(
+            "ts",
+            "datetime(3)",
+            false,
+            DefaultValue::Expression("CURRENT_TIMESTAMP(3)".to_string()),
+        );
         ts.extra = "DEFAULT_GENERATED on update CURRENT_TIMESTAMP(3)".to_string();
-        let price = column("price", "decimal(12,2)", false, DefaultValue::Literal("0.00".to_string()));
+        let price = column(
+            "price",
+            "decimal(12,2)",
+            false,
+            DefaultValue::Literal("0.00".to_string()),
+        );
 
         TableStructure {
             columns: vec![id, code, note, ts, price],
-            indexes: vec![index("PRIMARY", true, &["id"]), index("idx_code", false, &["code", "price"])],
+            indexes: vec![
+                index("PRIMARY", true, &["id"]),
+                index("idx_code", false, &["code", "price"]),
+            ],
             foreign_keys: vec![ForeignKeyDef {
                 name: "fk_price".to_string(),
                 columns: vec!["price".to_string()],
@@ -1393,7 +1598,10 @@ mod tests {
         }
     }
 
-    fn plan(original: &TableStructure, draft: &TableDraft) -> Result<(AlterPlan, Vec<String>), String> {
+    fn plan(
+        original: &TableStructure,
+        draft: &TableDraft,
+    ) -> Result<(AlterPlan, Vec<String>), String> {
         plan_alter("shop", "t", original, draft, false)
     }
 
@@ -1410,7 +1618,10 @@ mod tests {
     #[test]
     fn unchanged_draft_is_no_change() {
         let original = sample();
-        assert_eq!(plan(&original, &table_draft(&original)).unwrap_err(), "没有任何改动");
+        assert_eq!(
+            plan(&original, &table_draft(&original)).unwrap_err(),
+            "没有任何改动"
+        );
     }
 
     /// 本任务最大的数据风险：只改一个属性，MODIFY 里其余属性必须原样带上
@@ -1440,7 +1651,10 @@ mod tests {
         draft.indexes[1].parts[1].column = Some("amount".to_string());
         draft.foreign_keys[0].columns[0] = "amount".to_string();
 
-        assert_eq!(statement(&original, &draft), "ALTER TABLE `shop`.`t`\n  RENAME COLUMN `price` TO `amount`");
+        assert_eq!(
+            statement(&original, &draft),
+            "ALTER TABLE `shop`.`t`\n  RENAME COLUMN `price` TO `amount`"
+        );
     }
 
     #[test]
@@ -1457,7 +1671,11 @@ mod tests {
              CHANGE COLUMN `note` `memo` varchar(80) NULL DEFAULT NULL COMMENT 'c\\\\d'"
         );
         let (plan, _) = plan(&original, &draft).unwrap();
-        assert!(plan.dangers.is_empty(), "加长 VARCHAR 不算危险：{:?}", plan.dangers);
+        assert!(
+            plan.dangers.is_empty(),
+            "加长 VARCHAR 不算危险：{:?}",
+            plan.dangers
+        );
     }
 
     #[test]
@@ -1469,8 +1687,18 @@ mod tests {
         let mut draft = table_draft(&original);
         column_mut(&mut draft, "note").default = DefaultValue::Literal("x\\y".to_string());
         let (plan, _) = plan_alter("shop", "t", &original, &draft, true).unwrap();
-        assert!(plan.statements[0].contains("DEFAULT 'x\\y' COMMENT 'c\\d'"), "{}", plan.statements[0]);
-        assert!(plan.notes.iter().any(|n| n.contains("NO_BACKSLASH_ESCAPES 已开启")), "{:?}", plan.notes);
+        assert!(
+            plan.statements[0].contains("DEFAULT 'x\\y' COMMENT 'c\\d'"),
+            "{}",
+            plan.statements[0]
+        );
+        assert!(
+            plan.notes
+                .iter()
+                .any(|n| n.contains("NO_BACKSLASH_ESCAPES 已开启")),
+            "{:?}",
+            plan.notes
+        );
     }
 
     #[test]
@@ -1479,7 +1707,10 @@ mod tests {
         let mut draft = table_draft(&original);
         column_mut(&mut draft, "note").name = "we`ird".to_string();
         let (plan, _) = plan_alter("my`db", "t`1", &original, &draft, false).unwrap();
-        assert_eq!(plan.statements[0], "ALTER TABLE `my``db`.`t``1`\n  RENAME COLUMN `note` TO `we``ird`");
+        assert_eq!(
+            plan.statements[0],
+            "ALTER TABLE `my``db`.`t``1`\n  RENAME COLUMN `note` TO `we``ird`"
+        );
     }
 
     #[test]
@@ -1502,16 +1733,41 @@ mod tests {
         };
         added("a", "int", false, DefaultValue::NoDefault);
         added("b", "int", true, DefaultValue::Null);
-        added("c", "varchar(10)", false, DefaultValue::Literal(String::new()));
-        added("d", "char(36)", false, DefaultValue::Expression("uuid()".to_string()));
+        added(
+            "c",
+            "varchar(10)",
+            false,
+            DefaultValue::Literal(String::new()),
+        );
+        added(
+            "d",
+            "char(36)",
+            false,
+            DefaultValue::Expression("uuid()".to_string()),
+        );
         added("e", "datetime", true, DefaultValue::NoDefault);
 
         let sql = statement(&original, &draft);
-        assert!(sql.contains("ADD COLUMN `a` int NOT NULL AFTER `price`"), "{sql}");
-        assert!(sql.contains("ADD COLUMN `b` int NULL DEFAULT NULL AFTER `a`"), "{sql}");
-        assert!(sql.contains("ADD COLUMN `c` varchar(10) NOT NULL DEFAULT '' AFTER `b`"), "空串默认值不能丢：{sql}");
-        assert!(sql.contains("ADD COLUMN `d` char(36) NOT NULL DEFAULT (uuid()) AFTER `c`"), "{sql}");
-        assert!(sql.contains("ADD COLUMN `e` datetime NULL DEFAULT NULL AFTER `d`"), "可空列的无默认值就是 NULL：{sql}");
+        assert!(
+            sql.contains("ADD COLUMN `a` int NOT NULL AFTER `price`"),
+            "{sql}"
+        );
+        assert!(
+            sql.contains("ADD COLUMN `b` int NULL DEFAULT NULL AFTER `a`"),
+            "{sql}"
+        );
+        assert!(
+            sql.contains("ADD COLUMN `c` varchar(10) NOT NULL DEFAULT '' AFTER `b`"),
+            "空串默认值不能丢：{sql}"
+        );
+        assert!(
+            sql.contains("ADD COLUMN `d` char(36) NOT NULL DEFAULT (uuid()) AFTER `c`"),
+            "{sql}"
+        );
+        assert!(
+            sql.contains("ADD COLUMN `e` datetime NULL DEFAULT NULL AFTER `d`"),
+            "可空列的无默认值就是 NULL：{sql}"
+        );
     }
 
     #[test]
@@ -1541,7 +1797,11 @@ mod tests {
         let mut draft = table_draft(&original);
         draft.columns.swap(1, 2); // id note code ts price
         let sql = statement(&original, &draft);
-        assert_eq!(sql.matches(" AFTER ").count() + sql.matches(" FIRST").count(), 1, "只动一列：{sql}");
+        assert_eq!(
+            sql.matches(" AFTER ").count() + sql.matches(" FIRST").count(),
+            1,
+            "只动一列：{sql}"
+        );
     }
 
     #[test]
@@ -1566,10 +1826,17 @@ mod tests {
         let dangers = plan.dangers.join("\n");
         assert!(dangers.contains("删除列 note"), "{dangers}");
         assert!(dangers.contains("列 code 长度 20 → 5"), "{dangers}");
-        assert!(dangers.contains("列 price 类型 decimal(12,2) → int"), "{dangers}");
+        assert!(
+            dangers.contains("列 price 类型 decimal(12,2) → int"),
+            "{dangers}"
+        );
         assert!(dangers.contains("删除主键"), "{dangers}");
         assert!(dangers.contains("删除索引 idx_code"), "{dangers}");
-        assert!(plan.statements[0].contains("DROP PRIMARY KEY"), "{}", plan.statements[0]);
+        assert!(
+            plan.statements[0].contains("DROP PRIMARY KEY"),
+            "{}",
+            plan.statements[0]
+        );
     }
 
     #[test]
@@ -1578,12 +1845,19 @@ mod tests {
         let mut draft = table_draft(&original);
         column_mut(&mut draft, "code").collation = Some("utf8mb4_bin".to_string());
         let (plan, _) = plan(&original, &draft).unwrap();
-        assert!(plan.dangers[0].contains("排序规则 latin1_bin → utf8mb4_bin"), "{:?}", plan.dangers);
+        assert!(
+            plan.dangers[0].contains("排序规则 latin1_bin → utf8mb4_bin"),
+            "{:?}",
+            plan.dangers
+        );
 
         // 排序规则清空就是用表默认，和原来相同就不算改动；和表默认相同时也不写 COLLATE
         let mut draft = table_draft(&original);
         column_mut(&mut draft, "note").collation = None;
-        assert_eq!(plan_alter("shop", "t", &original, &draft, false).unwrap_err(), "没有任何改动");
+        assert_eq!(
+            plan_alter("shop", "t", &original, &draft, false).unwrap_err(),
+            "没有任何改动"
+        );
 
         let mut draft = table_draft(&original);
         column_mut(&mut draft, "code").column_type = "int".to_string();
@@ -1597,13 +1871,24 @@ mod tests {
 
         let mut draft = table_draft(&original);
         draft.indexes[1].name = "idx_code_price".to_string();
-        assert_eq!(statement(&original, &draft), "ALTER TABLE `shop`.`t`\n  RENAME INDEX `idx_code` TO `idx_code_price`");
+        assert_eq!(
+            statement(&original, &draft),
+            "ALTER TABLE `shop`.`t`\n  RENAME INDEX `idx_code` TO `idx_code_price`"
+        );
 
         let mut draft = table_draft(&original);
         draft.indexes[1].kind = IndexKind::Unique;
         draft.indexes[1].parts = vec![
-            IndexPart { column: Some("code".to_string()), prefix: Some(4), descending: false },
-            IndexPart { column: Some("price".to_string()), prefix: None, descending: true },
+            IndexPart {
+                column: Some("code".to_string()),
+                prefix: Some(4),
+                descending: false,
+            },
+            IndexPart {
+                column: Some("price".to_string()),
+                prefix: None,
+                descending: true,
+            },
         ];
         assert_eq!(
             statement(&original, &draft),
@@ -1642,23 +1927,40 @@ mod tests {
         let mut draft = table_draft(&original);
         draft.foreign_keys.clear();
         let (plan, _) = plan_alter("shop", "t", &original, &draft, false).unwrap();
-        assert_eq!(plan.statements, ["ALTER TABLE `shop`.`t`\n  DROP FOREIGN KEY `fk_price`"]);
+        assert_eq!(
+            plan.statements,
+            ["ALTER TABLE `shop`.`t`\n  DROP FOREIGN KEY `fk_price`"]
+        );
         assert!(plan.dangers[0].contains("删除外键 fk_price"));
 
         let mut draft = table_draft(&original);
         draft.foreign_keys[0].on_delete = "SET NULL".to_string();
         column_mut(&mut draft, "code").comment = "x".to_string();
         let (plan, _) = plan_alter("shop", "t", &original, &draft, false).unwrap();
-        assert_eq!(plan.statements.len(), 2, "同名外键删了再加，必须拆开：{:?}", plan.statements);
-        assert_eq!(plan.statements[0], "ALTER TABLE `shop`.`t`\n  DROP FOREIGN KEY `fk_price`");
+        assert_eq!(
+            plan.statements.len(),
+            2,
+            "同名外键删了再加，必须拆开：{:?}",
+            plan.statements
+        );
+        assert_eq!(
+            plan.statements[0],
+            "ALTER TABLE `shop`.`t`\n  DROP FOREIGN KEY `fk_price`"
+        );
         assert!(plan.statements[1].ends_with(
             "ADD CONSTRAINT `fk_price` FOREIGN KEY (`price`) REFERENCES `shop`.`prices` (`amount`) ON DELETE SET NULL ON UPDATE RESTRICT"
         ));
-        assert!(plan.notes.iter().any(|n| n.contains("第 1 条已经生效")), "{:?}", plan.notes);
+        assert!(
+            plan.notes.iter().any(|n| n.contains("第 1 条已经生效")),
+            "{:?}",
+            plan.notes
+        );
 
         let mut draft = table_draft(&original);
         draft.foreign_keys[0].on_delete = "DROP TABLE".to_string();
-        assert!(plan_alter("shop", "t", &original, &draft, false).unwrap_err().contains("不认识"));
+        assert!(plan_alter("shop", "t", &original, &draft, false)
+            .unwrap_err()
+            .contains("不认识"));
     }
 
     #[test]
@@ -1671,25 +1973,45 @@ mod tests {
         assert!(check_fragment("int /* x */", "类型").is_err());
         assert!(check_fragment("enum('a", "类型").is_err());
         assert!(check_fragment("1)", "默认值表达式").is_err());
-        assert!(check_fragment("enum('a\\\\b')", "类型").is_err(), "COLUMN_TYPE 里的反斜杠随 sql_mode 变");
+        assert!(
+            check_fragment("enum('a\\\\b')", "类型").is_err(),
+            "COLUMN_TYPE 里的反斜杠随 sql_mode 变"
+        );
     }
 
     #[test]
     fn columns_that_cannot_be_rebuilt_are_locked() {
         let mut generated = column("g", "int", true, DefaultValue::Null);
         generated.extra = "VIRTUAL GENERATED".to_string();
-        let mut bits = column("flags", "bit(8)", true, DefaultValue::Literal("b'101'".to_string()));
+        let mut bits = column(
+            "flags",
+            "bit(8)",
+            true,
+            DefaultValue::Literal("b'101'".to_string()),
+        );
         bits.extra = String::new();
-        let mut quoted_expr = column("w", "varchar(20)", true, DefaultValue::Expression("concat(_utf8mb4\\'x\\')".to_string()));
+        let mut quoted_expr = column(
+            "w",
+            "varchar(20)",
+            true,
+            DefaultValue::Expression("concat(_utf8mb4\\'x\\')".to_string()),
+        );
         quoted_expr.extra = "DEFAULT_GENERATED".to_string();
         let mut invisible = column("inv", "int", true, DefaultValue::Null);
         invisible.extra = "INVISIBLE".to_string();
 
         let mut original = sample();
-        original.columns.extend([generated, bits, quoted_expr, invisible]);
+        original
+            .columns
+            .extend([generated, bits, quoted_expr, invisible]);
         let draft = table_draft(&original);
         for name in ["g", "flags", "w", "inv"] {
-            let locked = &draft.columns.iter().find(|c| c.name == name).unwrap().locked;
+            let locked = &draft
+                .columns
+                .iter()
+                .find(|c| c.name == name)
+                .unwrap()
+                .locked;
             assert!(locked.is_some(), "{name} 应该锁住");
         }
         assert!(draft.columns[0].locked.is_none());
@@ -1701,7 +2023,9 @@ mod tests {
 
         let mut modify = draft.clone();
         column_mut(&mut modify, "g").comment = "x".to_string();
-        assert!(plan(&original, &modify).unwrap_err().contains("列 g 不能修改"));
+        assert!(plan(&original, &modify)
+            .unwrap_err()
+            .contains("列 g 不能修改"));
 
         // 界面谎报「没锁」也没用，以原结构为准
         let mut lie = draft.clone();
@@ -1717,7 +2041,8 @@ mod tests {
         functional.parts[0].column = None;
         original.indexes.push(functional);
         original.indexes.push(index("idx_hidden", false, &["note"]));
-        original.create_sql = "CREATE TABLE `t` (\n  KEY `idx_hidden` (`note`) /*!80000 INVISIBLE */\n)".to_string();
+        original.create_sql =
+            "CREATE TABLE `t` (\n  KEY `idx_hidden` (`note`) /*!80000 INVISIBLE */\n)".to_string();
 
         let draft = table_draft(&original);
         assert!(draft.indexes[2].locked.is_some());
@@ -1730,7 +2055,9 @@ mod tests {
         assert!(statement(&original, &other).contains("MODIFY COLUMN `code`"));
         let mut functional = draft.clone();
         functional.indexes[2].comment = "x".to_string();
-        assert!(plan(&original, &functional).unwrap_err().contains("idx_expr 不能修改"));
+        assert!(plan(&original, &functional)
+            .unwrap_err()
+            .contains("idx_expr 不能修改"));
     }
 
     #[test]
@@ -1757,7 +2084,12 @@ mod tests {
     }
 
     fn new_check(name: &str, expression: &str) -> CheckDraft {
-        CheckDraft { original_name: None, name: name.to_string(), expression: expression.to_string(), enforced: true }
+        CheckDraft {
+            original_name: None,
+            name: name.to_string(),
+            expression: expression.to_string(),
+            enforced: true,
+        }
     }
 
     /// 新建表覆盖列、主键、索引、外键、CHECK、表选项
@@ -1834,7 +2166,10 @@ mod tests {
         myisam.options.engine = "MyISAM".to_string();
         assert!(err(&myisam).contains("静默忽略外键"), "{}", err(&myisam));
         myisam.foreign_keys.clear();
-        assert!(plan_create("shop", "t", &myisam, false, true).is_ok(), "没有外键就能用 MyISAM");
+        assert!(
+            plan_create("shop", "t", &myisam, false, true).is_ok(),
+            "没有外键就能用 MyISAM"
+        );
 
         let old_server = plan_create("shop", "t", &creation(), false, false).unwrap_err();
         assert!(old_server.contains("8.0.16"), "{old_server}");
@@ -1845,7 +2180,11 @@ mod tests {
 
         let mut mismatch = creation();
         mismatch.options.charset = Some("latin1".to_string());
-        assert!(err(&mismatch).contains("不属于字符集 latin1"), "{}", err(&mismatch));
+        assert!(
+            err(&mismatch).contains("不属于字符集 latin1"),
+            "{}",
+            err(&mismatch)
+        );
 
         let mut row_format = creation();
         row_format.options.row_format = Some("FAST".to_string());
@@ -1863,14 +2202,19 @@ mod tests {
         reused.columns[1].original_name = Some("code".to_string());
         assert!(err(&reused).contains("不该有原来的"));
 
-        assert!(plan_create("shop", " ", &creation(), false, true).unwrap_err().contains("表名不能为空"));
+        assert!(plan_create("shop", " ", &creation(), false, true)
+            .unwrap_err()
+            .contains("表名不能为空"));
     }
 
     #[test]
     fn table_options_are_altered_one_by_one() {
         let original = sample();
         let mut draft = table_draft(&original);
-        assert_eq!(draft.options.auto_increment, None, "草稿里的自增值是「不改」，不照抄当前值");
+        assert_eq!(
+            draft.options.auto_increment, None,
+            "草稿里的自增值是「不改」，不照抄当前值"
+        );
         draft.options.comment = "it's".to_string();
         draft.options.auto_increment = Some(1000);
         draft.options.row_format = Some("COMPRESSED".to_string());
@@ -1880,20 +2224,30 @@ mod tests {
             ["ALTER TABLE `shop`.`t`\n  COMMENT = 'it''s',\n  AUTO_INCREMENT = 1000,\n  ROW_FORMAT = COMPRESSED"]
         );
         assert!(plan.dangers.is_empty(), "{:?}", plan.dangers);
-        assert!(plan.notes.iter().any(|n| n.contains("最大值 + 1")), "{:?}", plan.notes);
+        assert!(
+            plan.notes.iter().any(|n| n.contains("最大值 + 1")),
+            "{:?}",
+            plan.notes
+        );
 
         // 清空 ROW_FORMAT 是回到默认
         let mut explicit = sample();
         explicit.row_format = Some("COMPRESSED".to_string());
         let mut draft = table_draft(&explicit);
         draft.options.row_format = None;
-        assert_eq!(statement(&explicit, &draft), "ALTER TABLE `shop`.`t`\n  ROW_FORMAT = DEFAULT");
+        assert_eq!(
+            statement(&explicit, &draft),
+            "ALTER TABLE `shop`.`t`\n  ROW_FORMAT = DEFAULT"
+        );
 
         // 大小写不同不算改
         let mut draft = table_draft(&original);
         draft.options.engine = "innodb".to_string();
         draft.options.charset = Some("UTF8MB4".to_string());
-        assert_eq!(plan_alter("shop", "t", &original, &draft, false).unwrap_err(), "没有任何改动");
+        assert_eq!(
+            plan_alter("shop", "t", &original, &draft, false).unwrap_err(),
+            "没有任何改动"
+        );
     }
 
     #[test]
@@ -1902,13 +2256,22 @@ mod tests {
         let mut draft = table_draft(&original);
         draft.options.engine = "MyISAM".to_string();
         let err = plan(&original, &draft).unwrap_err();
-        assert!(err.contains("静默忽略外键"), "外键还在就不能换到 MyISAM：{err}");
+        assert!(
+            err.contains("静默忽略外键"),
+            "外键还在就不能换到 MyISAM：{err}"
+        );
 
         draft.foreign_keys.clear();
         let (plan, _) = plan(&original, &draft).unwrap();
-        assert_eq!(plan.statements, ["ALTER TABLE `shop`.`t`\n  DROP FOREIGN KEY `fk_price`,\n  ENGINE = MyISAM"]);
+        assert_eq!(
+            plan.statements,
+            ["ALTER TABLE `shop`.`t`\n  DROP FOREIGN KEY `fk_price`,\n  ENGINE = MyISAM"]
+        );
         let dangers = plan.dangers.join("\n");
-        assert!(dangers.contains("引擎 InnoDB → MyISAM") && dangers.contains("不支持事务"), "{dangers}");
+        assert!(
+            dangers.contains("引擎 InnoDB → MyISAM") && dangers.contains("不支持事务"),
+            "{dangers}"
+        );
     }
 
     /// 真库验证过：同一条 ALTER 里改了表默认字符集，没写 COLLATE 的 MODIFY 会按新默认值转换那一列
@@ -1919,22 +2282,43 @@ mod tests {
         draft.options.charset = Some("latin1".to_string());
         draft.options.collation = Some("latin1_swedish_ci".to_string());
         let (plan, _) = plan(&original, &draft).unwrap();
-        assert_eq!(plan.statements, ["ALTER TABLE `shop`.`t`\n  DEFAULT CHARACTER SET latin1 COLLATE latin1_swedish_ci"]);
-        assert!(plan.dangers.is_empty(), "只改默认值不转换数据：{:?}", plan.dangers);
-        assert!(plan.notes.iter().any(|n| n.contains("已有的列不转换")), "{:?}", plan.notes);
+        assert_eq!(
+            plan.statements,
+            ["ALTER TABLE `shop`.`t`\n  DEFAULT CHARACTER SET latin1 COLLATE latin1_swedish_ci"]
+        );
+        assert!(
+            plan.dangers.is_empty(),
+            "只改默认值不转换数据：{:?}",
+            plan.dangers
+        );
+        assert!(
+            plan.notes.iter().any(|n| n.contains("已有的列不转换")),
+            "{:?}",
+            plan.notes
+        );
 
         // note 原来的排序规则和旧的表默认一样，平时不写 COLLATE；这次必须写上
         column_mut(&mut draft, "note").comment = "x".to_string();
         draft.columns.push(new_column("extra", "varchar(10)"));
         let sql = statement(&original, &draft);
-        assert!(sql.contains("MODIFY COLUMN `note` varchar(50) COLLATE utf8mb4_0900_ai_ci NULL"), "{sql}");
-        assert!(sql.contains("ADD COLUMN `extra` varchar(10) COLLATE latin1_swedish_ci NULL"), "新列用新默认值：{sql}");
+        assert!(
+            sql.contains("MODIFY COLUMN `note` varchar(50) COLLATE utf8mb4_0900_ai_ci NULL"),
+            "{sql}"
+        );
+        assert!(
+            sql.contains("ADD COLUMN `extra` varchar(10) COLLATE latin1_swedish_ci NULL"),
+            "新列用新默认值：{sql}"
+        );
 
         let mut half = table_draft(&original);
         half.options.charset = Some("latin1".to_string());
-        assert!(plan_alter("shop", "t", &original, &half, false).unwrap_err().contains("不属于字符集"));
+        assert!(plan_alter("shop", "t", &original, &half, false)
+            .unwrap_err()
+            .contains("不属于字符集"));
         half.options.collation = None;
-        assert!(plan_alter("shop", "t", &original, &half, false).unwrap_err().contains("同时填字符集和排序规则"));
+        assert!(plan_alter("shop", "t", &original, &half, false)
+            .unwrap_err()
+            .contains("同时填字符集和排序规则"));
     }
 
     #[test]
@@ -1948,7 +2332,9 @@ mod tests {
         assert!(plan.dangers[0].contains("重写整张表"), "{:?}", plan.dangers);
 
         column_mut(&mut draft, "note").comment = "x".to_string();
-        assert!(plan_alter("shop", "t", &original, &draft, false).unwrap_err().contains("分两次"));
+        assert!(plan_alter("shop", "t", &original, &draft, false)
+            .unwrap_err()
+            .contains("分两次"));
     }
 
     #[test]
@@ -1957,7 +2343,9 @@ mod tests {
 
         let mut draft = table_draft(&original);
         draft.checks.clear();
-        draft.checks.push(new_check("chk_price_cap", "price < 1000000"));
+        draft
+            .checks
+            .push(new_check("chk_price_cap", "price < 1000000"));
         let mut loose = new_check("", "code <> 'x'");
         loose.enforced = false;
         draft.checks.push(loose);
@@ -1968,26 +2356,49 @@ mod tests {
               ADD CONSTRAINT `chk_price_cap` CHECK (price < 1000000),\n  \
               ADD CHECK (code <> 'x') NOT ENFORCED"]
         );
-        assert!(plan.dangers[0].contains("删除 CHECK 约束 chk_price"), "{:?}", plan.dangers);
-        assert!(plan.notes.iter().any(|n| n.contains("检查现有的每一行")), "{:?}", plan.notes);
+        assert!(
+            plan.dangers[0].contains("删除 CHECK 约束 chk_price"),
+            "{:?}",
+            plan.dangers
+        );
+        assert!(
+            plan.notes.iter().any(|n| n.contains("检查现有的每一行")),
+            "{:?}",
+            plan.notes
+        );
 
         // 删了再加回同名的就是「改」，一条 ALTER 里能做（真库验证过）
         let mut readd = table_draft(&original);
         readd.checks[0] = new_check("chk_price", "price > 0");
-        assert!(statement(&original, &readd).contains("DROP CHECK `chk_price`,\n  ADD CONSTRAINT `chk_price` CHECK (price > 0)"));
+        assert!(statement(&original, &readd)
+            .contains("DROP CHECK `chk_price`,\n  ADD CONSTRAINT `chk_price` CHECK (price > 0)"));
 
         let mut modified = table_draft(&original);
         modified.checks[0].expression = "price > 0".to_string();
-        assert!(plan_alter("shop", "t", &original, &modified, false).unwrap_err().contains("不能修改"));
+        assert!(plan_alter("shop", "t", &original, &modified, false)
+            .unwrap_err()
+            .contains("不能修改"));
 
-        for bad in ["price > 0, x", "price > 0; DROP TABLE t", "price > 0 -- x", "price /* x */ > 0", "code <> 'x", "price > 0)"] {
+        for bad in [
+            "price > 0, x",
+            "price > 0; DROP TABLE t",
+            "price > 0 -- x",
+            "price /* x */ > 0",
+            "code <> 'x",
+            "price > 0)",
+        ] {
             let mut draft = table_draft(&original);
             draft.checks.push(new_check("c", bad));
-            assert!(plan_alter("shop", "t", &original, &draft, false).is_err(), "应该拒绝：{bad}");
+            assert!(
+                plan_alter("shop", "t", &original, &draft, false).is_err(),
+                "应该拒绝：{bad}"
+            );
         }
         let mut duplicate = table_draft(&original);
         duplicate.checks.push(new_check("CHK_PRICE", "price > 0"));
-        assert!(plan_alter("shop", "t", &original, &duplicate, false).unwrap_err().contains("重复"));
+        assert!(plan_alter("shop", "t", &original, &duplicate, false)
+            .unwrap_err()
+            .contains("重复"));
 
         // 读不到 CHECK 的服务器上不许加：更早的版本会解析但不执行
         let mut old_server = sample();
@@ -1995,7 +2406,9 @@ mod tests {
         let mut draft = table_draft(&old_server);
         assert!(draft.checks.is_empty());
         draft.checks.push(new_check("c", "price > 0"));
-        assert!(plan_alter("shop", "t", &old_server, &draft, false).unwrap_err().contains("8.0.16"));
+        assert!(plan_alter("shop", "t", &old_server, &draft, false)
+            .unwrap_err()
+            .contains("8.0.16"));
     }
 
     #[test]

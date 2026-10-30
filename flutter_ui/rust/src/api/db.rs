@@ -11,6 +11,7 @@ use tokio::runtime::Runtime;
 pub use cdata_core::db::{ColumnKind, ColumnMeta, ConnectionConfig};
 pub use cdata_core::edit::{Editability, EditTarget};
 pub use cdata_core::export::{ExportEncoding, ExportFormat, ExportOptions, ExportSummary, SqlDumpOptions};
+pub use cdata_core::progress::FileProgress;
 pub use cdata_core::session::QuerySummary;
 pub use cdata_core::sql::{FilterCondition, FilterGroup, FilterItem, FilterOp};
 pub use cdata_core::CellValue;
@@ -160,6 +161,12 @@ pub struct _SqlDumpOptions {
 pub struct _ExportSummary {
     pub rows_written: u64,
     pub source_truncated: bool,
+}
+
+#[frb(mirror(FileProgress))]
+pub struct _FileProgress {
+    pub done: u64,
+    pub total: u64,
 }
 
 pub(crate) fn runtime() -> &'static Runtime {
@@ -332,6 +339,11 @@ pub async fn paste_cells(
 pub async fn column_choices(session_id: u64, column_index: u64) -> Result<Vec<String>> {
     on_runtime(async move { cdata_core::session::column_choices(session_id, column_index).await })
         .await
+}
+
+/// 导入或导出进行中的进度。界面在调用还没返回时轮询。没有进行中的操作时 done 和 total 都是 0
+pub fn file_progress(session_id: u64) -> FileProgress {
+    cdata_core::progress::file_progress(session_id)
 }
 
 /// 把结果集的一段写成文件，row_count 为 null 表示到末尾。行不经过 FFI

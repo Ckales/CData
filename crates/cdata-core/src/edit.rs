@@ -47,9 +47,7 @@ pub async fn detect_editability(pool: &DbPool, columns: &[ColumnMeta]) -> Editab
     };
 
     if key_columns.is_empty() {
-        return Editability::ReadOnly(format!(
-            "表 {table} 没有主键，无法安全定位行，不能编辑"
-        ));
+        return Editability::ReadOnly(format!("表 {table} 没有主键，无法安全定位行，不能编辑"));
     }
 
     // 主键列必须都在结果集里，否则定位不到具体哪一行
@@ -174,7 +172,11 @@ pub fn build_delete(
     row: &[CellValue],
 ) -> Result<Statement, String> {
     let (conditions, params) = key_conditions(target, columns, row)?;
-    let sql = format!("DELETE FROM {} WHERE {} LIMIT 1", table_ident(target), conditions);
+    let sql = format!(
+        "DELETE FROM {} WHERE {} LIMIT 1",
+        table_ident(target),
+        conditions
+    );
     Ok(Statement { sql, params })
 }
 
@@ -259,7 +261,10 @@ fn key_conditions(
 
         // 主键为 NULL 说明这行数据本身就不对，不能拿它当定位条件
         if key_value == &CellValue::Null {
-            return Err(format!("主键列 {} 是 NULL，无法定位这一行", key_column.name));
+            return Err(format!(
+                "主键列 {} 是 NULL，无法定位这一行",
+                key_column.name
+            ));
         }
 
         conditions.push(format!("{} = ?", quote_ident(&key_column.org_name)));
@@ -270,7 +275,11 @@ fn key_conditions(
 }
 
 fn table_ident(target: &EditTarget) -> String {
-    format!("{}.{}", quote_ident(&target.schema), quote_ident(&target.table))
+    format!(
+        "{}.{}",
+        quote_ident(&target.schema),
+        quote_ident(&target.table)
+    )
 }
 
 #[cfg(test)]
@@ -325,8 +334,14 @@ mod tests {
         let columns = vec![column("id", "orders"), column("amount", "orders")];
         let row = vec![CellValue::Int(42), CellValue::Text("1.00".into())];
 
-        let stmt = build_update(&target(), &columns, &row, 1, &CellValue::Text("9.99".into()))
-            .expect("应该能生成");
+        let stmt = build_update(
+            &target(),
+            &columns,
+            &row,
+            1,
+            &CellValue::Text("9.99".into()),
+        )
+        .expect("应该能生成");
 
         assert_eq!(
             stmt.sql,
@@ -344,8 +359,14 @@ mod tests {
         let columns = vec![column("id", "orders"), column("amount", "orders")];
         let row = vec![CellValue::Null, CellValue::Text("1.00".into())];
 
-        let err = build_update(&target(), &columns, &row, 1, &CellValue::Text("9.99".into()))
-            .unwrap_err();
+        let err = build_update(
+            &target(),
+            &columns,
+            &row,
+            1,
+            &CellValue::Text("9.99".into()),
+        )
+        .unwrap_err();
         assert!(err.contains("NULL"), "原因要说清楚：{err}");
     }
 
@@ -354,8 +375,7 @@ mod tests {
         let columns = vec![column("id", "orders"), column("amount", "orders")];
         let row = vec![CellValue::Int(42), CellValue::Text("1.00".into())];
 
-        let err =
-            build_update(&target(), &columns, &row, 0, &CellValue::Int(43)).unwrap_err();
+        let err = build_update(&target(), &columns, &row, 0, &CellValue::Int(43)).unwrap_err();
         assert!(err.contains("主键"), "原因要说清楚：{err}");
     }
 
@@ -377,9 +397,14 @@ mod tests {
             key_indexes: vec![0, 1],
         };
 
-        let stmt =
-            build_update(&multi_target, &columns, &row, 2, &CellValue::Text("2.00".into()))
-                .expect("应该能生成");
+        let stmt = build_update(
+            &multi_target,
+            &columns,
+            &row,
+            2,
+            &CellValue::Text("2.00".into()),
+        )
+        .expect("应该能生成");
 
         assert_eq!(
             stmt.sql,
@@ -394,7 +419,10 @@ mod tests {
         let row = vec![CellValue::Int(42), CellValue::Text("1.00".into())];
 
         let stmt = build_delete(&target(), &columns, &row).expect("应该能生成");
-        assert_eq!(stmt.sql, "DELETE FROM `shop`.`orders` WHERE `id` = ? LIMIT 1");
+        assert_eq!(
+            stmt.sql,
+            "DELETE FROM `shop`.`orders` WHERE `id` = ? LIMIT 1"
+        );
         assert_eq!(stmt.params, vec![Value::Int(42)]);
     }
 
@@ -402,7 +430,9 @@ mod tests {
     fn delete_refuses_null_primary_key() {
         let columns = vec![column("id", "orders"), column("amount", "orders")];
         let row = vec![CellValue::Null, CellValue::Text("1.00".into())];
-        assert!(build_delete(&target(), &columns, &row).unwrap_err().contains("NULL"));
+        assert!(build_delete(&target(), &columns, &row)
+            .unwrap_err()
+            .contains("NULL"));
     }
 
     #[test]
@@ -413,14 +443,21 @@ mod tests {
             column("note", "orders"),
         ];
         // id 交给自增，amount 写值，note 明确写 NULL —— 不写和写 NULL 不能混为一谈
-        let values = vec![None, Some(CellValue::Text("9.99".into())), Some(CellValue::Null)];
+        let values = vec![
+            None,
+            Some(CellValue::Text("9.99".into())),
+            Some(CellValue::Null),
+        ];
 
         let stmt = build_insert(&target(), &columns, &values).expect("应该能生成");
         assert_eq!(
             stmt.sql,
             "INSERT INTO `shop`.`orders` (`amount`, `note`) VALUES (?, ?)"
         );
-        assert_eq!(stmt.params, vec![Value::Bytes(b"9.99".to_vec()), Value::NULL]);
+        assert_eq!(
+            stmt.params,
+            vec![Value::Bytes(b"9.99".to_vec()), Value::NULL]
+        );
     }
 
     #[test]
@@ -434,7 +471,9 @@ mod tests {
     #[test]
     fn insert_refuses_mismatched_value_count() {
         let columns = vec![column("id", "orders"), column("amount", "orders")];
-        assert!(build_insert(&target(), &columns, &[None]).unwrap_err().contains("对不上"));
+        assert!(build_insert(&target(), &columns, &[None])
+            .unwrap_err()
+            .contains("对不上"));
     }
 
     #[test]

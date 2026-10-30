@@ -8,8 +8,8 @@ use cdata_core::db::ConnectionConfig;
 use cdata_core::options::ConnectionOptions;
 use cdata_core::server::{build_set_variable, KillMode, ProcessInfo, VariableScope};
 use cdata_core::session::{
-    apply_set_global, close_session, kill_process, open_session, preview_set_global, server_processes,
-    server_status, server_variables, slow_log_config, slow_log_entries, Error,
+    apply_set_global, close_session, kill_process, open_session, preview_set_global,
+    server_processes, server_status, server_variables, slow_log_config, slow_log_entries, Error,
 };
 use mysql_async::prelude::Queryable;
 
@@ -127,10 +127,19 @@ async fn kill_query_stops_statement_and_keeps_connection() {
 
     let target = find_process(session, &tag).await;
     assert!(!target.is_own);
-    assert!(target.info.text.contains("SLEEP(30)"), "要显示完整语句：{}", target.info.text);
-    kill_process(session, &target, KillMode::Query).await.unwrap();
+    assert!(
+        target.info.text.contains("SLEEP(30)"),
+        "要显示完整语句：{}",
+        target.info.text
+    );
+    kill_process(session, &target, KillMode::Query)
+        .await
+        .unwrap();
 
-    let (mut victim, result) = tokio::time::timeout(Duration::from_secs(10), running).await.unwrap().unwrap();
+    let (mut victim, result) = tokio::time::timeout(Duration::from_secs(10), running)
+        .await
+        .unwrap()
+        .unwrap();
     assert_eq!(result, Some(1), "被 KILL QUERY 打断的 SLEEP 返回 1");
     assert!(started.elapsed() < Duration::from_secs(20));
     let alive: Option<i64> = victim.query_first("SELECT 7").await.unwrap();
@@ -158,9 +167,14 @@ async fn kill_connection_drops_it() {
     });
 
     let target = find_process(session, &tag).await;
-    kill_process(session, &target, KillMode::Connection).await.unwrap();
+    kill_process(session, &target, KillMode::Connection)
+        .await
+        .unwrap();
 
-    let (mut victim, result) = tokio::time::timeout(Duration::from_secs(10), running).await.unwrap().unwrap();
+    let (mut victim, result) = tokio::time::timeout(Duration::from_secs(10), running)
+        .await
+        .unwrap()
+        .unwrap();
     assert!(result.is_err(), "连接被断开，语句应该报错：{result:?}");
     let after: Result<Option<i64>, _> = victim.query_first("SELECT 1").await;
     assert!(after.is_err(), "连接已经断开");
@@ -199,7 +213,9 @@ async fn kill_refuses_stale_target() {
     let target = find_process(session, &tag).await;
     let mut changed = target.clone();
     changed.info.text = "SELECT 1".to_string();
-    let err = kill_process(session, &changed, KillMode::Query).await.unwrap_err();
+    let err = kill_process(session, &changed, KillMode::Query)
+        .await
+        .unwrap_err();
     assert!(err.to_string().contains("和确认时不一样"), "{err}");
 
     let (victim, result) = running.await.unwrap();
@@ -208,7 +224,9 @@ async fn kill_refuses_stale_target() {
 
     // 连接断开后线程不在了
     tokio::time::sleep(Duration::from_millis(300)).await;
-    let err = kill_process(session, &target, KillMode::Connection).await.unwrap_err();
+    let err = kill_process(session, &target, KillMode::Connection)
+        .await
+        .unwrap_err();
     assert!(err.to_string().contains("已经"), "{err}");
 
     close_session(session).await.unwrap();
@@ -225,25 +243,59 @@ async fn variables_and_status() {
     for scope in [VariableScope::Global, VariableScope::Session] {
         let list = server_variables(session, scope).await.unwrap();
         assert!(!list.truncated);
-        let max = list.variables.iter().find(|v| v.name == "max_connections").expect("max_connections");
+        let max = list
+            .variables
+            .iter()
+            .find(|v| v.name == "max_connections")
+            .expect("max_connections");
         assert!(!max.value.placeholder);
     }
     // 连接池的 setup 在每条连接上 SET NAMES utf8mb4，会话值要反映出来
-    let session_vars = server_variables(session, VariableScope::Session).await.unwrap();
-    let client = session_vars.variables.iter().find(|v| v.name == "character_set_client").unwrap();
+    let session_vars = server_variables(session, VariableScope::Session)
+        .await
+        .unwrap();
+    let client = session_vars
+        .variables
+        .iter()
+        .find(|v| v.name == "character_set_client")
+        .unwrap();
     assert_eq!(client.value.text, "utf8mb4");
 
     let first = server_status(session, None).await.unwrap();
-    let questions = first.counters.iter().find(|c| c.name == "Questions").unwrap();
+    let questions = first
+        .counters
+        .iter()
+        .find(|c| c.name == "Questions")
+        .unwrap();
     assert!(questions.delta.is_none(), "第一次没有差值");
 
     tokio::time::sleep(Duration::from_millis(200)).await;
     let second = server_status(session, Some(&first)).await.unwrap();
-    let questions = second.counters.iter().find(|c| c.name == "Questions").unwrap();
-    assert!(questions.delta.as_deref().is_some_and(|d| d.starts_with('+')), "{questions:?}");
-    assert!(questions.rate.as_deref().is_some_and(|r| r.ends_with("/s")), "{questions:?}");
-    let running = second.counters.iter().find(|c| c.name == "Threads_running").unwrap();
-    assert!(running.delta.is_some() && running.rate.is_none(), "{running:?}");
+    let questions = second
+        .counters
+        .iter()
+        .find(|c| c.name == "Questions")
+        .unwrap();
+    assert!(
+        questions
+            .delta
+            .as_deref()
+            .is_some_and(|d| d.starts_with('+')),
+        "{questions:?}"
+    );
+    assert!(
+        questions.rate.as_deref().is_some_and(|r| r.ends_with("/s")),
+        "{questions:?}"
+    );
+    let running = second
+        .counters
+        .iter()
+        .find(|c| c.name == "Threads_running")
+        .unwrap();
+    assert!(
+        running.delta.is_some() && running.rate.is_none(),
+        "{running:?}"
+    );
 
     close_session(session).await.unwrap();
 }
@@ -292,8 +344,13 @@ async fn generated_set_statements_work_at_session_scope() {
     ];
     for (name, value, expected) in cases {
         let statement = build_set_variable(VariableScope::Session, name, value, false).unwrap();
-        conn.query_drop(&statement).await.unwrap_or_else(|err| panic!("{statement}: {err}"));
-        let now: Option<String> = conn.query_first(format!("SELECT CAST(@@SESSION.{name} AS CHAR)")).await.unwrap();
+        conn.query_drop(&statement)
+            .await
+            .unwrap_or_else(|err| panic!("{statement}: {err}"));
+        let now: Option<String> = conn
+            .query_first(format!("SELECT CAST(@@SESSION.{name} AS CHAR)"))
+            .await
+            .unwrap();
         assert_eq!(now.as_deref(), Some(expected), "{statement}");
     }
 
@@ -309,30 +366,61 @@ async fn set_global_previews_and_refuses_mismatch() {
     };
     let session = open_session(&config).await.unwrap();
 
-    let before = server_variables(session, VariableScope::Global).await.unwrap();
-    let current = before.variables.iter().find(|v| v.name == "long_query_time").unwrap().value.clone();
+    let before = server_variables(session, VariableScope::Global)
+        .await
+        .unwrap();
+    let current = before
+        .variables
+        .iter()
+        .find(|v| v.name == "long_query_time")
+        .unwrap()
+        .value
+        .clone();
 
-    let plan = preview_set_global(session, "long_query_time", "2").await.unwrap();
+    let plan = preview_set_global(session, "long_query_time", "2")
+        .await
+        .unwrap();
     assert_eq!(plan.statement, "SET GLOBAL long_query_time = 2");
     assert_eq!(plan.current_value, current);
-    assert!(plan.warnings.iter().any(|w| w.contains("重启")), "{:?}", plan.warnings);
+    assert!(
+        plan.warnings.iter().any(|w| w.contains("重启")),
+        "{:?}",
+        plan.warnings
+    );
 
     // 值就是现在的值：万一比对失效真的执行了，服务器配置也不变
-    let err = apply_set_global(session, "long_query_time", &current.text, "SET GLOBAL long_query_time = 99")
-        .await
-        .unwrap_err();
+    let err = apply_set_global(
+        session,
+        "long_query_time",
+        &current.text,
+        "SET GLOBAL long_query_time = 99",
+    )
+    .await
+    .unwrap_err();
     assert!(err.to_string().contains("和预览时不一样"), "{err}");
 
-    let err = preview_set_global(session, "cdata_no_such_variable", "1").await.unwrap_err();
+    let err = preview_set_global(session, "cdata_no_such_variable", "1")
+        .await
+        .unwrap_err();
     assert!(err.to_string().contains("没有全局变量"), "{err}");
     // 只有会话级的变量
-    let err = preview_set_global(session, "insert_id", "1").await.unwrap_err();
+    let err = preview_set_global(session, "insert_id", "1")
+        .await
+        .unwrap_err();
     assert!(err.to_string().contains("没有全局变量"), "{err}");
-    let err = preview_set_global(session, "max_connections; DROP TABLE x", "1").await.unwrap_err();
+    let err = preview_set_global(session, "max_connections; DROP TABLE x", "1")
+        .await
+        .unwrap_err();
     assert!(matches!(err, Error::BadInput(_)), "{err}");
 
-    let after = server_variables(session, VariableScope::Global).await.unwrap();
-    let now = after.variables.iter().find(|v| v.name == "long_query_time").unwrap();
+    let after = server_variables(session, VariableScope::Global)
+        .await
+        .unwrap();
+    let now = after
+        .variables
+        .iter()
+        .find(|v| v.name == "long_query_time")
+        .unwrap();
     assert_eq!(now.value, current, "全局值不能被测试改掉");
 
     close_session(session).await.unwrap();

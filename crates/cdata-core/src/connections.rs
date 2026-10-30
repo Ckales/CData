@@ -10,8 +10,8 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 
 use crate::db::ConnectionConfig;
-use crate::options::{ConnectionOptions, SshHop};
 use crate::history::data_file;
+use crate::options::{ConnectionOptions, SshHop};
 
 const KEYRING_SERVICE: &str = "com.ckales.cdata";
 
@@ -101,7 +101,9 @@ fn ssh_secret_account(id: &str, hop: &SshHop) -> String {
 pub fn save_ssh_secret(id: &str, hop: &SshHop, secret: &str) -> Result<()> {
     let entry = keyring::Entry::new(KEYRING_SERVICE, &ssh_secret_account(id, hop))
         .map_err(|e| Error::Keyring(e.to_string()))?;
-    entry.set_password(secret).map_err(|e| Error::Keyring(e.to_string()))
+    entry
+        .set_password(secret)
+        .map_err(|e| Error::Keyring(e.to_string()))
 }
 
 /// 取某一跳的 SSH 密码或口令。**不经过 FFI**：只在 core 连接时使用，界面拿不到
@@ -165,11 +167,21 @@ pub fn open_connections() -> Result<Vec<OpenConnectionState>> {
     } else {
         Vec::new()
     };
-    Ok(ids.into_iter().map(|id| {
-        selections.iter().find(|state| state.id == id).cloned().unwrap_or(
-            OpenConnectionState { id, database: None, table: None, active: false }
-        )
-    }).collect())
+    Ok(ids
+        .into_iter()
+        .map(|id| {
+            selections
+                .iter()
+                .find(|state| state.id == id)
+                .cloned()
+                .unwrap_or(OpenConnectionState {
+                    id,
+                    database: None,
+                    table: None,
+                    active: false,
+                })
+        })
+        .collect())
 }
 
 pub fn save_open_connections(connections: &[OpenConnectionState]) -> Result<()> {
@@ -177,9 +189,13 @@ pub fn save_open_connections(connections: &[OpenConnectionState]) -> Result<()> 
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|e| Error::Io(e.to_string()))?;
     }
-    let text = serde_json::to_string_pretty(connections).map_err(|e| Error::Parse(e.to_string()))?;
+    let text =
+        serde_json::to_string_pretty(connections).map_err(|e| Error::Parse(e.to_string()))?;
     fs::write(path, text).map_err(|e| Error::Io(e.to_string()))?;
-    let ids = connections.iter().map(|state| state.id.clone()).collect::<Vec<_>>();
+    let ids = connections
+        .iter()
+        .map(|state| state.id.clone())
+        .collect::<Vec<_>>();
     save_open_connection_ids(&ids)
 }
 
@@ -226,12 +242,14 @@ fn write_all(connections: &[SavedConnection]) -> Result<()> {
         fs::create_dir_all(parent).map_err(|e| Error::Io(e.to_string()))?;
     }
 
-    let text = serde_json::to_string_pretty(connections).map_err(|e| Error::Parse(e.to_string()))?;
+    let text =
+        serde_json::to_string_pretty(connections).map_err(|e| Error::Parse(e.to_string()))?;
     fs::write(&path, text).map_err(|e| Error::Io(e.to_string()))
 }
 
 fn store_password(id: &str, password: &str) -> Result<()> {
-    let entry = keyring::Entry::new(KEYRING_SERVICE, id).map_err(|e| Error::Keyring(e.to_string()))?;
+    let entry =
+        keyring::Entry::new(KEYRING_SERVICE, id).map_err(|e| Error::Keyring(e.to_string()))?;
     entry
         .set_password(password)
         .map_err(|e| Error::Keyring(e.to_string()))
@@ -239,7 +257,8 @@ fn store_password(id: &str, password: &str) -> Result<()> {
 
 /// 取密码。没存过返回 None，界面据此提示用户输一次
 pub fn load_password(id: &str) -> Result<Option<String>> {
-    let entry = keyring::Entry::new(KEYRING_SERVICE, id).map_err(|e| Error::Keyring(e.to_string()))?;
+    let entry =
+        keyring::Entry::new(KEYRING_SERVICE, id).map_err(|e| Error::Keyring(e.to_string()))?;
     match entry.get_password() {
         Ok(password) => Ok(Some(password)),
         Err(keyring::Error::NoEntry) => Ok(None),
@@ -266,7 +285,10 @@ mod tests {
 
         // 序列化结果里绝不能出现任何密码痕迹 —— 这个文件会被备份和同步
         let json = serde_json::to_string(&connection).unwrap();
-        assert!(!json.contains("password"), "配置里不该有 password 字段：{json}");
+        assert!(
+            !json.contains("password"),
+            "配置里不该有 password 字段：{json}"
+        );
         assert!(json.contains("127.0.0.1"));
     }
 
@@ -289,23 +311,53 @@ mod tests {
 
         assert!(open_connections().unwrap().is_empty());
         let connections = vec![
-            OpenConnectionState { id: "one".into(), database: Some("shop".into()), table: Some("orders".into()), active: true },
-            OpenConnectionState { id: "two".into(), database: Some("".into()), table: None, active: false },
+            OpenConnectionState {
+                id: "one".into(),
+                database: Some("shop".into()),
+                table: Some("orders".into()),
+                active: true,
+            },
+            OpenConnectionState {
+                id: "two".into(),
+                database: Some("".into()),
+                table: None,
+                active: false,
+            },
         ];
         save_open_connections(&connections).unwrap();
         assert_eq!(open_connections().unwrap(), connections);
-        assert_eq!(std::fs::read_to_string(&path).unwrap(), "[\n  \"one\",\n  \"two\"\n]");
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            "[\n  \"one\",\n  \"two\"\n]"
+        );
 
         // 早期的库表选择文件没有 active 字段，沿用旧的最后连接优先行为。
-        std::fs::write(&selections_path, r#"[{"id":"one","database":"shop","table":"orders"}]"#).unwrap();
+        std::fs::write(
+            &selections_path,
+            r#"[{"id":"one","database":"shop","table":"orders"}]"#,
+        )
+        .unwrap();
         assert_eq!(open_connections().unwrap()[0].active, false);
 
         // 旧版本只有 ID 文件；读出后仍可用收藏连接里的默认库。
         std::fs::remove_file(&selections_path).unwrap();
-        assert_eq!(open_connections().unwrap(), vec![
-            OpenConnectionState { id: "one".into(), database: None, table: None, active: false },
-            OpenConnectionState { id: "two".into(), database: None, table: None, active: false },
-        ]);
+        assert_eq!(
+            open_connections().unwrap(),
+            vec![
+                OpenConnectionState {
+                    id: "one".into(),
+                    database: None,
+                    table: None,
+                    active: false
+                },
+                OpenConnectionState {
+                    id: "two".into(),
+                    database: None,
+                    table: None,
+                    active: false
+                },
+            ]
+        );
 
         unsafe { std::env::remove_var("CDATA_OPEN_CONNECTIONS_PATH") };
         unsafe { std::env::remove_var("CDATA_OPEN_SELECTIONS_PATH") };
@@ -340,10 +392,16 @@ mod tests {
 
         // 落盘的内容里不能有密码痕迹
         let text = std::fs::read_to_string(&path).unwrap();
-        assert!(!text.contains("password"), "配置文件里出现了 password：{text}");
+        assert!(
+            !text.contains("password"),
+            "配置文件里出现了 password：{text}"
+        );
 
         // 同 id 再存是覆盖，不是追加
-        let renamed = SavedConnection { name: "改了名".into(), ..connection.clone() };
+        let renamed = SavedConnection {
+            name: "改了名".into(),
+            ..connection.clone()
+        };
         save(&renamed, None).unwrap();
         let all = list().unwrap();
         assert_eq!(all.len(), 1);

@@ -5,7 +5,7 @@ import 'src/rust/api/csv_import.dart' as csv_import show suggestMapping;
 import 'src/rust/api/db.dart';
 // 顶层函数和下面 GridSource 的同名方法重名，方法体里直接调会解析成方法自己
 import 'src/rust/api/db.dart' as db
-    show refreshRow, insertRow, deleteRows, copyRange, exportTable, exportSqlDump, parseClipboard, pasteCells, columnChoices, exportRows;
+    show refreshRow, insertRow, deleteRows, copyRange, exportTable, exportSqlDump, parseClipboard, pasteCells, columnChoices, exportRows, fileProgress;
 import 'src/rust/api/layouts.dart';
 import 'src/rust/api/layouts.dart' as layouts show loadLayout, saveLayout;
 import 'src/rust/api/schema.dart';
@@ -85,6 +85,9 @@ abstract class GridSource {
     List<int> columns,
     ExportOptions options,
   );
+
+  /// 当前会话正在跑的导入或导出进度。没有进行中的操作时 done 和 total 都是 0
+  Future<FileProgress> fileProgress();
 }
 
 /// FRB 的 Uint64List 元素是 BigInt，没有 fromList，只能先开长度再逐个填
@@ -147,6 +150,9 @@ abstract class SchemaSource {
 
   /// 选中的表导出成一个 SQL 文件。返回写了多少行数据
   Future<int> exportSqlDump(String database, List<String> tables, String path, SqlDumpOptions options);
+
+  /// 当前会话正在跑的导入或导出进度。没有进行中的操作时 done 和 total 都是 0
+  Future<FileProgress> fileProgress();
 
   /// 新建库对话框的选项：字符集、排序规则、服务器默认值
   Future<DatabaseOptions> databaseOptions();
@@ -265,6 +271,9 @@ class RustGridSource implements GridSource {
       options: options,
     );
   }
+
+  @override
+  Future<FileProgress> fileProgress() => db.fileProgress(sessionId: sessionId);
 
   /// 十六进制视图最多看前 64KB，再大交给导出
   @override
@@ -406,6 +415,9 @@ class RustSchemaSource implements SchemaSource {
     );
     return written.toInt();
   }
+
+  @override
+  Future<FileProgress> fileProgress() => db.fileProgress(sessionId: sessionId);
 
   @override
   Future<DatabaseOptions> databaseOptions() => schema.databaseOptions(sessionId: sessionId);

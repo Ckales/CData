@@ -428,3 +428,135 @@ class _ExportDialogState extends State<_ExportDialog> {
     );
   }
 }
+
+const _pollEvery = Duration(milliseconds: 300);
+
+class _ProgressBox<T> {
+  T? value;
+  Object? error;
+  bool done = false;
+}
+
+/// 跑一个写文件的操作。已经结束的（小导出）不弹窗；还在跑才显示进度。
+Future<T> runWithFileProgress<T>(
+  BuildContext context, {
+  required String title,
+  required String subtitle,
+  required Future<T> Function() work,
+  required Future<FileProgress> Function() readProgress,
+}) async {
+  final box = _ProgressBox<T>();
+  final pending = work();
+  pending.then((value) {
+    box.value = value;
+    box.done = true;
+  }, onError: (Object error) {
+    box.error = error;
+    box.done = true;
+  });
+  // 假实现在下一个微任务就结束。让它先跑完，测试里就不会闪出一个对话框
+  await Future<void>.delayed(Duration.zero);
+  if (!box.done && context.mounted) {
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => _FileProgressDialog<T>(
+        title: title,
+        subtitle: subtitle,
+        box: box,
+        pending: pending,
+        readProgress: readProgress,
+      ),
+    );
+  } else if (!box.done) {
+    await pending.then((_) {}, onError: (_, _) {});
+  }
+  final error = box.error;
+  if (error != null) throw error;
+  return box.value as T;
+}
+
+class _FileProgressDialog<T> extends StatefulWidget {
+  final String title;
+  final String subtitle;
+  final _ProgressBox<T> box;
+  final Future<T> pending;
+  final Future<FileProgress> Function() readProgress;
+
+  const _FileProgressDialog({
+    required this.title,
+    required this.subtitle,
+    required this.box,
+    required this.pending,
+    required this.readProgress,
+  });
+
+  @override
+  State<_FileProgressDialog<T>> createState() => _FileProgressDialogState<T>();
+}
+
+class _FileProgressDialogState<T> extends State<_FileProgressDialog<T>> {
+  FileProgress _progress = FileProgress(done: BigInt.zero, total: BigInt.zero);
+
+  @override
+  void initState() {
+    super.initState();
+    _watch();
+  }
+
+  Future<void> _watch() async {
+    while (mounted && !widget.box.done) {
+      try {
+        final progress = await widget.readProgress();
+        if (mounted) setState(() => _progress = progress);
+      } catch (_) {
+        // 读不到进度不影响导出本身
+      }
+      if (widget.box.done || !mounted) break;
+      await Future.any([
+        widget.pending.then((_) {}, onError: (_, _) {}),
+        Future<void>.delayed(_pollEvery),
+      ]);
+    }
+    if (mounted) Navigator.of(context).pop();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final total = _progress.total;
+    final double? value = total == BigInt.zero ? null : _progress.done.toDouble() / total.toDouble();
+    final label = total == BigInt.zero
+        ? '已写出 ${_progress.done} 行'
+        : '已写出 ${_progress.done} / $total 行';
+    return PopScope(
+      canPop: false,
+      child: Dialog(
+        child: SizedBox(
+          width: 420,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(widget.title, style: Theme.of(context).textTheme.titleMedium),
+                const SizedBox(height: 2),
+                Text(
+                  widget.subtitle,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 12, color: colors.onSurfaceVariant),
+                ),
+                const SizedBox(height: 12),
+                LinearProgressIndicator(value: value),
+                const SizedBox(height: 6),
+                Text(label, style: TextStyle(fontSize: 12, color: colors.onSurfaceVariant)),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}

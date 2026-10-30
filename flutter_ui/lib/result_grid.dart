@@ -1030,12 +1030,18 @@ class _ResultGridState extends State<ResultGrid> {
       _notice = null;
     });
     try {
-      final summary = await widget.source.exportRows(
-        path,
-        useSelection ? range.top : 0,
-        useSelection ? range.bottom - range.top + 1 : null,
-        columns,
-        choice.options,
+      final summary = await runWithFileProgress(
+        context,
+        title: '正在导出',
+        subtitle: baseName,
+        readProgress: widget.source.fileProgress,
+        work: () => widget.source.exportRows(
+          path,
+          useSelection ? range.top : 0,
+          useSelection ? range.bottom - range.top + 1 : null,
+          columns,
+          choice.options,
+        ),
       );
       if (!mounted) return;
       setState(() {

@@ -59,9 +59,12 @@ async fn connections_go_over_tcp_not_a_local_unix_socket() {
     // 走 TCP 时 PROCESSLIST 的 HOST 带端口（host:port），走 unix socket 时只有 localhost
     let id = session::open_session(&config).await.unwrap();
     let host = text(
-        first_cell(id, "SELECT HOST FROM information_schema.PROCESSLIST WHERE ID = CONNECTION_ID()")
-            .await
-            .unwrap(),
+        first_cell(
+            id,
+            "SELECT HOST FROM information_schema.PROCESSLIST WHERE ID = CONNECTION_ID()",
+        )
+        .await
+        .unwrap(),
     );
     assert!(host.contains(':'), "应该走 TCP，实际客户端地址是 {host}");
     session::close_session(id).await.ok();
@@ -101,7 +104,10 @@ async fn ssl_verify_identity_rejects_a_certificate_it_cannot_trust() {
     config.options.ssl.mode = SslMode::VerifyIdentity;
     let id = session::open_session(&config).await.unwrap();
     let err = session::execute(id, "SELECT 1", 10).await.unwrap_err();
-    assert!(matches!(err, Error::Connect(_)), "证书不可信应该是连接失败：{err}");
+    assert!(
+        matches!(err, Error::Connect(_)),
+        "证书不可信应该是连接失败：{err}"
+    );
     session::close_session(id).await.ok();
 
     // 给了 CA（CDATA_TEST_SSL_CA）：证书链要能验过。之后要么连上且加密，
@@ -116,8 +122,14 @@ async fn ssl_verify_identity_rejects_a_certificate_it_cannot_trust() {
         Ok(_) => {}
         Err(err) => {
             let message = err.to_string();
-            assert!(!message.contains("UnknownIssuer"), "给了 CA 仍然不认识签发者：{message}");
-            assert!(message.contains("not valid for name"), "预期只卡在主机名校验上：{message}");
+            assert!(
+                !message.contains("UnknownIssuer"),
+                "给了 CA 仍然不认识签发者：{message}"
+            );
+            assert!(
+                message.contains("not valid for name"),
+                "预期只卡在主机名校验上：{message}"
+            );
         }
     }
     session::close_session(id).await.ok();
@@ -154,7 +166,11 @@ async fn connect_timeout_gives_up_on_a_silent_server() {
     let id = session::open_session(&config).await.unwrap();
     let started = Instant::now();
     let err = session::execute(id, "SELECT 1", 10).await.unwrap_err();
-    assert!(started.elapsed() < Duration::from_secs(3), "连接超时没生效：{:?}", started.elapsed());
+    assert!(
+        started.elapsed() < Duration::from_secs(3),
+        "连接超时没生效：{:?}",
+        started.elapsed()
+    );
     match err {
         Error::Connect(message) => assert!(message.contains("1 秒内没有连上"), "{message}"),
         other => panic!("预期连接失败，实际 {other}"),
@@ -174,7 +190,9 @@ async fn query_timeout_stops_the_statement_on_the_server() {
     let probe = format!("cdata_timeout_probe_{}", std::process::id());
     let id = session::open_session(&limited).await.unwrap();
     let started = Instant::now();
-    let err = session::execute(id, &format!("SELECT SLEEP(5) AS {probe}"), 10).await.unwrap_err();
+    let err = session::execute(id, &format!("SELECT SLEEP(5) AS {probe}"), 10)
+        .await
+        .unwrap_err();
     let elapsed = started.elapsed();
 
     // SLEEP 被 KILL QUERY 打断时返回 1 而不报错 —— 不能因此把它当成正常完成
@@ -182,7 +200,10 @@ async fn query_timeout_stops_the_statement_on_the_server() {
         Error::QueryTimeout(message) => assert!(message.contains("已让服务器停止"), "{message}"),
         other => panic!("预期查询超时，实际 {other}"),
     }
-    assert!(elapsed < Duration::from_secs(4), "超时后要立刻停，实际等了 {elapsed:?}");
+    assert!(
+        elapsed < Duration::from_secs(4),
+        "超时后要立刻停，实际等了 {elapsed:?}"
+    );
 
     // 用另一条不限时的会话到服务器上确认这条语句已经没了。
     // 查询条件拆开拼，免得这条查询自己的文本也匹配上
@@ -220,13 +241,16 @@ async fn idle_connection_dropped_by_the_server_is_replaced_on_next_use() {
     // 先等连接池把它 reset 完：KILL 落在 COM_RESET_CONNECTION 途中会被 reset 清掉
     tokio::time::sleep(Duration::from_millis(300)).await;
     let killer = session::open_session(&config).await.unwrap();
-    session::execute(killer, &format!("KILL {before}"), 10).await.unwrap();
+    session::execute(killer, &format!("KILL {before}"), 10)
+        .await
+        .unwrap();
     tokio::time::sleep(Duration::from_millis(300)).await;
-    let alive = int(
-        first_cell(killer, &format!("SELECT COUNT(*) FROM information_schema.PROCESSLIST WHERE ID = {before}"))
-            .await
-            .unwrap(),
-    );
+    let alive = int(first_cell(
+        killer,
+        &format!("SELECT COUNT(*) FROM information_schema.PROCESSLIST WHERE ID = {before}"),
+    )
+    .await
+    .unwrap());
     assert_eq!(alive, 0, "前提不成立：连接没被踢掉");
 
     // 下一次操作自动换一条新连接，不报错
@@ -264,19 +288,28 @@ async fn connection_lost_mid_statement_is_reported_as_uncertain_and_not_retried(
         .await
         .unwrap(),
     );
-    session::execute(killer, &format!("KILL {connection_id}"), 10).await.unwrap();
+    session::execute(killer, &format!("KILL {connection_id}"), 10)
+        .await
+        .unwrap();
 
     let started = Instant::now();
     let outcome = running.await.unwrap();
     // 要是偷偷重试了，这里会在又一个 3 秒后返回成功
-    assert!(started.elapsed() < Duration::from_secs(2), "等太久了，像是被重试了：{:?}", started.elapsed());
+    assert!(
+        started.elapsed() < Duration::from_secs(2),
+        "等太久了，像是被重试了：{:?}",
+        started.elapsed()
+    );
     match outcome {
         Err(Error::ConnectionLost(_)) => {}
         Err(other) => panic!("预期断线错误，实际 {other}"),
         Ok(_) => panic!("连接被踢掉了，语句不应该成功"),
     }
     let message = Error::ConnectionLost("x".into()).to_string();
-    assert!(message.contains("可能已经执行，也可能没有执行"), "{message}");
+    assert!(
+        message.contains("可能已经执行，也可能没有执行"),
+        "{message}"
+    );
 
     // 之后照常能用
     assert_eq!(int(first_cell(id, "SELECT 1").await.unwrap()), 1);
@@ -313,14 +346,22 @@ mod fake_sshd {
     impl server::Handler for Handler {
         type Error = russh::Error;
 
-        async fn auth_password(&mut self, _user: &str, password: &str) -> Result<Auth, Self::Error> {
+        async fn auth_password(
+            &mut self,
+            _user: &str,
+            password: &str,
+        ) -> Result<Auth, Self::Error> {
             if self.credentials.password.as_deref() == Some(password) {
                 return Ok(Auth::Accept);
             }
             Ok(Auth::reject())
         }
 
-        async fn auth_publickey(&mut self, _user: &str, key: &PublicKey) -> Result<Auth, Self::Error> {
+        async fn auth_publickey(
+            &mut self,
+            _user: &str,
+            key: &PublicKey,
+        ) -> Result<Auth, Self::Error> {
             if self.credentials.public_key.as_ref() == Some(key) {
                 return Ok(Auth::Accept);
             }
@@ -371,8 +412,12 @@ mod fake_sshd {
         let registry = sessions.clone();
         tokio::spawn(async move {
             loop {
-                let Ok((socket, _)) = listener.accept().await else { continue };
-                let handler = Handler { credentials: credentials.clone() };
+                let Ok((socket, _)) = listener.accept().await else {
+                    continue;
+                };
+                let handler = Handler {
+                    credentials: credentials.clone(),
+                };
                 if let Ok(running) = server::run_stream(config.clone(), socket, handler).await {
                     registry.lock().unwrap().push(running.handle());
                     tokio::spawn(running);
@@ -384,17 +429,37 @@ mod fake_sshd {
 }
 
 fn hop(port: u16, auth: SshAuth) -> SshHop {
-    SshHop { host: "127.0.0.1".into(), port, user: "tester".into(), auth }
+    SshHop {
+        host: "127.0.0.1".into(),
+        port,
+        user: "tester".into(),
+        auth,
+    }
 }
 
 /// 打开会话；遇到未知主机就确认指纹再开一次，模拟用户点了「信任」
-async fn open_trusting(config: &ConnectionConfig, expected_port: u16, expected_key: &PublicKey) -> u64 {
+async fn open_trusting(
+    config: &ConnectionConfig,
+    expected_port: u16,
+    expected_key: &PublicKey,
+) -> u64 {
     let err = session::open_session(config).await.unwrap_err();
-    let issue = err.host_key_issue().unwrap_or_else(|| panic!("预期未知主机，实际 {err}")).clone();
+    let issue = err
+        .host_key_issue()
+        .unwrap_or_else(|| panic!("预期未知主机，实际 {err}"))
+        .clone();
     assert_eq!(issue.kind, HostKeyIssueKind::Unknown);
     assert_eq!(issue.port, expected_port);
-    assert_eq!(issue.fingerprint, expected_key.fingerprint(russh::keys::HashAlg::Sha256).to_string());
-    assert!(err.to_string().contains(&issue.fingerprint), "错误信息里要带指纹：{err}");
+    assert_eq!(
+        issue.fingerprint,
+        expected_key
+            .fingerprint(russh::keys::HashAlg::Sha256)
+            .to_string()
+    );
+    assert!(
+        err.to_string().contains(&issue.fingerprint),
+        "错误信息里要带指纹：{err}"
+    );
 
     cdata_core::ssh::trust_host_key(&issue.host, issue.port, &issue.fingerprint).unwrap();
     session::open_session(config).await.unwrap()
@@ -418,7 +483,10 @@ async fn ssh_tunnel_end_to_end_with_a_local_russh_server() {
     let jump_key = fake_sshd::host_key(11);
     let jump = fake_sshd::start(
         jump_key.clone(),
-        fake_sshd::Credentials { password: Some("jump-pass".into()), public_key: None },
+        fake_sshd::Credentials {
+            password: Some("jump-pass".into()),
+            public_key: None,
+        },
     )
     .await;
 
@@ -426,11 +494,21 @@ async fn ssh_tunnel_end_to_end_with_a_local_russh_server() {
     let user_key = fake_sshd::host_key(21);
     let key_path = dir.join("id_ed25519");
     let encrypted = user_key.encrypt(&mut rand::rng(), "key-pass").unwrap();
-    std::fs::write(&key_path, encrypted.to_openssh(russh::keys::ssh_key::LineEnding::LF).unwrap().as_bytes()).unwrap();
+    std::fs::write(
+        &key_path,
+        encrypted
+            .to_openssh(russh::keys::ssh_key::LineEnding::LF)
+            .unwrap()
+            .as_bytes(),
+    )
+    .unwrap();
     let target_key = fake_sshd::host_key(12);
     let target = fake_sshd::start(
         target_key.clone(),
-        fake_sshd::Credentials { password: None, public_key: Some(user_key.public_key().clone()) },
+        fake_sshd::Credentials {
+            password: None,
+            public_key: Some(user_key.public_key().clone()),
+        },
     )
     .await;
 
@@ -444,11 +522,17 @@ async fn ssh_tunnel_end_to_end_with_a_local_russh_server() {
     // 2. SSH 会话被服务端断掉之后，下一次操作自动重建隧道并换新连接
     for handle in jump.sessions.lock().unwrap().drain(..) {
         tokio::spawn(async move {
-            let _ = handle.disconnect(russh::Disconnect::ByApplication, "bye".into(), "en".into()).await;
+            let _ = handle
+                .disconnect(russh::Disconnect::ByApplication, "bye".into(), "en".into())
+                .await;
         });
     }
     tokio::time::sleep(Duration::from_millis(500)).await;
-    assert_eq!(int(first_cell(id, "SELECT 2").await.unwrap()), 2, "隧道断了之后应该自动重建");
+    assert_eq!(
+        int(first_cell(id, "SELECT 2").await.unwrap()),
+        2,
+        "隧道断了之后应该自动重建"
+    );
     session::close_session(id).await.ok();
 
     // 3. 密码错：认证失败，信息里不出现密码
@@ -456,13 +540,21 @@ async fn ssh_tunnel_end_to_end_with_a_local_russh_server() {
     wrong.ssh_secrets = vec![Some("not-the-password".into())];
     let err = session::open_session(&wrong).await.unwrap_err().to_string();
     assert!(err.contains("拒绝了认证"), "{err}");
-    assert!(!err.contains("not-the-password"), "错误信息里不能带密码：{err}");
+    assert!(
+        !err.contains("not-the-password"),
+        "错误信息里不能带密码：{err}"
+    );
 
     // 4. 跳板机 + 带口令的私钥
     let mut jumped = config.clone();
     jumped.options.ssh.hops = vec![
         hop(jump.port, SshAuth::Password),
-        hop(target.port, SshAuth::PrivateKey { path: key_path.to_string_lossy().into_owned() }),
+        hop(
+            target.port,
+            SshAuth::PrivateKey {
+                path: key_path.to_string_lossy().into_owned(),
+            },
+        ),
     ];
     jumped.ssh_secrets = vec![Some("jump-pass".into()), Some("key-pass".into())];
     let id = open_trusting(&jumped, target.port, target_key.public_key()).await;
@@ -472,7 +564,10 @@ async fn ssh_tunnel_end_to_end_with_a_local_russh_server() {
     // 5. 主机密钥和记录对不上：拒绝，也不能靠 trust_host_key 绕过去
     let impostor = fake_sshd::start(
         fake_sshd::host_key(13),
-        fake_sshd::Credentials { password: Some("jump-pass".into()), public_key: None },
+        fake_sshd::Credentials {
+            password: Some("jump-pass".into()),
+            public_key: None,
+        },
     )
     .await;
     let recorded = jump_key.public_key().to_openssh().unwrap();
@@ -483,7 +578,10 @@ async fn ssh_tunnel_end_to_end_with_a_local_russh_server() {
     let mut spoofed = single.clone();
     spoofed.options.ssh.hops = vec![hop(impostor.port, SshAuth::Password)];
     let err = session::open_session(&spoofed).await.unwrap_err();
-    let issue = err.host_key_issue().unwrap_or_else(|| panic!("预期主机密钥不符，实际 {err}")).clone();
+    let issue = err
+        .host_key_issue()
+        .unwrap_or_else(|| panic!("预期主机密钥不符，实际 {err}"))
+        .clone();
     assert_eq!(issue.kind, HostKeyIssueKind::Mismatch);
     assert!(cdata_core::ssh::trust_host_key(&issue.host, issue.port, &issue.fingerprint).is_err());
 
@@ -517,7 +615,10 @@ async fn ssh_tunnel_against_a_real_sshd() {
     let (auth, secret) = if let Ok(password) = std::env::var("CDATA_TEST_SSH_PASSWORD") {
         (SshAuth::Password, Some(password))
     } else if let Ok(path) = std::env::var("CDATA_TEST_SSH_KEY") {
-        (SshAuth::PrivateKey { path }, std::env::var("CDATA_TEST_SSH_KEY_PASSPHRASE").ok())
+        (
+            SshAuth::PrivateKey { path },
+            std::env::var("CDATA_TEST_SSH_KEY_PASSPHRASE").ok(),
+        )
     } else if std::env::var("CDATA_TEST_SSH_AGENT").is_ok() {
         (SshAuth::Agent, None)
     } else {
@@ -527,7 +628,12 @@ async fn ssh_tunnel_against_a_real_sshd() {
 
     config.host = mysql_host;
     config.port = mysql_port.parse().unwrap();
-    config.options.ssh.hops = vec![SshHop { host, port: port.parse().unwrap(), user, auth }];
+    config.options.ssh.hops = vec![SshHop {
+        host,
+        port: port.parse().unwrap(),
+        user,
+        auth,
+    }];
     config.ssh_secrets = vec![secret];
     let id = session::open_session(&config).await.unwrap();
     assert_eq!(int(first_cell(id, "SELECT 1").await.unwrap()), 1);

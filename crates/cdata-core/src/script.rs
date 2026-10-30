@@ -17,7 +17,13 @@ pub fn split_statements(sql: &str) -> Result<Vec<String>, String> {
     for token in &tokens {
         let is_separator = token.kind == SqlTokenKind::Punctuation && text_of(&units, token) == ";";
         if is_separator {
-            push_statement(&units, start, token.start as usize, &segment, &mut statements)?;
+            push_statement(
+                &units,
+                start,
+                token.start as usize,
+                &segment,
+                &mut statements,
+            )?;
             start = token.end as usize;
             segment.clear();
             continue;
@@ -47,10 +53,18 @@ fn push_statement(
     }
 
     if words[0] == "DELIMITER" {
-        return Err("DELIMITER 是命令行客户端的指令，服务器不认识；这里按分号分隔语句，不需要它".to_string());
+        return Err(
+            "DELIMITER 是命令行客户端的指令，服务器不认识；这里按分号分隔语句，不需要它"
+                .to_string(),
+        );
     }
     let defines_routine = words[0] == "CREATE"
-        && words.iter().any(|word| matches!(word.as_str(), "PROCEDURE" | "FUNCTION" | "TRIGGER" | "EVENT"));
+        && words.iter().any(|word| {
+            matches!(
+                word.as_str(),
+                "PROCEDURE" | "FUNCTION" | "TRIGGER" | "EVENT"
+            )
+        });
     if defines_routine && words.iter().any(|word| word == "BEGIN") {
         return Err(
             "存储过程、函数、触发器、事件的 BEGIN … END 体里有分号，按分号切会把定义切碎，暂不支持在编辑器里执行"
@@ -74,11 +88,18 @@ fn text_of(units: &[u16], token: &SqlToken) -> String {
 pub fn explain_sql(sql: &str) -> Result<String, String> {
     let statements = split_statements(sql)?;
     if statements.len() != 1 {
-        return Err(format!("执行计划只能看一条语句，现在有 {} 条", statements.len()));
+        return Err(format!(
+            "执行计划只能看一条语句，现在有 {} 条",
+            statements.len()
+        ));
     }
     let statement = statements.into_iter().next().unwrap();
 
-    let first_word = statement.split_whitespace().next().unwrap_or("").to_ascii_uppercase();
+    let first_word = statement
+        .split_whitespace()
+        .next()
+        .unwrap_or("")
+        .to_ascii_uppercase();
     if matches!(first_word.as_str(), "EXPLAIN" | "DESCRIBE" | "DESC") {
         return Ok(statement);
     }
@@ -112,7 +133,13 @@ mod tests {
     #[test]
     fn keeps_chinese_text_intact() {
         let statements = split_statements("SELECT '订单;已完成'; SELECT '😀'").unwrap();
-        assert_eq!(statements, vec!["SELECT '订单;已完成'".to_string(), "SELECT '😀'".to_string()]);
+        assert_eq!(
+            statements,
+            vec![
+                "SELECT '订单;已完成'".to_string(),
+                "SELECT '😀'".to_string()
+            ]
+        );
     }
 
     #[test]
@@ -121,12 +148,20 @@ mod tests {
         let procedure = "CREATE PROCEDURE p() BEGIN SELECT 1; SELECT 2; END";
         assert!(split_statements(procedure).is_err());
         // 事务的 BEGIN 不是存储过程
-        assert_eq!(split_statements("BEGIN; UPDATE t SET v = 1; COMMIT").unwrap().len(), 3);
+        assert_eq!(
+            split_statements("BEGIN; UPDATE t SET v = 1; COMMIT")
+                .unwrap()
+                .len(),
+            3
+        );
     }
 
     #[test]
     fn explain_takes_exactly_one_statement() {
-        assert_eq!(explain_sql("SELECT * FROM t;").unwrap(), "EXPLAIN FORMAT=TRADITIONAL SELECT * FROM t");
+        assert_eq!(
+            explain_sql("SELECT * FROM t;").unwrap(),
+            "EXPLAIN FORMAT=TRADITIONAL SELECT * FROM t"
+        );
         assert_eq!(explain_sql("explain select 1").unwrap(), "explain select 1");
         assert!(explain_sql("SELECT 1; SELECT 2").is_err());
         assert!(explain_sql("  ").is_err());

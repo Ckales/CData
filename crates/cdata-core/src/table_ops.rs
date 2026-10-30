@@ -12,9 +12,14 @@ use crate::structure::ColumnDef;
 /// 要预览确认的写库操作
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum TableAction {
-    Rename { new_name: String },
+    Rename {
+        new_name: String,
+    },
     /// 复制表结构，with_data 为 true 时连数据一起复制
-    Duplicate { new_name: String, with_data: bool },
+    Duplicate {
+        new_name: String,
+        with_data: bool,
+    },
     Drop,
     Truncate,
 }
@@ -54,24 +59,38 @@ pub fn plan_action(
     action: &TableAction,
 ) -> Result<AlterPlan, String> {
     let from = target(database, table);
-    let mut plan = AlterPlan { statements: Vec::new(), dangers: Vec::new(), notes: Vec::new() };
+    let mut plan = AlterPlan {
+        statements: Vec::new(),
+        dangers: Vec::new(),
+        notes: Vec::new(),
+    };
 
     match action {
         TableAction::Rename { new_name } => {
             check_new_name(table, new_name)?;
-            plan.statements.push(format!("RENAME TABLE {from} TO {}", target(database, new_name)));
+            plan.statements.push(format!(
+                "RENAME TABLE {from} TO {}",
+                target(database, new_name)
+            ));
             plan.notes.push(
                 "其他视图、存储过程、触发器里写死的旧名字不会跟着改，改名后它们会失效".to_string(),
             );
         }
-        TableAction::Duplicate { new_name, with_data } => {
+        TableAction::Duplicate {
+            new_name,
+            with_data,
+        } => {
             if is_view {
-                return Err(format!("{table} 是视图，不能复制；要复制请拿它的 CREATE VIEW 改名后执行"));
+                return Err(format!(
+                    "{table} 是视图，不能复制；要复制请拿它的 CREATE VIEW 改名后执行"
+                ));
             }
             check_new_name(table, new_name)?;
             let to = target(database, new_name);
-            plan.statements.push(format!("CREATE TABLE {to} LIKE {from}"));
-            plan.notes.push("CREATE TABLE … LIKE 带上列、索引和默认值，不带外键约束和触发器".to_string());
+            plan.statements
+                .push(format!("CREATE TABLE {to} LIKE {from}"));
+            plan.notes
+                .push("CREATE TABLE … LIKE 带上列、索引和默认值，不带外键约束和触发器".to_string());
             if *with_data {
                 let mut names = Vec::new();
                 for column in columns {
@@ -83,23 +102,33 @@ pub fn plan_action(
                     return Err(format!("{table} 没有可以复制数据的列"));
                 }
                 let list = names.join(", ");
-                plan.statements.push(format!("INSERT INTO {to} ({list})\nSELECT {list} FROM {from}"));
+                plan.statements.push(format!(
+                    "INSERT INTO {to} ({list})\nSELECT {list} FROM {from}"
+                ));
                 plan.notes.push(
-                    "分两条执行：建表是 DDL、会隐式提交，复制数据失败时新表已经建好、里面是空的".to_string(),
+                    "分两条执行：建表是 DDL、会隐式提交，复制数据失败时新表已经建好、里面是空的"
+                        .to_string(),
                 );
                 if names.len() < columns.len() {
-                    plan.notes.push("生成列不复制值，由新表按表达式重新算".to_string());
+                    plan.notes
+                        .push("生成列不复制值，由新表按表达式重新算".to_string());
                 }
             }
         }
         TableAction::Drop => {
             if is_view {
                 plan.statements.push(format!("DROP VIEW {from}"));
-                plan.dangers.push(format!("删除视图 {table} 的定义，不能撤销（底层表的数据不受影响）"));
+                plan.dangers.push(format!(
+                    "删除视图 {table} 的定义，不能撤销（底层表的数据不受影响）"
+                ));
             } else {
                 plan.statements.push(format!("DROP TABLE {from}"));
-                plan.dangers.push(format!("删除表 {table} 和里面的全部数据，不能撤销"));
-                plan.notes.push("被其他表的外键引用时 MySQL 会拒绝删除；请先在引用表的结构中删除或调整对应外键".to_string());
+                plan.dangers
+                    .push(format!("删除表 {table} 和里面的全部数据，不能撤销"));
+                plan.notes.push(
+                    "被其他表的外键引用时 MySQL 会拒绝删除；请先在引用表的结构中删除或调整对应外键"
+                        .to_string(),
+                );
             }
         }
         TableAction::Truncate => {
@@ -107,8 +136,11 @@ pub fn plan_action(
                 return Err(format!("{table} 是视图，没有数据可以清空"));
             }
             plan.statements.push(format!("TRUNCATE TABLE {from}"));
-            plan.dangers.push(format!("清空表 {table} 的全部数据，不能撤销，自增计数从头开始"));
-            plan.notes.push("被其他表的外键引用时 MySQL 会拒绝清空".to_string());
+            plan.dangers.push(format!(
+                "清空表 {table} 的全部数据，不能撤销，自增计数从头开始"
+            ));
+            plan.notes
+                .push("被其他表的外键引用时 MySQL 会拒绝清空".to_string());
         }
     }
     Ok(plan)
@@ -148,7 +180,11 @@ pub fn insert_template(table: &str, columns: &[ColumnDef]) -> String {
         }
     }
     let placeholders = vec!["?"; names.len()].join(", ");
-    format!("INSERT INTO {} ({})\nVALUES\n\t({placeholders});", quote_ident(table), names.join(", "))
+    format!(
+        "INSERT INTO {} ({})\nVALUES\n\t({placeholders});",
+        quote_ident(table),
+        names.join(", ")
+    )
 }
 
 /// 一个字符集和它的排序规则
@@ -169,17 +205,28 @@ pub struct DatabaseOptions {
 
 /// CREATE DATABASE。字符集和排序规则不加引号直接写进语句，所以只收字母数字下划线；
 /// 是不是服务器上真实存在的组合由调用方先查过
-pub fn plan_create_database(name: &str, charset: &str, collation: &str) -> Result<AlterPlan, String> {
+pub fn plan_create_database(
+    name: &str,
+    charset: &str,
+    collation: &str,
+) -> Result<AlterPlan, String> {
     if name.is_empty() {
         return Err("库名不能为空".to_string());
     }
     for word in [charset, collation] {
-        if word.is_empty() || !word.chars().all(|ch| ch.is_ascii_alphanumeric() || ch == '_') {
+        if word.is_empty()
+            || !word
+                .chars()
+                .all(|ch| ch.is_ascii_alphanumeric() || ch == '_')
+        {
             return Err(format!("字符集或排序规则 {word:?} 不合法"));
         }
     }
     Ok(AlterPlan {
-        statements: vec![format!("CREATE DATABASE {} CHARACTER SET {charset} COLLATE {collation}", quote_ident(name))],
+        statements: vec![format!(
+            "CREATE DATABASE {} CHARACTER SET {charset} COLLATE {collation}",
+            quote_ident(name)
+        )],
         dangers: Vec::new(),
         notes: Vec::new(),
     })
@@ -204,24 +251,41 @@ mod tests {
 
     #[test]
     fn rename_quotes_both_names_and_keeps_database() {
-        let action = TableAction::Rename { new_name: "new`name".to_string() };
+        let action = TableAction::Rename {
+            new_name: "new`name".to_string(),
+        };
         let plan = plan_action("shop", "orders", false, &[], &action).unwrap();
-        assert_eq!(plan.statements, ["RENAME TABLE `shop`.`orders` TO `shop`.`new``name`"]);
+        assert_eq!(
+            plan.statements,
+            ["RENAME TABLE `shop`.`orders` TO `shop`.`new``name`"]
+        );
         assert!(plan.dangers.is_empty());
     }
 
     #[test]
     fn rename_rejects_empty_or_unchanged_name() {
         for name in ["", "orders"] {
-            let action = TableAction::Rename { new_name: name.to_string() };
-            assert!(plan_action("shop", "orders", false, &[], &action).is_err(), "{name:?}");
+            let action = TableAction::Rename {
+                new_name: name.to_string(),
+            };
+            assert!(
+                plan_action("shop", "orders", false, &[], &action).is_err(),
+                "{name:?}"
+            );
         }
     }
 
     #[test]
     fn duplicate_with_data_skips_generated_columns() {
-        let columns = [column("id", "auto_increment"), column("total", "STORED GENERATED"), column("note", "")];
-        let action = TableAction::Duplicate { new_name: "orders_copy".to_string(), with_data: true };
+        let columns = [
+            column("id", "auto_increment"),
+            column("total", "STORED GENERATED"),
+            column("note", ""),
+        ];
+        let action = TableAction::Duplicate {
+            new_name: "orders_copy".to_string(),
+            with_data: true,
+        };
         let plan = plan_action("shop", "orders", false, &columns, &action).unwrap();
         assert_eq!(
             plan.statements,
@@ -235,14 +299,23 @@ mod tests {
 
     #[test]
     fn duplicate_without_data_is_one_statement() {
-        let action = TableAction::Duplicate { new_name: "orders_copy".to_string(), with_data: false };
+        let action = TableAction::Duplicate {
+            new_name: "orders_copy".to_string(),
+            with_data: false,
+        };
         let plan = plan_action("shop", "orders", false, &[column("id", "")], &action).unwrap();
-        assert_eq!(plan.statements, ["CREATE TABLE `shop`.`orders_copy` LIKE `shop`.`orders`"]);
+        assert_eq!(
+            plan.statements,
+            ["CREATE TABLE `shop`.`orders_copy` LIKE `shop`.`orders`"]
+        );
     }
 
     #[test]
     fn views_cannot_be_duplicated_or_truncated_but_drop_uses_drop_view() {
-        let duplicate = TableAction::Duplicate { new_name: "v2".to_string(), with_data: false };
+        let duplicate = TableAction::Duplicate {
+            new_name: "v2".to_string(),
+            with_data: false,
+        };
         assert!(plan_action("shop", "v", true, &[], &duplicate).is_err());
         assert!(plan_action("shop", "v", true, &[], &TableAction::Truncate).is_err());
 
@@ -262,21 +335,34 @@ mod tests {
     fn drop_table_explains_foreign_key_restriction_without_bypassing_it() {
         let plan = plan_action("shop", "categories", false, &[], &TableAction::Drop).unwrap();
         assert_eq!(plan.statements, ["DROP TABLE `shop`.`categories`"]);
-        assert!(plan.notes.iter().any(|note| note.contains("外键") && note.contains("拒绝删除")));
+        assert!(plan
+            .notes
+            .iter()
+            .any(|note| note.contains("外键") && note.contains("拒绝删除")));
         let view = plan_action("shop", "v", true, &[], &TableAction::Drop).unwrap();
         assert!(view.notes.is_empty());
     }
 
     #[test]
     fn insert_template_lists_writable_columns_with_placeholders() {
-        let columns = [column("id", "auto_increment"), column("total", "VIRTUAL GENERATED"), column("note", "")];
-        assert_eq!(insert_template("orders", &columns), "INSERT INTO `orders` (`id`, `note`)\nVALUES\n\t(?, ?);");
+        let columns = [
+            column("id", "auto_increment"),
+            column("total", "VIRTUAL GENERATED"),
+            column("note", ""),
+        ];
+        assert_eq!(
+            insert_template("orders", &columns),
+            "INSERT INTO `orders` (`id`, `note`)\nVALUES\n\t(?, ?);"
+        );
     }
 
     #[test]
     fn create_database_quotes_name_and_refuses_odd_charset_words() {
         let plan = plan_create_database("my`db", "utf8mb4", "utf8mb4_0900_ai_ci").unwrap();
-        assert_eq!(plan.statements, ["CREATE DATABASE `my``db` CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci"]);
+        assert_eq!(
+            plan.statements,
+            ["CREATE DATABASE `my``db` CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci"]
+        );
         assert!(plan_create_database("", "utf8mb4", "utf8mb4_bin").is_err());
         assert!(plan_create_database("x", "utf8mb4; DROP", "utf8mb4_bin").is_err());
         assert!(plan_create_database("x", "utf8mb4", "").is_err());
@@ -284,7 +370,13 @@ mod tests {
 
     #[test]
     fn maintenance_and_count_quote_names() {
-        assert_eq!(maintenance_sql("shop", "a`b", Maintenance::Optimize), "OPTIMIZE TABLE `shop`.`a``b`");
-        assert_eq!(count_sql("shop", "orders"), "SELECT COUNT(*) FROM `shop`.`orders`");
+        assert_eq!(
+            maintenance_sql("shop", "a`b", Maintenance::Optimize),
+            "OPTIMIZE TABLE `shop`.`a``b`"
+        );
+        assert_eq!(
+            count_sql("shop", "orders"),
+            "SELECT COUNT(*) FROM `shop`.`orders`"
+        );
     }
 }

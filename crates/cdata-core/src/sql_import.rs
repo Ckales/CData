@@ -34,6 +34,69 @@ pub struct ImportStatement {
     pub line: u64,
 }
 
+/// 一批发给服务器的语句。`start` 是在原列表里的下标。
+pub(crate) struct ImportBatch {
+    pub sql: String,
+    pub start: usize,
+    pub len: usize,
+}
+
+/// 远程导入慢在一条语句一个往返。拼到这个大小就另起一批，避免顶到 max_allowed_packet。
+/// ponytail: 不先查 max_allowed_packet。单条已经超过这个大小的照原样单独发；服务器拒绝整批时再改成先查。
+const BATCH_BYTES: usize = 256 * 1024;
+const BATCH_STMTS: usize = 128;
+
+/// 含 `;` 的是存储过程体，服务器会按分号重新切开。CALL 会返回多个结果集，和后面的语句对不上号。
+fn must_send_alone(sql: &str) -> bool {
+    if sql.contains(';') || sql.len() >= BATCH_BYTES {
+        return true;
+    }
+    let rest = sql.trim_start();
+    let head = rest.as_bytes();
+    head.len() >= 4
+        && head[..4].eq_ignore_ascii_case(b"CALL")
+        && head
+            .get(4)
+            .is_none_or(|c| c.is_ascii_whitespace() || *c == b'(')
+}
+
+/// 能合并的语句用换行后的分号拼起来。分号放在新行，避免被上一条末尾的 `--` 注释吃掉。
+pub(crate) fn pack_import_batches(statements: &[ImportStatement]) -> Vec<ImportBatch> {
+    let mut batches = Vec::new();
+    let mut index = 0;
+    while index < statements.len() {
+        if must_send_alone(&statements[index].sql) {
+            batches.push(ImportBatch {
+                sql: statements[index].sql.clone(),
+                start: index,
+                len: 1,
+            });
+            index += 1;
+            continue;
+        }
+        let start = index;
+        let mut sql = String::new();
+        while index < statements.len() && !must_send_alone(&statements[index].sql) {
+            let extra = statements[index].sql.len() + usize::from(!sql.is_empty()) * 2;
+            if !sql.is_empty() && (index - start >= BATCH_STMTS || sql.len() + extra > BATCH_BYTES)
+            {
+                break;
+            }
+            if !sql.is_empty() {
+                sql.push_str("\n;");
+            }
+            sql.push_str(&statements[index].sql);
+            index += 1;
+        }
+        batches.push(ImportBatch {
+            sql,
+            start,
+            len: index - start,
+        });
+    }
+    batches
+}
+
 /// 只接受明确指定的编码；文件必须先完整解析成功，才开始向服务器写入。
 pub fn read_statements(
     path: &str,
@@ -202,7 +265,10 @@ pub fn split_statements(sql: &str) -> Result<Vec<ImportStatement>, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{read_statements, server_error_message, split_statements};
+    use super::{
+        pack_import_batches, read_statements, server_error_message, split_statements,
+        ImportStatement,
+    };
     use crate::export::ExportEncoding;
 
     #[test]
@@ -214,6 +280,45 @@ mod tests {
         assert!(statements[0].sql.contains("/*!40101 SET NAMES utf8mb4 */"));
         assert!(statements[1].sql.contains("SELECT 2; END"));
         assert_eq!(statements[2].line, 6);
+    }
+
+    #[test]
+    fn packs_plain_statements_and_keeps_procedures_alone() {
+        let statements = vec![
+            ImportStatement {
+                sql: "INSERT INTO t VALUES (1)".into(),
+                line: 1,
+            },
+            ImportStatement {
+                sql: "INSERT INTO t VALUES (2) -- 尾注释".into(),
+                line: 2,
+            },
+            ImportStatement {
+                sql: "CREATE PROCEDURE p() BEGIN SELECT 1; END".into(),
+                line: 3,
+            },
+            ImportStatement {
+                sql: "CALL p()".into(),
+                line: 4,
+            },
+            ImportStatement {
+                sql: "DELETE FROM t WHERE id = 1".into(),
+                line: 5,
+            },
+        ];
+        let batches = pack_import_batches(&statements);
+        assert_eq!(batches.len(), 4);
+        assert_eq!(batches[0].len, 2);
+        assert_eq!(batches[0].start, 0);
+        assert!(batches[0]
+            .sql
+            .contains("\n;INSERT INTO t VALUES (2) -- 尾注释"));
+        assert!(!batches[0].sql.contains("1;INSERT"));
+        assert_eq!(batches[1].len, 1);
+        assert!(batches[1].sql.contains("SELECT 1;"));
+        assert_eq!(batches[2].sql, "CALL p()");
+        assert_eq!(batches[3].len, 1);
+        assert_eq!(batches[3].start, 4);
     }
 
     #[test]

@@ -82,19 +82,28 @@ pub fn complete(sql: &str, cursor: u32, catalog: &Catalog) -> Completion {
     let units: Vec<u16> = sql.encode_utf16().collect();
     let cursor = cursor.min(units.len() as u32);
     let tokens = tokenize(sql);
-    let text_of = |token: &SqlToken| String::from_utf16_lossy(&units[token.start as usize..token.end as usize]);
+    let text_of = |token: &SqlToken| {
+        String::from_utf16_lossy(&units[token.start as usize..token.end as usize])
+    };
 
     // 光标所在的词：替换它，并用光标前的部分当前缀
     let word_index = tokens.iter().position(|t| {
         t.start < cursor
             && cursor <= t.end
-            && matches!(t.kind, SqlTokenKind::Identifier | SqlTokenKind::Keyword | SqlTokenKind::QuotedIdentifier)
+            && matches!(
+                t.kind,
+                SqlTokenKind::Identifier | SqlTokenKind::Keyword | SqlTokenKind::QuotedIdentifier
+            )
     });
     let (replace_start, replace_end, prefix) = match word_index {
         Some(index) => {
             let token = &tokens[index];
             let typed = String::from_utf16_lossy(&units[token.start as usize..cursor as usize]);
-            (token.start, token.end, typed.trim_start_matches('`').to_string())
+            (
+                token.start,
+                token.end,
+                typed.trim_start_matches('`').to_string(),
+            )
         }
         None => (cursor, cursor, String::new()),
     };
@@ -106,7 +115,11 @@ pub fn complete(sql: &str, cursor: u32, catalog: &Catalog) -> Completion {
         cursor < t.end || (cursor == t.end && !is_closed(&text_of(t)))
     });
     if inside_literal {
-        return Completion { replace_start: cursor, replace_end: cursor, items: Vec::new() };
+        return Completion {
+            replace_start: cursor,
+            replace_end: cursor,
+            items: Vec::new(),
+        };
     }
 
     // 判断上下文时注释不算：`FROM /* 表 */ |`、`FROM orders /* x */ o` 都要照常认
@@ -125,7 +138,11 @@ pub fn complete(sql: &str, cursor: u32, catalog: &Catalog) -> Completion {
         }
     }
 
-    let ctx = Ctx { text_of: &text_of, catalog, cursor: replace_start };
+    let ctx = Ctx {
+        text_of: &text_of,
+        catalog,
+        cursor: replace_start,
+    };
     let scope = tables_in_scope(&tokens, &ctx);
     let mut items = Vec::new();
 
@@ -166,11 +183,27 @@ pub fn complete(sql: &str, cursor: u32, catalog: &Catalog) -> Completion {
         if table_ref.alias.is_empty() {
             // 没写别名的派生表（MySQL 本来就不允许）没有名字可补
             if !table_ref.name.is_empty() {
-                push(&mut items, &table_ref.name, CompletionKind::Table, "", &prefix);
+                push(
+                    &mut items,
+                    &table_ref.name,
+                    CompletionKind::Table,
+                    "",
+                    &prefix,
+                );
             }
         } else {
-            let detail = if table_ref.name.is_empty() { "子查询" } else { &table_ref.name };
-            push(&mut items, &table_ref.alias, CompletionKind::Alias, detail, &prefix);
+            let detail = if table_ref.name.is_empty() {
+                "子查询"
+            } else {
+                &table_ref.name
+            };
+            push(
+                &mut items,
+                &table_ref.alias,
+                CompletionKind::Alias,
+                detail,
+                &prefix,
+            );
         }
     }
     for keyword in KEYWORDS {
@@ -180,7 +213,12 @@ pub fn complete(sql: &str, cursor: u32, catalog: &Catalog) -> Completion {
 }
 
 /// 前缀命中排前面，其余保持加入顺序，再截断
-fn finish(replace_start: u32, replace_end: u32, mut items: Vec<CompletionItem>, prefix: &str) -> Completion {
+fn finish(
+    replace_start: u32,
+    replace_end: u32,
+    mut items: Vec<CompletionItem>,
+    prefix: &str,
+) -> Completion {
     if !prefix.is_empty() {
         let query = prefix.to_lowercase();
         items.sort_by(|a, b| {
@@ -191,11 +229,21 @@ fn finish(replace_start: u32, replace_end: u32, mut items: Vec<CompletionItem>, 
         });
     }
     items.truncate(MAX_ITEMS);
-    Completion { replace_start, replace_end, items }
+    Completion {
+        replace_start,
+        replace_end,
+        items,
+    }
 }
 
 /// 名字包含已输入的片段（不分大小写）才加进去。`ap` 命中 `sp_app`
-fn push(items: &mut Vec<CompletionItem>, label: &str, kind: CompletionKind, detail: &str, prefix: &str) {
+fn push(
+    items: &mut Vec<CompletionItem>,
+    label: &str,
+    kind: CompletionKind,
+    detail: &str,
+    prefix: &str,
+) {
     if !prefix.is_empty() && !label.to_lowercase().contains(&prefix.to_lowercase()) {
         return;
     }
@@ -214,8 +262,12 @@ fn push(items: &mut Vec<CompletionItem>, label: &str, kind: CompletionKind, deta
 /// 普通标识符原样插入；含特殊字符、以数字开头、或者撞了关键字的加反引号
 fn quote_if_needed(name: &str) -> String {
     let mut chars = name.chars();
-    let plain = chars.next().is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
-        && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '$')
+    let plain = chars
+        .next()
+        .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '$')
         && !crate::lexer::is_keyword(name);
     if plain {
         name.to_string()
@@ -236,11 +288,16 @@ fn is_closed(text: &str) -> bool {
     let Some(quote) = text.chars().find(|c| matches!(c, '\'' | '"')) else {
         return true;
     };
-    text.chars().count() >= 2 && text.ends_with(quote) && text.len() > text.find(quote).unwrap_or(0) + 1
+    text.chars().count() >= 2
+        && text.ends_with(quote)
+        && text.len() > text.find(quote).unwrap_or(0) + 1
 }
 
 fn is_name(token: &SqlToken) -> bool {
-    matches!(token.kind, SqlTokenKind::Identifier | SqlTokenKind::QuotedIdentifier)
+    matches!(
+        token.kind,
+        SqlTokenKind::Identifier | SqlTokenKind::QuotedIdentifier
+    )
 }
 
 fn unquote(text: &str) -> String {
@@ -251,13 +308,20 @@ fn unquote(text: &str) -> String {
 }
 
 fn find_table<'a>(catalog: &'a Catalog, name: &str) -> Option<&'a CatalogTable> {
-    catalog.tables.iter().find(|t| t.name.eq_ignore_ascii_case(name))
+    catalog
+        .tables
+        .iter()
+        .find(|t| t.name.eq_ignore_ascii_case(name))
 }
 
 /// 一个表引用的列和补全时显示的来源。派生表 / CTE 用推出来的列，普通表查目录
 fn ref_columns(table_ref: &TableRef, catalog: &Catalog) -> Option<(String, Vec<String>)> {
     if let Some(columns) = &table_ref.derived {
-        let label = if table_ref.alias.is_empty() { &table_ref.name } else { &table_ref.alias };
+        let label = if table_ref.alias.is_empty() {
+            &table_ref.name
+        } else {
+            &table_ref.alias
+        };
         return Some((label.clone(), columns.clone()));
     }
     let table = find_table(catalog, &table_ref.name)?;
@@ -265,7 +329,11 @@ fn ref_columns(table_ref: &TableRef, catalog: &Catalog) -> Option<(String, Vec<S
 }
 
 /// 限定名先按别名找，再按没写别名的表名（含 CTE）找，最后才去目录里找同名表
-fn resolve(scope: &[TableRef], qualifier: &str, catalog: &Catalog) -> Option<(String, Vec<String>)> {
+fn resolve(
+    scope: &[TableRef],
+    qualifier: &str,
+    catalog: &Catalog,
+) -> Option<(String, Vec<String>)> {
     for table_ref in scope {
         if table_ref.alias.eq_ignore_ascii_case(qualifier) {
             return ref_columns(table_ref, catalog);
@@ -287,7 +355,10 @@ fn expects_table(before: &[&SqlToken], text_of: &dyn Fn(&SqlToken) -> String) ->
     };
     let last_text = text_of(last).to_ascii_uppercase();
     if last.kind == SqlTokenKind::Keyword {
-        return matches!(last_text.as_str(), "FROM" | "JOIN" | "UPDATE" | "INTO" | "TABLE" | "DESCRIBE");
+        return matches!(
+            last_text.as_str(),
+            "FROM" | "JOIN" | "UPDATE" | "INTO" | "TABLE" | "DESCRIBE"
+        );
     }
     if last_text != "," {
         return false;
@@ -315,8 +386,21 @@ fn expects_table(before: &[&SqlToken], text_of: &dyn Fn(&SqlToken) -> String) ->
 fn is_clause_keyword(upper: &str) -> bool {
     matches!(
         upper,
-        "SELECT" | "FROM" | "WHERE" | "ON" | "SET" | "GROUP" | "ORDER" | "HAVING" | "LIMIT" | "VALUES"
-            | "JOIN" | "UPDATE" | "INTO" | "UNION" | "USING"
+        "SELECT"
+            | "FROM"
+            | "WHERE"
+            | "ON"
+            | "SET"
+            | "GROUP"
+            | "ORDER"
+            | "HAVING"
+            | "LIMIT"
+            | "VALUES"
+            | "JOIN"
+            | "UPDATE"
+            | "INTO"
+            | "UNION"
+            | "USING"
     )
 }
 
@@ -377,7 +461,14 @@ fn tables_in_scope(tokens: &[SqlToken], ctx: &Ctx) -> Vec<TableRef> {
     let ctes = collect_ctes(statement, &depths, ctx);
     let mut refs = Vec::new();
     for (from, to, depth) in levels {
-        collect_refs(&statement[from..to], &depths[from..to], depth, ctx, &ctes, &mut refs);
+        collect_refs(
+            &statement[from..to],
+            &depths[from..to],
+            depth,
+            ctx,
+            &ctes,
+            &mut refs,
+        );
     }
     refs
 }
@@ -424,9 +515,14 @@ fn collect_refs(
         if expecting && text == "(" {
             let close = matching_close(tokens, depths, i, depth, text_of);
             let inner = i + 1..close;
-            if let Some(mut columns) = derived_columns(&tokens[inner.clone()], &depths[inner], depth + 1, ctx, ctes) {
+            if let Some(mut columns) =
+                derived_columns(&tokens[inner.clone()], &depths[inner], depth + 1, ctx, ctes)
+            {
                 let mut next = close + 1;
-                if tokens.get(next).is_some_and(|t| text_of(t).eq_ignore_ascii_case("AS")) {
+                if tokens
+                    .get(next)
+                    .is_some_and(|t| text_of(t).eq_ignore_ascii_case("AS"))
+                {
                     next += 1;
                 }
                 let mut alias = String::new();
@@ -443,7 +539,11 @@ fn collect_refs(
                 let cursor_inside = tokens[i].end <= ctx.cursor
                     && tokens.get(close).is_none_or(|t| ctx.cursor <= t.start);
                 if !cursor_inside {
-                    refs.push(TableRef { name: String::new(), alias, derived: Some(columns) });
+                    refs.push(TableRef {
+                        name: String::new(),
+                        alias,
+                        derived: Some(columns),
+                    });
                 }
                 expecting = false;
                 i = next;
@@ -478,7 +578,10 @@ fn collect_refs(
         }
         // 别名：AS x 或直接跟一个不是关键字的名字
         let mut alias = String::new();
-        if tokens.get(next).is_some_and(|t| text_of(t).eq_ignore_ascii_case("AS")) {
+        if tokens
+            .get(next)
+            .is_some_and(|t| text_of(t).eq_ignore_ascii_case("AS"))
+        {
             next += 1;
         }
         if let Some(candidate) = tokens.get(next) {
@@ -487,7 +590,11 @@ fn collect_refs(
                 next += 1;
             }
         }
-        refs.push(TableRef { name, alias, derived });
+        refs.push(TableRef {
+            name,
+            alias,
+            derived,
+        });
         expecting = false;
         i = next;
     }
@@ -526,7 +633,9 @@ fn collect_ctes(statement: &[SqlToken], depths: &[usize], ctx: &Ctx) -> Vec<Cte>
     let text_of = ctx.text_of;
     let mut ctes = Vec::new();
     let keyword_at = |index: usize, word: &str| {
-        statement.get(index).is_some_and(|t| t.kind == SqlTokenKind::Keyword && text_of(t).eq_ignore_ascii_case(word))
+        statement.get(index).is_some_and(|t| {
+            t.kind == SqlTokenKind::Keyword && text_of(t).eq_ignore_ascii_case(word)
+        })
     };
     if !keyword_at(0, "WITH") {
         return ctes;
@@ -551,8 +660,14 @@ fn collect_ctes(statement: &[SqlToken], depths: &[usize], ctx: &Ctx) -> Vec<Cte>
         let columns = match explicit {
             Some(columns) => columns,
             // 递归 CTE 的列名由第一段（非递归部分）决定，和普通子查询一样推
-            None => derived_columns(&statement[open + 1..close], &depths[open + 1..close], 1, ctx, &ctes)
-                .unwrap_or_default(),
+            None => derived_columns(
+                &statement[open + 1..close],
+                &depths[open + 1..close],
+                1,
+                ctx,
+                &ctes,
+            )
+            .unwrap_or_default(),
         };
         ctes.push(Cte { name, columns });
 
@@ -601,7 +716,10 @@ fn derived_columns(
         let upper = text_of(token).to_ascii_uppercase();
         if depths[index] == depth {
             if token.kind == SqlTokenKind::Keyword
-                && matches!(upper.as_str(), "FROM" | "WHERE" | "GROUP" | "HAVING" | "ORDER" | "LIMIT" | "INTO" | "WINDOW")
+                && matches!(
+                    upper.as_str(),
+                    "FROM" | "WHERE" | "GROUP" | "HAVING" | "ORDER" | "LIMIT" | "INTO" | "WINDOW"
+                )
             {
                 break;
             }
@@ -610,7 +728,10 @@ fn derived_columns(
                 continue;
             }
             // SELECT DISTINCT a：修饰词不是列
-            if items.len() == 1 && items[0].is_empty() && matches!(upper.as_str(), "DISTINCT" | "ALL") {
+            if items.len() == 1
+                && items[0].is_empty()
+                && matches!(upper.as_str(), "DISTINCT" | "ALL")
+            {
                 continue;
             }
         }
@@ -675,8 +796,12 @@ fn item_output(item: &[&SqlToken], text_of: &dyn Fn(&SqlToken) -> String) -> Ite
     if last_text == "*" {
         return match item {
             [_] => ItemOutput::Star(None),
-            [table, dot, _] if is_name(table) && text_of(dot) == "." => ItemOutput::Star(Some(unquote(&text_of(table)))),
-            [_, first_dot, table, dot, _] if text_of(first_dot) == "." && is_name(table) && text_of(dot) == "." => {
+            [table, dot, _] if is_name(table) && text_of(dot) == "." => {
+                ItemOutput::Star(Some(unquote(&text_of(table))))
+            }
+            [_, first_dot, table, dot, _]
+                if text_of(first_dot) == "." && is_name(table) && text_of(dot) == "." =>
+            {
                 ItemOutput::Star(Some(unquote(&text_of(table))))
             }
             _ => ItemOutput::Unknown,
@@ -686,7 +811,11 @@ fn item_output(item: &[&SqlToken], text_of: &dyn Fn(&SqlToken) -> String) -> Ite
     // 普通列：a、t.a、db.t.a
     let mut plain = count % 2 == 1;
     for (index, token) in item.iter().enumerate() {
-        let ok = if index % 2 == 0 { is_name(token) } else { text_of(token) == "." };
+        let ok = if index % 2 == 0 {
+            is_name(token)
+        } else {
+            text_of(token) == "."
+        };
         plain = plain && ok;
     }
     if plain {
@@ -713,7 +842,11 @@ fn star_columns(sources: &[TableRef], qualifier: Option<&str>, catalog: &Catalog
     let mut columns = Vec::new();
     for source in sources {
         if let Some(qualifier) = qualifier {
-            let label = if source.alias.is_empty() { &source.name } else { &source.alias };
+            let label = if source.alias.is_empty() {
+                &source.name
+            } else {
+                &source.alias
+            };
             if !label.eq_ignore_ascii_case(qualifier) {
                 continue;
             }
@@ -728,7 +861,11 @@ fn star_columns(sources: &[TableRef], qualifier: Option<&str>, catalog: &Catalog
 /// 字符串写的别名：'x'、"x"。带反斜杠的转义随 sql_mode 变，不猜
 fn unquote_string(text: &str) -> Option<String> {
     let quote = text.chars().next()?;
-    if !matches!(quote, '\'' | '"') || text.len() < 2 || !text.ends_with(quote) || text.contains('\\') {
+    if !matches!(quote, '\'' | '"')
+        || text.len() < 2
+        || !text.ends_with(quote)
+        || text.contains('\\')
+    {
         return None;
     }
     let inner = &text[1..text.len() - 1];
@@ -742,9 +879,18 @@ mod tests {
     fn catalog() -> Catalog {
         Catalog {
             tables: vec![
-                CatalogTable { name: "orders".into(), columns: vec!["id".into(), "user_id".into(), "amount".into()] },
-                CatalogTable { name: "users".into(), columns: vec!["id".into(), "name".into(), "order".into()] },
-                CatalogTable { name: "用户表".into(), columns: vec!["昵称".into()] },
+                CatalogTable {
+                    name: "orders".into(),
+                    columns: vec!["id".into(), "user_id".into(), "amount".into()],
+                },
+                CatalogTable {
+                    name: "users".into(),
+                    columns: vec!["id".into(), "name".into(), "order".into()],
+                },
+                CatalogTable {
+                    name: "用户表".into(),
+                    columns: vec!["昵称".into()],
+                },
             ],
         }
     }
@@ -767,18 +913,34 @@ mod tests {
 
     #[test]
     fn tables_after_from_and_join() {
-        assert_eq!(labels(&at("SELECT * FROM |")), ["orders", "users", "用户表"]);
+        assert_eq!(
+            labels(&at("SELECT * FROM |")),
+            ["orders", "users", "用户表"]
+        );
         assert_eq!(labels(&at("SELECT * FROM orders o JOIN us|")), ["users"]);
-        assert_eq!(labels(&at("SELECT * FROM orders, u|")), ["users"], "FROM 列表里逗号后面也是表");
+        assert_eq!(
+            labels(&at("SELECT * FROM orders, u|")),
+            ["users"],
+            "FROM 列表里逗号后面也是表"
+        );
     }
 
     #[test]
     fn fragment_inside_name_matches() {
         let catalog = Catalog {
             tables: vec![
-                CatalogTable { name: "sp_app".into(), columns: vec!["androidpk".into()] },
-                CatalogTable { name: "apple".into(), columns: vec![] },
-                CatalogTable { name: "orders".into(), columns: vec![] },
+                CatalogTable {
+                    name: "sp_app".into(),
+                    columns: vec!["androidpk".into()],
+                },
+                CatalogTable {
+                    name: "apple".into(),
+                    columns: vec![],
+                },
+                CatalogTable {
+                    name: "orders".into(),
+                    columns: vec![],
+                },
             ],
         };
         let sql = "SELECT * FROM ap";
@@ -824,7 +986,12 @@ mod tests {
 
     #[test]
     fn alias_dot_completes_that_tables_columns() {
-        assert_eq!(labels(&at("SELECT u.| FROM orders o JOIN users AS u ON u.id = o.user_id")), ["id", "name", "order"]);
+        assert_eq!(
+            labels(&at(
+                "SELECT u.| FROM orders o JOIN users AS u ON u.id = o.user_id"
+            )),
+            ["id", "name", "order"]
+        );
         assert_eq!(labels(&at("SELECT o.am| FROM orders o")), ["amount"]);
         // 没写别名时用表名限定也行
         assert_eq!(labels(&at("SELECT users.n| FROM users")), ["name"]);
@@ -837,19 +1004,29 @@ mod tests {
         assert_eq!(items[0].label, "id");
         assert_eq!(items[0].detail, "orders");
         // 同名列只出一次，后面是另一张表独有的列
-        assert_eq!(labels(&completion)[..5], ["id", "user_id", "amount", "name", "order"]);
+        assert_eq!(
+            labels(&completion)[..5],
+            ["id", "user_id", "amount", "name", "order"]
+        );
 
         // 带前缀时别名和关键字也在：u 开头的有列 user_id、别名 u、关键字 UNION 等
         let prefixed = at("SELECT u| FROM orders o JOIN users u ON 1");
         assert_eq!(prefixed.items[0].label, "user_id");
-        assert!(prefixed.items.iter().any(|i| i.kind == CompletionKind::Alias && i.label == "u"));
-        assert!(prefixed.items.iter().any(|i| i.kind == CompletionKind::Keyword && i.label == "UNION"));
+        assert!(prefixed
+            .items
+            .iter()
+            .any(|i| i.kind == CompletionKind::Alias && i.label == "u"));
+        assert!(prefixed
+            .items
+            .iter()
+            .any(|i| i.kind == CompletionKind::Keyword && i.label == "UNION"));
     }
 
     #[test]
     fn subquery_sees_outer_aliases_but_not_the_other_way_round() {
         // 相关子查询里：自己的 users 和外层的 orders 都看得到
-        let inner = at("SELECT * FROM orders o WHERE EXISTS (SELECT 1 FROM users u WHERE u.id = o.| )");
+        let inner =
+            at("SELECT * FROM orders o WHERE EXISTS (SELECT 1 FROM users u WHERE u.id = o.| )");
         assert_eq!(labels(&inner), ["id", "user_id", "amount"]);
 
         // 外层看不到子查询里的别名 u，u. 解析不出来
@@ -875,7 +1052,10 @@ mod tests {
     #[test]
     fn names_that_need_quoting_are_quoted() {
         let completion = at("SELECT u.or| FROM users u");
-        assert_eq!(completion.items[0].insert_text, "`order`", "撞关键字要加反引号");
+        assert_eq!(
+            completion.items[0].insert_text, "`order`",
+            "撞关键字要加反引号"
+        );
         let chinese = at("SELECT * FROM 用|");
         assert_eq!(chinese.items[0].insert_text, "`用户表`");
         let keyword = at("SEL|");
@@ -889,13 +1069,22 @@ mod tests {
         assert!(at("SELECT 'FROM |").items.is_empty(), "写了一半的字符串");
         assert!(at("SELECT /* FROM |").items.is_empty(), "没闭合的块注释");
         // 闭合的块注释后面照常补全
-        assert_eq!(labels(&at("SELECT * FROM /* 表 */|")), ["orders", "users", "用户表"]);
+        assert_eq!(
+            labels(&at("SELECT * FROM /* 表 */|")),
+            ["orders", "users", "用户表"]
+        );
     }
 
     #[test]
     fn schema_qualified_table_and_quoted_alias() {
-        assert_eq!(labels(&at("SELECT `x`.| FROM shop.orders AS `x`")), ["id", "user_id", "amount"]);
-        assert_eq!(labels(&at("SELECT o.| FROM orders /* 订单 */ o")), ["id", "user_id", "amount"]);
+        assert_eq!(
+            labels(&at("SELECT `x`.| FROM shop.orders AS `x`")),
+            ["id", "user_id", "amount"]
+        );
+        assert_eq!(
+            labels(&at("SELECT o.| FROM orders /* 订单 */ o")),
+            ["id", "user_id", "amount"]
+        );
     }
 
     #[test]
@@ -909,33 +1098,55 @@ mod tests {
     #[test]
     fn derived_table_columns_come_from_its_select_list() {
         // 别名优先，普通列用列名；来源表不在目录里也推得出来
-        assert_eq!(labels(&at("SELECT x.| FROM (SELECT a, b AS c FROM t) AS x")), ["a", "c"]);
+        assert_eq!(
+            labels(&at("SELECT x.| FROM (SELECT a, b AS c FROM t) AS x")),
+            ["a", "c"]
+        );
         let completion = at("SELECT x.| FROM (SELECT id, amount AS total FROM orders) AS x");
         assert_eq!(labels(&completion), ["id", "total"]);
         assert_eq!(completion.items[0].detail, "x");
         // 不写 AS、限定列名、反引号别名
-        assert_eq!(labels(&at("SELECT x.| FROM (SELECT o.user_id, o.amount `金额` FROM orders o) x")), ["user_id", "金额"]);
+        assert_eq!(
+            labels(&at(
+                "SELECT x.| FROM (SELECT o.user_id, o.amount `金额` FROM orders o) x"
+            )),
+            ["user_id", "金额"]
+        );
     }
 
     #[test]
     fn expressions_without_alias_give_no_candidate() {
         let completion = at("SELECT x.| FROM (SELECT id + 1, COUNT(*), amount * 2 AS double_amount, SUM(amount) s FROM orders) x");
-        assert_eq!(labels(&completion), ["double_amount", "s"], "没别名的表达式不能编个名字出来");
+        assert_eq!(
+            labels(&completion),
+            ["double_amount", "s"],
+            "没别名的表达式不能编个名字出来"
+        );
         // a DIV b 里的 b 不是别名；CASE … END 后面的是
-        let completion = at("SELECT x.| FROM (SELECT id DIV user_id, CASE WHEN id THEN 1 END flag FROM orders) x");
+        let completion = at(
+            "SELECT x.| FROM (SELECT id DIV user_id, CASE WHEN id THEN 1 END flag FROM orders) x",
+        );
         assert_eq!(labels(&completion), ["flag"]);
     }
 
     #[test]
     fn star_in_derived_table_expands_the_source_tables() {
-        assert_eq!(labels(&at("SELECT x.| FROM (SELECT * FROM orders) x")), ["id", "user_id", "amount"]);
+        assert_eq!(
+            labels(&at("SELECT x.| FROM (SELECT * FROM orders) x")),
+            ["id", "user_id", "amount"]
+        );
         // t.* 只展开那一张；同名列只出一次
         assert_eq!(
-            labels(&at("SELECT x.| FROM (SELECT u.*, o.amount FROM orders o JOIN users u ON 1) x")),
+            labels(&at(
+                "SELECT x.| FROM (SELECT u.*, o.amount FROM orders o JOIN users u ON 1) x"
+            )),
             ["id", "name", "order", "amount"]
         );
         // 来源不在目录里就少那一截，不编
-        assert_eq!(labels(&at("SELECT x.| FROM (SELECT *, 1 AS one FROM nowhere) x")), ["one"]);
+        assert_eq!(
+            labels(&at("SELECT x.| FROM (SELECT *, 1 AS one FROM nowhere) x")),
+            ["one"]
+        );
     }
 
     #[test]
@@ -945,23 +1156,43 @@ mod tests {
 
         let completion = at("SELECT | FROM (SELECT id, name AS who FROM users) AS x");
         assert_eq!(labels(&completion)[..2], ["id", "who"]);
-        assert!(completion.items.iter().any(|i| i.kind == CompletionKind::Alias && i.label == "x" && i.detail == "子查询"));
+        assert!(completion
+            .items
+            .iter()
+            .any(|i| i.kind == CompletionKind::Alias && i.label == "x" && i.detail == "子查询"));
     }
 
     #[test]
     fn derived_table_with_column_list_and_union() {
-        assert_eq!(labels(&at("SELECT x.| FROM (SELECT id, amount FROM orders) AS x (a, b)")), ["a", "b"]);
+        assert_eq!(
+            labels(&at(
+                "SELECT x.| FROM (SELECT id, amount FROM orders) AS x (a, b)"
+            )),
+            ["a", "b"]
+        );
         // UNION 的列名由第一段决定
-        assert_eq!(labels(&at("SELECT x.| FROM (SELECT id AS k FROM orders UNION SELECT name FROM users) x")), ["k"]);
+        assert_eq!(
+            labels(&at(
+                "SELECT x.| FROM (SELECT id AS k FROM orders UNION SELECT name FROM users) x"
+            )),
+            ["k"]
+        );
     }
 
     #[test]
     fn inside_a_derived_table_its_own_alias_is_not_visible() {
         let completion = at("SELECT * FROM (SELECT | FROM users) x");
         assert_eq!(completion.items[0].detail, "users");
-        assert!(!completion.items.iter().any(|i| i.label == "x"), "{:?}", labels(&completion));
+        assert!(
+            !completion.items.iter().any(|i| i.label == "x"),
+            "{:?}",
+            labels(&completion)
+        );
         // 里面照样能用自己的表
-        assert_eq!(labels(&at("SELECT * FROM (SELECT u.| FROM users u) x")), ["id", "name", "order"]);
+        assert_eq!(
+            labels(&at("SELECT * FROM (SELECT u.| FROM users u) x")),
+            ["id", "name", "order"]
+        );
     }
 
     #[test]
@@ -973,8 +1204,18 @@ mod tests {
                    b AS (SELECT a.*, 2 AS two FROM a) SELECT q.| FROM b q";
         assert_eq!(labels(&at(sql)), ["n", "two"]);
         // CTE 和真表同名时 CTE 优先
-        assert_eq!(labels(&at("WITH orders AS (SELECT 1 AS z) SELECT orders.| FROM orders")), ["z"]);
+        assert_eq!(
+            labels(&at(
+                "WITH orders AS (SELECT 1 AS z) SELECT orders.| FROM orders"
+            )),
+            ["z"]
+        );
         // 不带限定时 CTE 的列也在候选里
-        assert_eq!(labels(&at("WITH big AS (SELECT amount AS total FROM orders) SELECT t| FROM big"))[0], "total");
+        assert_eq!(
+            labels(&at(
+                "WITH big AS (SELECT amount AS total FROM orders) SELECT t| FROM big"
+            ))[0],
+            "total"
+        );
     }
 }

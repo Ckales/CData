@@ -179,6 +179,10 @@ Future<List<String>> columnChoices({
   columnIndex: columnIndex,
 );
 
+/// 导入或导出进行中的进度。界面在调用还没返回时轮询。没有进行中的操作时 done 和 total 都是 0
+Future<FileProgress> fileProgress({required BigInt sessionId}) =>
+    RustLib.instance.api.crateApiDbFileProgress(sessionId: sessionId);
+
 /// 把结果集的一段写成文件，row_count 为 null 表示到末尾。行不经过 FFI
 Future<ExportSummary> exportRows({
   required BigInt sessionId,
@@ -396,6 +400,24 @@ class ExportSummary {
           runtimeType == other.runtimeType &&
           rowsWritten == other.rowsWritten &&
           sourceTruncated == other.sourceTruncated;
+}
+
+class FileProgress {
+  final BigInt done;
+  final BigInt total;
+
+  const FileProgress({required this.done, required this.total});
+
+  @override
+  int get hashCode => done.hashCode ^ total.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is FileProgress &&
+          runtimeType == other.runtimeType &&
+          done == other.done &&
+          total == other.total;
 }
 
 class FilterCondition {

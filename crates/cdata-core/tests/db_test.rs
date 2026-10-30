@@ -44,13 +44,9 @@ async fn type_zoo_survives_a_real_round_trip() {
     };
 
     let pool = open_pool(&config).await.unwrap();
-    let result = run_query(
-        &pool,
-        "SELECT * FROM type_zoo ORDER BY id",
-        100,
-    )
-    .await
-    .expect("查询 type_zoo 失败");
+    let result = run_query(&pool, "SELECT * FROM type_zoo ORDER BY id", 100)
+        .await
+        .expect("查询 type_zoo 失败");
 
     assert_eq!(result.rows.len(), 2);
     assert!(!result.truncated);
@@ -71,7 +67,10 @@ async fn type_zoo_survives_a_real_round_trip() {
         CellValue::Text("1234567.8900".to_string())
     );
     // FLOAT 不能泄漏 f32 转 f64 的精度垃圾
-    assert_eq!(cell(&result, 0, "ratio"), CellValue::Text("0.1".to_string()));
+    assert_eq!(
+        cell(&result, 0, "ratio"),
+        CellValue::Text("0.1".to_string())
+    );
     // 零日期：chrono 表示不了，必须原样
     assert_eq!(
         cell(&result, 0, "d_zero"),
@@ -139,7 +138,10 @@ async fn reads_one_hundred_thousand_rows() {
     assert_eq!(result.columns.len(), 6);
 
     // 末行抽查，确认没有在读取过程中错位
-    assert_eq!(cell(&result, 99_999, "name"), CellValue::Text("用户100000".to_string()));
+    assert_eq!(
+        cell(&result, 99_999, "name"),
+        CellValue::Text("用户100000".to_string())
+    );
 
     eprintln!("读取 10 万行耗时 {:?}", elapsed);
 
@@ -162,7 +164,15 @@ async fn session_keeps_rows_and_serves_windows() {
     assert!(!summary.truncated);
     // 单表结果按「服务器/库.表」记布局
     let key = summary.layout_key.as_deref().expect("单表结果应该有布局键");
-    assert_eq!(key, format!("{}:{}/{}.big_rows", config.host, config.port, config.database.as_deref().unwrap()));
+    assert_eq!(
+        key,
+        format!(
+            "{}:{}/{}.big_rows",
+            config.host,
+            config.port,
+            config.database.as_deref().unwrap()
+        )
+    );
 
     // 界面滚到中间，只取两百行
     let window = cdata_core::session::fetch_window(id, 50_000, 200).expect("取窗口失败");
@@ -175,7 +185,9 @@ async fn session_keeps_rows_and_serves_windows() {
     let tail = cdata_core::session::fetch_window(id, 99_950, 200).expect("取窗口失败");
     assert_eq!(tail.len(), 50);
 
-    cdata_core::session::close_session(id).await.expect("关闭失败");
+    cdata_core::session::close_session(id)
+        .await
+        .expect("关闭失败");
 
     // 关掉之后再用同一个 id 必须报错，不能静默返回空
     assert!(cdata_core::session::fetch_window(id, 0, 10).is_err());
@@ -197,13 +209,22 @@ async fn browse_stops_on_the_server_and_marks_truncation() {
     assert_eq!(summary.total_rows, 1_000);
     assert!(summary.truncated, "表不止 1000 行，必须标成截断");
     // 派生表被合并后，原始表名还在，结果照样能编辑
-    assert!(matches!(summary.editability, cdata_core::edit::Editability::Editable(_)), "{:?}", summary.editability);
+    assert!(
+        matches!(
+            summary.editability,
+            cdata_core::edit::Editability::Editable(_)
+        ),
+        "{:?}",
+        summary.editability
+    );
 
     let first = cdata_core::session::fetch_window(id, 0, 1).expect("取窗口失败");
     assert_eq!(first.len(), 1);
     assert_eq!(first[0].len(), summary.columns.len());
 
-    cdata_core::session::close_session(id).await.expect("关闭失败");
+    cdata_core::session::close_session(id)
+        .await
+        .expect("关闭失败");
 }
 
 /// 编辑测试会改数据，各自用独立的表，避免并行跑的时候互相干扰
@@ -241,13 +262,10 @@ async fn editing_a_cell_writes_back_and_updates_cache() {
     assert_eq!(window[0][2], CellValue::Text("999.99".to_string()));
 
     // 回读数据库确认真的落盘了
-    let verify = cdata_core::session::execute(
-        id,
-        "SELECT amount FROM edit_target WHERE id = 1",
-        10,
-    )
-    .await
-    .expect("回读失败");
+    let verify =
+        cdata_core::session::execute(id, "SELECT amount FROM edit_target WHERE id = 1", 10)
+            .await
+            .expect("回读失败");
     let rows = cdata_core::session::fetch_window(id, 0, 1).expect("取窗口失败");
     assert_eq!(verify.total_rows, 1);
     assert_eq!(rows[0][0], CellValue::Text("999.99".to_string()));
@@ -291,13 +309,9 @@ async fn writing_null_and_chinese_round_trips() {
         .await
         .expect("写中文失败");
 
-    let reread = cdata_core::session::execute(
-        id,
-        "SELECT note FROM edit_target WHERE id = 2",
-        10,
-    )
-    .await
-    .expect("回读失败");
+    let reread = cdata_core::session::execute(id, "SELECT note FROM edit_target WHERE id = 2", 10)
+        .await
+        .expect("回读失败");
     assert_eq!(reread.total_rows, 1);
     let rows = cdata_core::session::fetch_window(id, 0, 1).expect("取窗口失败");
     assert_eq!(rows[0][0], CellValue::Text("订单已完成".to_string()));
@@ -314,13 +328,10 @@ async fn writing_null_and_chinese_round_trips() {
         .await
         .expect("写 NULL 失败");
 
-    let final_read = cdata_core::session::execute(
-        id,
-        "SELECT note FROM edit_target WHERE id = 2",
-        10,
-    )
-    .await
-    .expect("回读失败");
+    let final_read =
+        cdata_core::session::execute(id, "SELECT note FROM edit_target WHERE id = 2", 10)
+            .await
+            .expect("回读失败");
     assert_eq!(final_read.total_rows, 1);
     let rows = cdata_core::session::fetch_window(id, 0, 1).expect("取窗口失败");
     assert_eq!(rows[0][0], CellValue::Null, "NULL 不能被写成空字符串");
@@ -376,7 +387,10 @@ async fn join_result_refuses_editing() {
         }
         cdata_core::edit::Editability::Editable(_) => panic!("JOIN 结果不该可编辑"),
     }
-    assert_eq!(summary.layout_key, None, "JOIN 结果没有稳定的列归属，不记布局");
+    assert_eq!(
+        summary.layout_key, None,
+        "JOIN 结果没有稳定的列归属，不记布局"
+    );
 
     cdata_core::session::close_session(id).await.ok();
 }
@@ -437,13 +451,10 @@ async fn execute_handles_statements_without_result_set() {
     let id = cdata_core::session::open_session(&config).await.unwrap();
 
     // UPDATE 没有结果集，execute 必须正常返回而不是卡住
-    let summary = cdata_core::session::execute(
-        id,
-        "UPDATE edit_target SET note='探针' WHERE id = 1",
-        10,
-    )
-    .await
-    .expect("UPDATE 应该能跑");
+    let summary =
+        cdata_core::session::execute(id, "UPDATE edit_target SET note='探针' WHERE id = 1", 10)
+            .await
+            .expect("UPDATE 应该能跑");
     assert_eq!(summary.total_rows, 0);
     assert!(summary.columns.is_empty());
 
@@ -482,8 +493,16 @@ async fn order_by_wrapper_actually_sorts_on_the_server() {
     cdata_core::session::close_session(id).await.ok();
 }
 
-fn condition(column: &str, op: cdata_core::sql::FilterOp, value: &str) -> cdata_core::sql::FilterCondition {
-    cdata_core::sql::FilterCondition { column: column.to_string(), op, value: value.to_string() }
+fn condition(
+    column: &str,
+    op: cdata_core::sql::FilterOp,
+    value: &str,
+) -> cdata_core::sql::FilterCondition {
+    cdata_core::sql::FilterCondition {
+        column: column.to_string(),
+        op,
+        value: value.to_string(),
+    }
 }
 
 #[tokio::test]
@@ -527,7 +546,10 @@ async fn filter_and_sort_run_on_the_server() {
     let summary = cdata_core::session::execute_view(
         id,
         "SELECT * FROM big_rows",
-        &[condition("id", FilterOp::Eq, "1"), condition("id", FilterOp::Eq, "2")],
+        &[
+            condition("id", FilterOp::Eq, "1"),
+            condition("id", FilterOp::Eq, "2"),
+        ],
         false,
         None,
         200,
@@ -588,7 +610,9 @@ async fn filtered_result_is_still_editable() {
 /// 数一下某个条件下的行数，用独立会话查，不碰被测会话的缓存
 async fn count_where(config: &ConnectionConfig, sql: &str) -> i64 {
     let id = cdata_core::session::open_session(config).await.unwrap();
-    cdata_core::session::execute(id, sql, 10).await.expect("计数失败");
+    cdata_core::session::execute(id, sql, 10)
+        .await
+        .expect("计数失败");
     let rows = cdata_core::session::fetch_window(id, 0, 1).expect("取窗口失败");
     cdata_core::session::close_session(id).await.ok();
     match rows[0][0] {
@@ -628,18 +652,30 @@ async fn insert_reads_back_real_values_and_delete_removes_it() {
     assert_eq!(total, before + 1);
 
     // 缓存里是从库里读回来的真实值：自增 id 回填、DECIMAL 按列定义补齐小数位、DEFAULT 是 NULL
-    let row = cdata_core::session::fetch_window(id, before, 1).expect("取窗口失败").remove(0);
+    let row = cdata_core::session::fetch_window(id, before, 1)
+        .expect("取窗口失败")
+        .remove(0);
     let CellValue::Int(new_id) = row[0] else {
         panic!("自增主键没有回填：{:?}", row[0]);
     };
     assert_eq!(row[1], CellValue::Text("新增行".to_string()));
-    assert_eq!(row[2], CellValue::Text("12.30".to_string()), "要显示库里存的值，不是用户填的");
+    assert_eq!(
+        row[2],
+        CellValue::Text("12.30".to_string()),
+        "要显示库里存的值，不是用户填的"
+    );
     assert_eq!(row[3], CellValue::Null);
 
-    let total = cdata_core::session::delete_rows(id, vec![before]).await.expect("删除失败");
+    let total = cdata_core::session::delete_rows(id, vec![before])
+        .await
+        .expect("删除失败");
     assert_eq!(total, before);
     assert_eq!(
-        count_where(&config, &format!("SELECT COUNT(*) FROM edit_target WHERE id = {new_id}")).await,
+        count_where(
+            &config,
+            &format!("SELECT COUNT(*) FROM edit_target WHERE id = {new_id}")
+        )
+        .await,
         0
     );
 
@@ -653,35 +689,51 @@ async fn refresh_row_rereads_by_key_and_reports_a_vanished_row() {
     };
 
     let id = cdata_core::session::open_session(&config).await.unwrap();
-    let summary = cdata_core::session::execute(id, "SELECT id, name FROM edit_target ORDER BY id", 100)
-        .await
-        .expect("查询失败");
+    let summary =
+        cdata_core::session::execute(id, "SELECT id, name FROM edit_target ORDER BY id", 100)
+            .await
+            .expect("查询失败");
     let before = summary.total_rows;
     cdata_core::session::insert_row(id, vec![None, Some(CellValue::Text("刷新前".into()))])
         .await
         .expect("插入失败");
-    let CellValue::Int(new_id) = cdata_core::session::fetch_window(id, before, 1).unwrap()[0][0] else {
+    let CellValue::Int(new_id) = cdata_core::session::fetch_window(id, before, 1).unwrap()[0][0]
+    else {
         panic!("自增主键没有回填");
     };
 
     // 另一个会话改掉这一行，本会话的缓存还是旧值，刷新后才变
     let other = cdata_core::session::open_session(&config).await.unwrap();
-    cdata_core::session::execute(other, &format!("SELECT id, name FROM edit_target WHERE id = {new_id}"), 10)
-        .await
-        .expect("查询失败");
+    cdata_core::session::execute(
+        other,
+        &format!("SELECT id, name FROM edit_target WHERE id = {new_id}"),
+        10,
+    )
+    .await
+    .expect("查询失败");
     cdata_core::session::apply_edit(other, 0, 1, CellValue::Text("刷新后".into()))
         .await
         .expect("改值失败");
 
-    cdata_core::session::refresh_row(id, before).await.expect("刷新失败");
-    let row = cdata_core::session::fetch_window(id, before, 1).unwrap().remove(0);
+    cdata_core::session::refresh_row(id, before)
+        .await
+        .expect("刷新失败");
+    let row = cdata_core::session::fetch_window(id, before, 1)
+        .unwrap()
+        .remove(0);
     assert_eq!(row[1], CellValue::Text("刷新后".to_string()));
 
     // 另一个会话把行删了：刷新要报错，缓存原样留着，不替用户删
-    cdata_core::session::delete_rows(other, vec![0]).await.expect("删除失败");
-    let err = cdata_core::session::refresh_row(id, before).await.unwrap_err();
+    cdata_core::session::delete_rows(other, vec![0])
+        .await
+        .expect("删除失败");
+    let err = cdata_core::session::refresh_row(id, before)
+        .await
+        .unwrap_err();
     assert!(err.to_string().contains("找不到这一行"), "{err}");
-    let row = cdata_core::session::fetch_window(id, before, 1).unwrap().remove(0);
+    let row = cdata_core::session::fetch_window(id, before, 1)
+        .unwrap()
+        .remove(0);
     assert_eq!(row[1], CellValue::Text("刷新后".to_string()));
 
     cdata_core::session::close_session(other).await.ok();
@@ -706,14 +758,27 @@ async fn export_table_streams_every_row_without_the_row_limit() {
         null_text: "NULL".to_string(),
         table_name: String::new(),
     };
-    let written = cdata_core::session::export_table(id, &database, "edit_target", path.to_str().unwrap(), &options)
-        .await
-        .expect("导出失败");
+    let written = cdata_core::session::export_table(
+        id,
+        &database,
+        "edit_target",
+        path.to_str().unwrap(),
+        &options,
+    )
+    .await
+    .expect("导出失败");
     let text = std::fs::read_to_string(&path).unwrap();
     std::fs::remove_file(&path).ok();
 
-    assert_eq!(written as i64, total, "整表导出不受行数上限影响，行数要和 COUNT(*) 一致");
-    assert_eq!(text.matches("\r\n").count() as i64, total + 1, "表头一行 + 每行一行（edit_target 里没有带换行的值）");
+    assert_eq!(
+        written as i64, total,
+        "整表导出不受行数上限影响，行数要和 COUNT(*) 一致"
+    );
+    assert_eq!(
+        text.matches("\r\n").count() as i64,
+        total + 1,
+        "表头一行 + 每行一行（edit_target 里没有带换行的值）"
+    );
     cdata_core::session::close_session(id).await.ok();
 }
 
@@ -749,9 +814,15 @@ async fn export_sql_dump_writes_structure_and_rows_of_selected_tables() {
 
     assert_eq!(written as i64, total);
     assert!(text.contains("CREATE DATABASE IF NOT EXISTS"), "{text}");
-    assert!(text.contains(&format!("USE `{}`;", database.replace('`', "``"))), "{text}");
+    assert!(
+        text.contains(&format!("USE `{}`;", database.replace('`', "``"))),
+        "{text}"
+    );
     assert!(text.contains("SET FOREIGN_KEY_CHECKS=0;"), "{text}");
-    assert!(text.contains("DROP TABLE IF EXISTS `edit_target`;"), "{text}");
+    assert!(
+        text.contains("DROP TABLE IF EXISTS `edit_target`;"),
+        "{text}"
+    );
     assert!(text.contains("CREATE TABLE"), "{text}");
     assert!(text.contains("SET FOREIGN_KEY_CHECKS=1;"), "{text}");
     if total > 0 {
@@ -767,13 +838,10 @@ async fn batch_delete_rolls_back_when_any_row_is_stale() {
     };
 
     let id = cdata_core::session::open_session(&config).await.unwrap();
-    let summary = cdata_core::session::execute(
-        id,
-        "SELECT id, name FROM edit_target ORDER BY id",
-        100,
-    )
-    .await
-    .expect("查询失败");
+    let summary =
+        cdata_core::session::execute(id, "SELECT id, name FROM edit_target ORDER BY id", 100)
+            .await
+            .expect("查询失败");
     let first = summary.total_rows;
 
     cdata_core::session::insert_row(id, vec![None, Some(CellValue::Text("回滚-1".into()))])
@@ -789,9 +857,13 @@ async fn batch_delete_rolls_back_when_any_row_is_stale() {
 
     // 别人先把第二行删了，缓存里的第二行成了过期数据
     let other = cdata_core::session::open_session(&config).await.unwrap();
-    cdata_core::session::execute(other, &format!("DELETE FROM edit_target WHERE id = {id2}"), 10)
-        .await
-        .expect("外部删除失败");
+    cdata_core::session::execute(
+        other,
+        &format!("DELETE FROM edit_target WHERE id = {id2}"),
+        10,
+    )
+    .await
+    .expect("外部删除失败");
 
     let err = cdata_core::session::delete_rows(id, vec![first, first + 1])
         .await
@@ -800,7 +872,11 @@ async fn batch_delete_rolls_back_when_any_row_is_stale() {
 
     // 第一行删成功过，但必须被回滚回来
     assert_eq!(
-        count_where(&config, &format!("SELECT COUNT(*) FROM edit_target WHERE id = {id1}")).await,
+        count_where(
+            &config,
+            &format!("SELECT COUNT(*) FROM edit_target WHERE id = {id1}")
+        )
+        .await,
         1,
         "一批里有一行失败，整批都不能生效"
     );
@@ -808,9 +884,13 @@ async fn batch_delete_rolls_back_when_any_row_is_stale() {
     let window = cdata_core::session::fetch_window(id, first, 10).expect("取窗口失败");
     assert_eq!(window.len(), 2);
 
-    cdata_core::session::execute(other, &format!("DELETE FROM edit_target WHERE id = {id1}"), 10)
-        .await
-        .expect("清理失败");
+    cdata_core::session::execute(
+        other,
+        &format!("DELETE FROM edit_target WHERE id = {id1}"),
+        10,
+    )
+    .await
+    .expect("清理失败");
     cdata_core::session::close_session(other).await.ok();
     cdata_core::session::close_session(id).await.ok();
 }
@@ -824,19 +904,30 @@ async fn insert_without_full_composite_key_is_refused_before_writing() {
     let before = count_where(&config, "SELECT COUNT(*) FROM edit_composite").await;
 
     let id = cdata_core::session::open_session(&config).await.unwrap();
-    cdata_core::session::execute(id, "SELECT shop_id, order_no, amount FROM edit_composite", 100)
-        .await
-        .expect("查询失败");
+    cdata_core::session::execute(
+        id,
+        "SELECT shop_id, order_no, amount FROM edit_composite",
+        100,
+    )
+    .await
+    .expect("查询失败");
 
     // order_no 没填，插进去也找不回来 —— 必须在写库之前就拒绝
     let err = cdata_core::session::insert_row(
         id,
-        vec![Some(CellValue::Int(7)), None, Some(CellValue::Text("3.00".into()))],
+        vec![
+            Some(CellValue::Int(7)),
+            None,
+            Some(CellValue::Text("3.00".into())),
+        ],
     )
     .await
     .unwrap_err();
     assert!(err.to_string().contains("复合主键"), "{err}");
-    assert_eq!(count_where(&config, "SELECT COUNT(*) FROM edit_composite").await, before);
+    assert_eq!(
+        count_where(&config, "SELECT COUNT(*) FROM edit_composite").await,
+        before
+    );
 
     cdata_core::session::close_session(id).await.ok();
 }
@@ -852,9 +943,13 @@ async fn read_only_result_refuses_insert_and_delete() {
         .await
         .expect("查询失败");
 
-    let err = cdata_core::session::insert_row(id, vec![None, None]).await.unwrap_err();
+    let err = cdata_core::session::insert_row(id, vec![None, None])
+        .await
+        .unwrap_err();
     assert!(err.to_string().contains("没有主键"), "{err}");
-    let err = cdata_core::session::delete_rows(id, vec![0]).await.unwrap_err();
+    let err = cdata_core::session::delete_rows(id, vec![0])
+        .await
+        .unwrap_err();
     assert!(err.to_string().contains("没有主键"), "{err}");
 
     cdata_core::session::close_session(id).await.ok();
@@ -875,18 +970,29 @@ async fn edit_caches_what_the_database_stored_not_what_was_typed() {
     .await
     .expect("查询失败");
     let index = summary.total_rows;
-    cdata_core::session::insert_row(id, vec![None, Some(CellValue::Text("缓存回读".into())), None])
-        .await
-        .expect("插入失败");
+    cdata_core::session::insert_row(
+        id,
+        vec![None, Some(CellValue::Text("缓存回读".into())), None],
+    )
+    .await
+    .expect("插入失败");
 
     // DECIMAL(12,2) 存进去是 7.50，缓存里要是库里的值
     cdata_core::session::apply_edit(id, index, 2, CellValue::Text("7.5".into()))
         .await
         .expect("写回失败");
-    let row = cdata_core::session::fetch_window(id, index, 1).expect("取窗口失败").remove(0);
-    assert_eq!(row[2], CellValue::Text("7.50".to_string()), "界面要显示库里真实存下的值");
+    let row = cdata_core::session::fetch_window(id, index, 1)
+        .expect("取窗口失败")
+        .remove(0);
+    assert_eq!(
+        row[2],
+        CellValue::Text("7.50".to_string()),
+        "界面要显示库里真实存下的值"
+    );
 
-    cdata_core::session::delete_rows(id, vec![index]).await.expect("清理失败");
+    cdata_core::session::delete_rows(id, vec![index])
+        .await
+        .expect("清理失败");
     cdata_core::session::close_session(id).await.ok();
 }
 
@@ -895,7 +1001,12 @@ async fn insert_scratch_rows(session: u64, first: u64, n: usize, tag: &str) -> V
     for i in 0..n {
         cdata_core::session::insert_row(
             session,
-            vec![None, Some(CellValue::Text(format!("{tag}-{i}"))), None, None],
+            vec![
+                None,
+                Some(CellValue::Text(format!("{tag}-{i}"))),
+                None,
+                None,
+            ],
         )
         .await
         .expect("插入失败");
@@ -937,7 +1048,11 @@ async fn paste_writes_a_block_and_caches_stored_values() {
     assert_eq!(written, 3);
 
     let rows = cdata_core::session::fetch_window(id, first, 2).expect("取窗口失败");
-    assert_eq!(rows[0][2], CellValue::Text("1.50".to_string()), "缓存里是库里存的值");
+    assert_eq!(
+        rows[0][2],
+        CellValue::Text("1.50".to_string()),
+        "缓存里是库里存的值"
+    );
     assert_eq!(rows[0][3], CellValue::Text("备注一".to_string()));
     assert_eq!(rows[1][2], CellValue::Text("2.00".to_string()));
     assert_eq!(rows[1][3], CellValue::Null);
@@ -947,12 +1062,19 @@ async fn paste_writes_a_block_and_caches_stored_values() {
     assert_eq!(tsv, "备注一\t1.50\nNULL\t2.00");
 
     // 再粘一遍同样的值：开了 CLIENT_FOUND_ROWS，写入相同内容不会被误判成定位失败
-    let rewritten = cdata_core::session::paste_cells(id, first, vec![2], vec![vec![CellValue::Text("1.5".into())]])
-        .await
-        .expect("写入相同的值不该失败");
+    let rewritten = cdata_core::session::paste_cells(
+        id,
+        first,
+        vec![2],
+        vec![vec![CellValue::Text("1.5".into())]],
+    )
+    .await
+    .expect("写入相同的值不该失败");
     assert_eq!(rewritten, 1);
 
-    cdata_core::session::delete_rows(id, vec![first, first + 1]).await.expect("清理失败");
+    cdata_core::session::delete_rows(id, vec![first, first + 1])
+        .await
+        .expect("清理失败");
     cdata_core::session::close_session(id).await.ok();
 }
 
@@ -963,21 +1085,22 @@ async fn paste_refuses_primary_key_and_out_of_range_before_writing() {
     };
 
     let id = cdata_core::session::open_session(&config).await.unwrap();
-    let summary = cdata_core::session::execute(
-        id,
-        "SELECT id, name FROM edit_target ORDER BY id",
-        100,
-    )
-    .await
-    .expect("查询失败");
+    let summary =
+        cdata_core::session::execute(id, "SELECT id, name FROM edit_target ORDER BY id", 100)
+            .await
+            .expect("查询失败");
     let total = summary.total_rows;
 
-    let err = cdata_core::session::paste_cells(id, 0, vec![0], vec![vec![CellValue::Text("99".into())]])
-        .await
-        .unwrap_err();
+    let err =
+        cdata_core::session::paste_cells(id, 0, vec![0], vec![vec![CellValue::Text("99".into())]])
+            .await
+            .unwrap_err();
     assert!(err.to_string().contains("主键"), "{err}");
 
-    let two_rows = vec![vec![CellValue::Text("x".into())], vec![CellValue::Text("y".into())]];
+    let two_rows = vec![
+        vec![CellValue::Text("x".into())],
+        vec![CellValue::Text("y".into())],
+    ];
     let err = cdata_core::session::paste_cells(id, total - 1, vec![1], two_rows)
         .await
         .unwrap_err();
@@ -1005,23 +1128,43 @@ async fn paste_rolls_back_when_any_row_is_stale() {
 
     // 别人把第二行删了
     let other = cdata_core::session::open_session(&config).await.unwrap();
-    cdata_core::session::execute(other, &format!("DELETE FROM edit_target WHERE id = {}", ids[1]), 10)
-        .await
-        .expect("外部删除失败");
+    cdata_core::session::execute(
+        other,
+        &format!("DELETE FROM edit_target WHERE id = {}", ids[1]),
+        10,
+    )
+    .await
+    .expect("外部删除失败");
 
-    let values = vec![vec![CellValue::Text("改了".into())], vec![CellValue::Text("也改了".into())]];
-    let err = cdata_core::session::paste_cells(id, first, vec![1], values).await.unwrap_err();
+    let values = vec![
+        vec![CellValue::Text("改了".into())],
+        vec![CellValue::Text("也改了".into())],
+    ];
+    let err = cdata_core::session::paste_cells(id, first, vec![1], values)
+        .await
+        .unwrap_err();
     assert!(err.to_string().contains("回滚"), "{err}");
 
     // 第一行写成功过，但必须被回滚
     assert_eq!(
-        count_where(&config, &format!("SELECT COUNT(*) FROM edit_target WHERE id = {} AND name = '粘贴回滚-0'", ids[0])).await,
+        count_where(
+            &config,
+            &format!(
+                "SELECT COUNT(*) FROM edit_target WHERE id = {} AND name = '粘贴回滚-0'",
+                ids[0]
+            )
+        )
+        .await,
         1
     );
 
-    cdata_core::session::execute(other, &format!("DELETE FROM edit_target WHERE id = {}", ids[0]), 10)
-        .await
-        .expect("清理失败");
+    cdata_core::session::execute(
+        other,
+        &format!("DELETE FROM edit_target WHERE id = {}", ids[0]),
+        10,
+    )
+    .await
+    .expect("清理失败");
     cdata_core::session::close_session(other).await.ok();
     cdata_core::session::close_session(id).await.ok();
 }
@@ -1059,20 +1202,44 @@ async fn table_structure_reads_columns_indexes_foreign_keys_and_ddl() {
         .expect("读结构失败");
 
     let names: Vec<&str> = structure.columns.iter().map(|c| c.name.as_str()).collect();
-    assert_eq!(names, ["id", "parent_id", "title", "body", "status", "created_at"]);
+    assert_eq!(
+        names,
+        ["id", "parent_id", "title", "body", "status", "created_at"]
+    );
 
-    let column = |name: &str| structure.columns.iter().find(|c| c.name == name).unwrap().clone();
+    let column = |name: &str| {
+        structure
+            .columns
+            .iter()
+            .find(|c| c.name == name)
+            .unwrap()
+            .clone()
+    };
     assert_eq!(column("id").default, DefaultValue::NoDefault);
     assert!(column("id").extra.contains("auto_increment"));
-    assert_eq!(column("title").default, DefaultValue::Literal(String::new()), "空串默认值不是没有默认值");
+    assert_eq!(
+        column("title").default,
+        DefaultValue::Literal(String::new()),
+        "空串默认值不是没有默认值"
+    );
     assert_eq!(column("title").comment, "标题");
     assert_eq!(column("body").default, DefaultValue::Null);
     assert_eq!(column("status").column_type, "enum('draft','done')");
-    assert_eq!(column("status").default, DefaultValue::Literal("draft".into()));
-    assert_eq!(column("created_at").default, DefaultValue::Expression("CURRENT_TIMESTAMP".into()));
+    assert_eq!(
+        column("status").default,
+        DefaultValue::Literal("draft".into())
+    );
+    assert_eq!(
+        column("created_at").default,
+        DefaultValue::Expression("CURRENT_TIMESTAMP".into())
+    );
 
     assert_eq!(structure.indexes[0].name, "PRIMARY", "主键排第一");
-    let prefix = structure.indexes.iter().find(|i| i.name == "idx_title_prefix").unwrap();
+    let prefix = structure
+        .indexes
+        .iter()
+        .find(|i| i.name == "idx_title_prefix")
+        .unwrap();
     assert!(!prefix.unique);
     assert_eq!(prefix.columns, ["title(10)", "status"]);
 
@@ -1084,12 +1251,21 @@ async fn table_structure_reads_columns_indexes_foreign_keys_and_ddl() {
     assert_eq!(fk.referenced_columns, ["id"]);
     assert_eq!(fk.on_delete, "CASCADE");
 
-    assert!(structure.create_sql.starts_with("CREATE TABLE `structure_child`"), "{}", structure.create_sql);
+    assert!(
+        structure
+            .create_sql
+            .starts_with("CREATE TABLE `structure_child`"),
+        "{}",
+        structure.create_sql
+    );
 
     let parent = cdata_core::session::table_structure(setup, &database, "structure_parent")
         .await
         .expect("读结构失败");
-    assert!(parent.indexes.iter().any(|i| i.name == "uk_code" && i.unique));
+    assert!(parent
+        .indexes
+        .iter()
+        .any(|i| i.name == "uk_code" && i.unique));
 
     cdata_core::session::close_session(setup).await.ok();
 }
@@ -1103,11 +1279,25 @@ async fn column_kinds_come_from_metadata_and_choices_from_the_table() {
 
     let id = cdata_core::session::open_session(&config).await.unwrap();
     // 包一层筛选的派生表，类别也不能丢
-    let summary = cdata_core::session::execute_view(id, "SELECT * FROM type_zoo", &[], true, Some(("id", true)), 10)
-        .await
-        .expect("查询失败");
+    let summary = cdata_core::session::execute_view(
+        id,
+        "SELECT * FROM type_zoo",
+        &[],
+        true,
+        Some(("id", true)),
+        10,
+    )
+    .await
+    .expect("查询失败");
 
-    let kind = |name: &str| summary.columns.iter().find(|c| c.name == name).unwrap().kind;
+    let kind = |name: &str| {
+        summary
+            .columns
+            .iter()
+            .find(|c| c.name == name)
+            .unwrap()
+            .kind
+    };
     assert_eq!(kind("id"), ColumnKind::Number);
     assert_eq!(kind("amount"), ColumnKind::Number);
     assert_eq!(kind("d_zero"), ColumnKind::Date);
@@ -1120,15 +1310,29 @@ async fn column_kinds_come_from_metadata_and_choices_from_the_table() {
     assert_eq!(kind("blob_col"), ColumnKind::Binary);
     assert_eq!(kind("bit_col"), ColumnKind::Binary);
 
-    let enum_index = summary.columns.iter().position(|c| c.name == "enum_col").unwrap() as u64;
-    let choices = cdata_core::session::column_choices(id, enum_index).await.expect("读可选值失败");
+    let enum_index = summary
+        .columns
+        .iter()
+        .position(|c| c.name == "enum_col")
+        .unwrap() as u64;
+    let choices = cdata_core::session::column_choices(id, enum_index)
+        .await
+        .expect("读可选值失败");
     assert_eq!(choices, ["draft", "paid", "refunded"]);
 
-    let set_index = summary.columns.iter().position(|c| c.name == "set_col").unwrap() as u64;
-    let choices = cdata_core::session::column_choices(id, set_index).await.expect("读可选值失败");
+    let set_index = summary
+        .columns
+        .iter()
+        .position(|c| c.name == "set_col")
+        .unwrap() as u64;
+    let choices = cdata_core::session::column_choices(id, set_index)
+        .await
+        .expect("读可选值失败");
     assert_eq!(choices, ["x", "y", "z"]);
 
-    let err = cdata_core::session::column_choices(id, 0).await.unwrap_err();
+    let err = cdata_core::session::column_choices(id, 0)
+        .await
+        .unwrap_err();
     assert!(err.to_string().contains("不是 ENUM"), "{err}");
 
     cdata_core::session::close_session(id).await.ok();
@@ -1167,8 +1371,15 @@ async fn export_writes_the_current_view_and_reports_truncation() {
         table_name: String::new(),
     };
 
-    let summary = cdata_core::session::export_rows(id, path.to_str().unwrap(), 0, None, vec![0, 1, 2], &options)
-        .expect("导出失败");
+    let summary = cdata_core::session::export_rows(
+        id,
+        path.to_str().unwrap(),
+        0,
+        None,
+        vec![0, 1, 2],
+        &options,
+    )
+    .expect("导出失败");
     assert_eq!(summary.rows_written, 3);
     assert!(!summary.source_truncated);
     assert_eq!(
@@ -1177,11 +1388,17 @@ async fn export_writes_the_current_view_and_reports_truncation() {
     );
 
     // 截断过的结果集导出去要带着截断标记
-    cdata_core::session::execute(id, "SELECT id FROM big_rows ORDER BY id", 10).await.expect("查询失败");
-    let summary = cdata_core::session::export_rows(id, path.to_str().unwrap(), 0, None, vec![0], &options)
-        .expect("导出失败");
+    cdata_core::session::execute(id, "SELECT id FROM big_rows ORDER BY id", 10)
+        .await
+        .expect("查询失败");
+    let summary =
+        cdata_core::session::export_rows(id, path.to_str().unwrap(), 0, None, vec![0], &options)
+            .expect("导出失败");
     assert_eq!(summary.rows_written, 10);
-    assert!(summary.source_truncated, "截断过的结果导出去也是不完整的，必须告诉界面");
+    assert!(
+        summary.source_truncated,
+        "截断过的结果导出去也是不完整的，必须告诉界面"
+    );
 
     std::fs::remove_dir_all(&dir).ok();
     cdata_core::session::close_session(id).await.ok();
@@ -1199,7 +1416,9 @@ async fn completion_uses_the_loaded_catalog() {
     let before = cdata_core::session::complete_sql(id, "SELECT * FROM ", 14).expect("补全失败");
     assert!(before.items.is_empty(), "没有目录就没有表可补");
 
-    let tables = cdata_core::session::load_catalog(id, &database).await.expect("读目录失败");
+    let tables = cdata_core::session::load_catalog(id, &database)
+        .await
+        .expect("读目录失败");
     assert!(tables >= 5);
 
     let sql = "SELECT e. FROM edit_target e";
@@ -1210,7 +1429,8 @@ async fn completion_uses_the_loaded_catalog() {
     }
     assert_eq!(labels, ["id", "name", "amount", "note"]);
 
-    let completion = cdata_core::session::complete_sql(id, "SELECT * FROM big", 17).expect("补全失败");
+    let completion =
+        cdata_core::session::complete_sql(id, "SELECT * FROM big", 17).expect("补全失败");
     assert_eq!(completion.items[0].label, "big_rows");
 
     cdata_core::session::close_session(id).await.ok();
@@ -1224,7 +1444,12 @@ async fn system_views_are_listed_as_views() {
         return;
     };
     let pool = open_pool(&config).await.unwrap();
-    let tables = cdata_core::schema::list_tables(&pool, "information_schema").await.unwrap();
-    let tables_view = tables.iter().find(|t| t.name == "TABLES").expect("information_schema 里应该有 TABLES");
+    let tables = cdata_core::schema::list_tables(&pool, "information_schema")
+        .await
+        .unwrap();
+    let tables_view = tables
+        .iter()
+        .find(|t| t.name == "TABLES")
+        .expect("information_schema 里应该有 TABLES");
     assert!(tables_view.is_view, "SYSTEM VIEW 没被当成视图");
 }

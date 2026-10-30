@@ -326,10 +326,16 @@ pub async fn import_sql_file(
     encoding: crate::export::ExportEncoding,
     database: &str,
 ) -> Result<crate::sql_import::SqlImportSummary> {
+    crate::progress::reset_file_progress(session_id);
     let statements = crate::sql_import::read_statements(path, encoding).map_err(Error::BadInput)?;
     let (pool, _) = session_pool(session_id)?;
+    let total = statements.len() as u64;
+    crate::progress::set_file_progress(session_id, 0, total);
     let started = Instant::now();
-    let result = crate::db::run_sql_import(&pool, &statements, database).await;
+    let result = crate::db::run_sql_import(&pool, &statements, database, &|done, total| {
+        crate::progress::set_file_progress(session_id, done, total);
+    })
+    .await;
     if let Ok(summary) = &result {
         let mut executed = statements
             .iter()
@@ -618,14 +624,24 @@ pub fn export_rows(
     }
 
     // ponytail: 写文件时一直持着会话锁，十万行几百毫秒；更大的量再改成先拷一份行再释放锁
-    let rows_written = crate::export::write_file(
+    let total = (end - start) as u64;
+    crate::progress::reset_file_progress(session_id);
+    crate::progress::set_file_progress(session_id, 0, total);
+    let mut writer = crate::export::ExportWriter::create(
         std::path::Path::new(path),
         &result.columns,
-        &result.rows[start..end],
         &columns,
         options,
     )
     .map_err(Error::BadInput)?;
+    for (index, row) in result.rows[start..end].iter().enumerate() {
+        writer.write_row(row).map_err(Error::BadInput)?;
+        let done = index as u64 + 1;
+        if done == total || done % 1000 == 0 {
+            crate::progress::set_file_progress(session_id, done, total);
+        }
+    }
+    let rows_written = writer.finish().map_err(Error::BadInput)?;
 
     Ok(crate::export::ExportSummary {
         rows_written,
@@ -794,12 +810,18 @@ async fn run_planned(
         Ok(()) => {
             if !statements.is_empty() {
                 let detail = crate::sql_log::sql_batch(statements);
-                crate::sql_log::record_detail(session_id, operation, &detail, started, true, "完成");
+                crate::sql_log::record_detail(
+                    session_id, operation, &detail, started, true, "完成",
+                );
             }
             Ok(())
         }
         Err((index, mysql_error)) => {
-            let attempted = statements.iter().take(index.saturating_add(1)).cloned().collect::<Vec<_>>();
+            let attempted = statements
+                .iter()
+                .take(index.saturating_add(1))
+                .cloned()
+                .collect::<Vec<_>>();
             if !attempted.is_empty() {
                 let detail = crate::sql_log::sql_batch(&attempted);
                 crate::sql_log::record_detail(
@@ -822,7 +844,10 @@ async fn run_planned(
             } else {
                 format!("前 {index} 条已经生效，不会回滚")
             };
-            Err(Error::EditFailed(format!("第 {} 条（共 {total} 条）执行失败：{err}。{this_one}；{before}", index + 1)))
+            Err(Error::EditFailed(format!(
+                "第 {} 条（共 {total} 条）执行失败：{err}。{this_one}；{before}",
+                index + 1
+            )))
         }
     }
 }
@@ -1916,6 +1941,7 @@ pub async fn export_table(
     options: &crate::export::ExportOptions,
 ) -> Result<u64> {
     let pool = pool_of(session_id)?;
+    crate::progress::reset_file_progress(session_id);
     let mut conn = pool.get_conn().await?;
     let sql = format!(
         "SELECT * FROM {}.{}",
@@ -1947,6 +1973,7 @@ pub async fn export_table(
             return Err(Error::BadInput(err));
         }
     };
+    let mut written = 0u64;
     loop {
         let row = match result.next().await {
             Ok(Some(row)) => row,
@@ -1958,6 +1985,8 @@ pub async fn export_table(
             let _ = conn.disconnect().await;
             return Err(Error::BadInput(err));
         }
+        written += 1;
+        crate::progress::set_file_progress(session_id, written, 0);
     }
     drop(result);
     writer.finish().map_err(Error::BadInput)
@@ -1997,8 +2026,9 @@ pub async fn export_sql_dump(
     }
 
     let pool = pool_of(session_id)?;
+    crate::progress::reset_file_progress(session_id);
     let mut conn = pool.get_conn().await?;
-    let outcome = dump_tables(&mut conn, database, &wanted, path, options).await;
+    let outcome = dump_tables(&mut conn, session_id, database, &wanted, path, options).await;
     if outcome.is_err() {
         // 可能正停在没读完的结果集上，这条连接不能还回池里
         let _ = conn.disconnect().await;
@@ -2008,6 +2038,7 @@ pub async fn export_sql_dump(
 
 async fn dump_tables(
     conn: &mut mysql_async::Conn,
+    session_id: u64,
     database: &str,
     tables: &[String],
     path: &str,
@@ -2026,19 +2057,34 @@ async fn dump_tables(
         }
     }
 
-    let mut writer = crate::export::ExportWriter::create_sql_dump(std::path::Path::new(path), options.encoding)
-        .map_err(Error::BadInput)?;
+    let mut writer =
+        crate::export::ExportWriter::create_sql_dump(std::path::Path::new(path), options.encoding)
+            .map_err(Error::BadInput)?;
     if options.create_database {
-        let row: Option<Row> = conn.query_first(format!("SHOW CREATE DATABASE {}", crate::sql::quote_ident(database))).await?;
-        let sql = row.and_then(|row| row.get::<String, usize>(1)).unwrap_or_default();
-        let statement = crate::export::create_database_if_not_exists(&sql).map_err(Error::BadInput)?;
-        writer.write_sql(&format!("{statement};\n")).map_err(Error::BadInput)?;
+        let row: Option<Row> = conn
+            .query_first(format!(
+                "SHOW CREATE DATABASE {}",
+                crate::sql::quote_ident(database)
+            ))
+            .await?;
+        let sql = row
+            .and_then(|row| row.get::<String, usize>(1))
+            .unwrap_or_default();
+        let statement =
+            crate::export::create_database_if_not_exists(&sql).map_err(Error::BadInput)?;
+        writer
+            .write_sql(&format!("{statement};\n"))
+            .map_err(Error::BadInput)?;
     }
     // 不写 USE 的话，导入会落到当时选中的库，整库导出就导错地方
     writer
-        .write_sql(&format!("USE {};\nSET FOREIGN_KEY_CHECKS=0;\n\n", crate::sql::quote_ident(database)))
+        .write_sql(&format!(
+            "USE {};\nSET FOREIGN_KEY_CHECKS=0;\n\n",
+            crate::sql::quote_ident(database)
+        ))
         .map_err(Error::BadInput)?;
 
+    let mut written = 0u64;
     for table in tables {
         let table_type = type_of.get(table).expect("上面查过");
         let is_view = table_type == "VIEW" || table_type == "SYSTEM VIEW";
@@ -2070,7 +2116,7 @@ async fn dump_tables(
                 .map_err(Error::BadInput)?;
             continue;
         }
-        write_table_data(conn, &mut writer, database, table).await?;
+        write_table_data(conn, &mut writer, database, table, session_id, &mut written).await?;
     }
     writer
         .write_sql("SET FOREIGN_KEY_CHECKS=1;\n")
@@ -2101,6 +2147,8 @@ async fn write_table_data(
     writer: &mut crate::export::ExportWriter,
     database: &str,
     table: &str,
+    session_id: u64,
+    written: &mut u64,
 ) -> Result<()> {
     let sql = format!(
         "SELECT * FROM {}.{}",
@@ -2145,6 +2193,8 @@ async fn write_table_data(
             drop(result);
             return Err(Error::BadInput(err));
         }
+        *written += 1;
+        crate::progress::set_file_progress(session_id, *written, 0);
     }
     drop(result);
     Ok(())

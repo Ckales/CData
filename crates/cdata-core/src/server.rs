@@ -137,7 +137,10 @@ pub async fn read_processes(conn: &mut Conn, own_ids: &[u32]) -> Result<ProcessL
         1,
     )
     .await?;
-    let row = probe.rows.first().ok_or_else(|| Error::Mysql("读不到当前账号".to_string()))?;
+    let row = probe
+        .rows
+        .first()
+        .ok_or_else(|| Error::Mysql("读不到当前账号".to_string()))?;
     let has_process = matches!(row[1], CellValue::Int(1) | CellValue::UInt(1));
     // CURRENT_USER() 是 user@host，进程列表的 User 列只有 user
     let current_user = match &row[0] {
@@ -155,7 +158,8 @@ pub async fn read_processes(conn: &mut Conn, own_ids: &[u32]) -> Result<ProcessL
     // USER_PRIVILEGES 看不到经角色得到的权限，所以还要看列表里是不是真的只有自己的线程
     if !has_process && only_own {
         list.notice = Some(
-            "当前账号没有 PROCESS 权限，MySQL 只返回本账号自己的线程，别的账号的连接这里看不到".to_string(),
+            "当前账号没有 PROCESS 权限，MySQL 只返回本账号自己的线程，别的账号的连接这里看不到"
+                .to_string(),
         );
     }
     Ok(list)
@@ -192,7 +196,11 @@ async fn list_processes(conn: &mut Conn, own_ids: &[u32]) -> Result<ProcessList>
             is_own: own_ids.iter().any(|own| u64::from(*own) == thread_id),
         });
     }
-    Ok(ProcessList { processes, truncated: result.truncated, notice: None })
+    Ok(ProcessList {
+        processes,
+        truncated: result.truncated,
+        notice: None,
+    })
 }
 
 /// KILL 一个线程。
@@ -200,7 +208,12 @@ async fn list_processes(conn: &mut Conn, own_ids: &[u32]) -> Result<ProcessList>
 /// 拦三种情况：CData 自己的连接；线程已经不在；和用户确认时看到的不是同一个
 /// （账号、来源变了，或者 KILL QUERY 时它已经在跑另一条语句）—— 进程列表是几秒前的快照，
 /// 按旧快照 KILL QUERY 可能停掉一条用户根本没看到的语句
-pub async fn kill(conn: &mut Conn, target: &ProcessInfo, mode: KillMode, own_ids: &[u32]) -> Result<()> {
+pub async fn kill(
+    conn: &mut Conn,
+    target: &ProcessInfo,
+    mode: KillMode,
+    own_ids: &[u32],
+) -> Result<()> {
     if own_ids.iter().any(|own| u64::from(*own) == target.id) {
         return Err(Error::BadInput(format!(
             "线程 {} 是 CData 自己正在用的连接，不能在这里 KILL：会打断本工具的查询，或让连接池里的连接失效",
@@ -209,8 +222,15 @@ pub async fn kill(conn: &mut Conn, target: &ProcessInfo, mode: KillMode, own_ids
     }
 
     let current = list_processes(conn, own_ids).await?;
-    let Some(now) = current.processes.iter().find(|process| process.id == target.id) else {
-        return Err(Error::BadInput(format!("线程 {} 已经不在进程列表里（可能已经结束），没有 KILL", target.id)));
+    let Some(now) = current
+        .processes
+        .iter()
+        .find(|process| process.id == target.id)
+    else {
+        return Err(Error::BadInput(format!(
+            "线程 {} 已经不在进程列表里（可能已经结束），没有 KILL",
+            target.id
+        )));
     };
     if now.user != target.user || now.host != target.host {
         return Err(Error::BadInput(format!(
@@ -225,16 +245,20 @@ pub async fn kill(conn: &mut Conn, target: &ProcessInfo, mode: KillMode, own_ids
         )));
     }
 
-    conn.query_drop(kill_sql(target.id, mode)).await.map_err(|err| match err {
-        mysql_async::Error::Server(ref server) if server.code == ER_KILL_DENIED => Error::Mysql(format!(
-            "{}。KILL 别的账号的线程需要 CONNECTION_ADMIN（或 SUPER）权限",
-            server.message
-        )),
-        mysql_async::Error::Server(ref server) if server.code == ER_NO_SUCH_THREAD => {
-            Error::BadInput(format!("线程 {} 已经结束了", target.id))
-        }
-        other => Error::from(other),
-    })
+    conn.query_drop(kill_sql(target.id, mode))
+        .await
+        .map_err(|err| match err {
+            mysql_async::Error::Server(ref server) if server.code == ER_KILL_DENIED => {
+                Error::Mysql(format!(
+                    "{}。KILL 别的账号的线程需要 CONNECTION_ADMIN（或 SUPER）权限",
+                    server.message
+                ))
+            }
+            mysql_async::Error::Server(ref server) if server.code == ER_NO_SUCH_THREAD => {
+                Error::BadInput(format!("线程 {} 已经结束了", target.id))
+            }
+            other => Error::from(other),
+        })
 }
 
 /// id 是整数，直接写进语句没有注入的余地
@@ -251,11 +275,17 @@ pub async fn read_variables(conn: &mut Conn, scope: VariableScope) -> Result<Var
         VariableScope::Session => "SHOW SESSION VARIABLES",
     };
     let result = read_result(conn, statement, Vec::new(), MAX_ROWS).await?;
-    Ok(VariableList { variables: name_values(&result, statement)?, truncated: result.truncated })
+    Ok(VariableList {
+        variables: name_values(&result, statement)?,
+        truncated: result.truncated,
+    })
 }
 
 /// SHOW GLOBAL STATUS，和上一次的快照比出差值和每秒增量
-pub async fn read_status(conn: &mut Conn, previous: Option<&StatusSnapshot>) -> Result<StatusSnapshot> {
+pub async fn read_status(
+    conn: &mut Conn,
+    previous: Option<&StatusSnapshot>,
+) -> Result<StatusSnapshot> {
     let statement = "SHOW GLOBAL STATUS";
     let result = read_result(conn, statement, Vec::new(), MAX_ROWS).await?;
     let taken_at_ms = now_ms();
@@ -293,22 +323,35 @@ pub fn compare_status(
     for variable in current {
         let mut delta = None;
         let mut rate = None;
-        if let (Some(now), Some(then)) = (counter_number(&variable.value), before.get(variable.name.as_str())) {
+        if let (Some(now), Some(then)) = (
+            counter_number(&variable.value),
+            before.get(variable.name.as_str()),
+        ) {
             let diff = now - then;
-            delta = Some(if diff > 0 { format!("+{diff}") } else { diff.to_string() });
+            delta = Some(if diff > 0 {
+                format!("+{diff}")
+            } else {
+                diff.to_string()
+            });
             // 计数器变小说明被 FLUSH STATUS 重置过，算不出每秒
             if diff >= 0 && elapsed_ms > 0 && !is_gauge(&variable.name) {
                 rate = Some(format!("{:.1}/s", diff as f64 * 1000.0 / elapsed_ms as f64));
             }
         }
-        counters.push(StatusCounter { name: variable.name, value: variable.value, delta, rate });
+        counters.push(StatusCounter {
+            name: variable.name,
+            value: variable.value,
+            delta,
+            rate,
+        });
     }
     counters
 }
 
 /// 状态值是不是非负整数。别的（ON、版本号、小数）不算差值
 fn counter_number(value: &DisplayCell) -> Option<i128> {
-    if value.placeholder || value.text.is_empty() || !value.text.bytes().all(|b| b.is_ascii_digit()) {
+    if value.placeholder || value.text.is_empty() || !value.text.bytes().all(|b| b.is_ascii_digit())
+    {
         return None;
     }
     value.text.parse().ok()
@@ -375,10 +418,20 @@ pub fn slow_log_config_from(variables: &[Variable]) -> Result<SlowLogConfig> {
             log_output.text, slow_query_log_file.text
         ))
     } else {
-        Some(format!("log_output = {}：慢日志不写到任何地方", log_output.text))
+        Some(format!(
+            "log_output = {}：慢日志不写到任何地方",
+            log_output.text
+        ))
     };
 
-    Ok(SlowLogConfig { slow_query_log, log_output, long_query_time, slow_query_log_file, enabled, table_unavailable })
+    Ok(SlowLogConfig {
+        slow_query_log,
+        log_output,
+        long_query_time,
+        slow_query_log_file,
+        enabled,
+        table_unavailable,
+    })
 }
 
 /// 从 mysql.slow_log 读最近 limit 条。log_output 不含 TABLE 时拒绝并说明日志在哪
@@ -432,7 +485,9 @@ pub fn build_set_variable(
     no_backslash_escapes: bool,
 ) -> std::result::Result<String, String> {
     if !is_variable_name(name) {
-        return Err(format!("变量名 {name} 不合法：只能是字母、数字、下划线，组件变量可以带一个点"));
+        return Err(format!(
+            "变量名 {name} 不合法：只能是字母、数字、下划线，组件变量可以带一个点"
+        ));
     }
     let keyword = match scope {
         VariableScope::Global => "GLOBAL",
@@ -489,19 +544,32 @@ pub async fn plan_set_global(conn: &mut Conn, name: &str, value: &str) -> Result
 
 /// 执行预览过的 SET GLOBAL，返回服务器实际存下的新值。
 /// 在执行的这条连接上按它的 sql_mode 重新生成，和预览时的语句不一致就不执行
-pub async fn apply_set_global(conn: &mut Conn, name: &str, value: &str, previewed: &str) -> Result<DisplayCell> {
+pub async fn apply_set_global(
+    conn: &mut Conn,
+    name: &str,
+    value: &str,
+    previewed: &str,
+) -> Result<DisplayCell> {
     let statement = set_global_on(conn, name, value).await?;
     if statement != previewed {
-        return Err(Error::BadInput("要执行的语句和预览时不一样了（sql_mode 变了），请重新预览".to_string()));
+        return Err(Error::BadInput(
+            "要执行的语句和预览时不一样了（sql_mode 变了），请重新预览".to_string(),
+        ));
     }
     conn.query_drop(&statement).await?;
     global_value(conn, name).await
 }
 
 async fn set_global_on(conn: &mut Conn, name: &str, value: &str) -> Result<String> {
-    let sql_mode: String = conn.query_first("SELECT @@SESSION.sql_mode").await?.unwrap_or_default();
-    let no_backslash_escapes = sql_mode.split(',').any(|mode| mode == "NO_BACKSLASH_ESCAPES");
-    build_set_variable(VariableScope::Global, name, value, no_backslash_escapes).map_err(Error::BadInput)
+    let sql_mode: String = conn
+        .query_first("SELECT @@SESSION.sql_mode")
+        .await?
+        .unwrap_or_default();
+    let no_backslash_escapes = sql_mode
+        .split(',')
+        .any(|mode| mode == "NO_BACKSLASH_ESCAPES");
+    build_set_variable(VariableScope::Global, name, value, no_backslash_escapes)
+        .map_err(Error::BadInput)
 }
 
 /// 用 = 而不是 LIKE 找：LIKE 里的 _ 是通配符，会匹配到别的变量
@@ -511,7 +579,9 @@ async fn global_value(conn: &mut Conn, name: &str) -> Result<DisplayCell> {
     let variables = name_values(&result, statement)?;
     match variables.into_iter().next() {
         Some(variable) => Ok(variable.value),
-        None => Err(Error::BadInput(format!("服务器上没有全局变量 {name}（只有会话级的变量不能 SET GLOBAL）"))),
+        None => Err(Error::BadInput(format!(
+            "服务器上没有全局变量 {name}（只有会话级的变量不能 SET GLOBAL）"
+        ))),
     }
 }
 
@@ -522,9 +592,15 @@ fn name_values(result: &ResultSet, statement: &str) -> Result<Vec<Variable>> {
     let mut variables = Vec::with_capacity(result.rows.len());
     for row in &result.rows {
         let CellValue::Text(variable_name) = &row[name] else {
-            return Err(Error::Mysql(format!("{statement} 返回的变量名不是文本：{:?}", row[name])));
+            return Err(Error::Mysql(format!(
+                "{statement} 返回的变量名不是文本：{:?}",
+                row[name]
+            )));
         };
-        variables.push(Variable { name: variable_name.clone(), value: display_cell(&row[value]) });
+        variables.push(Variable {
+            name: variable_name.clone(),
+            value: display_cell(&row[value]),
+        });
     }
     Ok(variables)
 }
@@ -542,16 +618,24 @@ mod tests {
     use super::*;
 
     fn text(value: &str) -> DisplayCell {
-        DisplayCell { text: value.to_string(), placeholder: false }
+        DisplayCell {
+            text: value.to_string(),
+            placeholder: false,
+        }
     }
 
     fn variable(name: &str, value: &str) -> Variable {
-        Variable { name: name.to_string(), value: text(value) }
+        Variable {
+            name: name.to_string(),
+            value: text(value),
+        }
     }
 
     #[test]
     fn numbers_go_bare_and_everything_else_is_quoted() {
-        let global = |value| build_set_variable(VariableScope::Global, "long_query_time", value, false).unwrap();
+        let global = |value| {
+            build_set_variable(VariableScope::Global, "long_query_time", value, false).unwrap()
+        };
         assert_eq!(global("2"), "SET GLOBAL long_query_time = 2");
         assert_eq!(global("0.5"), "SET GLOBAL long_query_time = 0.5");
         assert_eq!(global("-1"), "SET GLOBAL long_query_time = -1");
@@ -559,22 +643,45 @@ mod tests {
         assert_eq!(global("1e3"), "SET GLOBAL long_query_time = '1e3'");
         assert_eq!(global("1."), "SET GLOBAL long_query_time = '1.'");
         assert_eq!(global(""), "SET GLOBAL long_query_time = ''");
-        assert_eq!(global("2; DROP TABLE t"), "SET GLOBAL long_query_time = '2; DROP TABLE t'");
+        assert_eq!(
+            global("2; DROP TABLE t"),
+            "SET GLOBAL long_query_time = '2; DROP TABLE t'"
+        );
     }
 
     #[test]
     fn string_values_follow_no_backslash_escapes() {
-        let with = build_set_variable(VariableScope::Session, "init_connect", r"it's C:\x", false).unwrap();
+        let with = build_set_variable(VariableScope::Session, "init_connect", r"it's C:\x", false)
+            .unwrap();
         assert_eq!(with, r"SET SESSION init_connect = 'it''s C:\\x'");
-        let without = build_set_variable(VariableScope::Session, "init_connect", r"it's C:\x", true).unwrap();
+        let without =
+            build_set_variable(VariableScope::Session, "init_connect", r"it's C:\x", true).unwrap();
         assert_eq!(without, r"SET SESSION init_connect = 'it''s C:\x'");
     }
 
     #[test]
     fn variable_names_are_validated_not_quoted() {
-        assert!(build_set_variable(VariableScope::Global, "validate_password.length", "8", false).is_ok());
-        for bad in ["", "a b", "x=1;", "`x`", "a.b.c", ".a", "1abc", "max_connections--"] {
-            assert!(build_set_variable(VariableScope::Global, bad, "1", false).is_err(), "{bad}");
+        assert!(build_set_variable(
+            VariableScope::Global,
+            "validate_password.length",
+            "8",
+            false
+        )
+        .is_ok());
+        for bad in [
+            "",
+            "a b",
+            "x=1;",
+            "`x`",
+            "a.b.c",
+            ".a",
+            "1abc",
+            "max_connections--",
+        ] {
+            assert!(
+                build_set_variable(VariableScope::Global, bad, "1", false).is_err(),
+                "{bad}"
+            );
         }
     }
 
@@ -600,7 +707,10 @@ mod tests {
             ),
             truncated: false,
         };
-        assert!(first.counters.iter().all(|counter| counter.delta.is_none() && counter.rate.is_none()));
+        assert!(first
+            .counters
+            .iter()
+            .all(|counter| counter.delta.is_none() && counter.rate.is_none()));
 
         let second = compare_status(
             Some(&first),
@@ -625,9 +735,15 @@ mod tests {
 
     #[test]
     fn placeholders_are_not_numbers() {
-        let null = DisplayCell { text: "NULL".to_string(), placeholder: true };
+        let null = DisplayCell {
+            text: "NULL".to_string(),
+            placeholder: true,
+        };
         assert_eq!(counter_number(&null), None);
-        assert_eq!(counter_number(&text("18446744073709551615")), Some(18446744073709551615));
+        assert_eq!(
+            counter_number(&text("18446744073709551615")),
+            Some(18446744073709551615)
+        );
     }
 
     fn slow_config(output: &str) -> SlowLogConfig {
@@ -650,7 +766,10 @@ mod tests {
 
         assert!(slow_config("FILE,TABLE").table_unavailable.is_none());
         assert!(slow_config("TABLE").table_unavailable.is_none());
-        assert!(slow_config("NONE").table_unavailable.unwrap().contains("不写到任何地方"));
+        assert!(slow_config("NONE")
+            .table_unavailable
+            .unwrap()
+            .contains("不写到任何地方"));
     }
 
     #[test]

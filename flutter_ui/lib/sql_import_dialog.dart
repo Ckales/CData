@@ -1,8 +1,10 @@
+import 'dart:async';
+
 import 'package:file_selector/file_selector.dart' show XTypeGroup, openFile;
 import 'package:flutter/material.dart';
 
 import 'mac_widgets.dart';
-import 'src/rust/api/db.dart' show ExportEncoding;
+import 'src/rust/api/db.dart' show ExportEncoding, FileProgress, fileProgress;
 import 'src/rust/api/editor.dart' show SqlImportSummary, importSqlFile;
 
 /// 返回是否开始过执行，调用方据此刷新库表与当前结果。
@@ -59,11 +61,19 @@ class _SqlImportDialogState extends State<_SqlImportDialog> {
   String? _error;
   bool _running = false;
   bool _attempted = false;
+  FileProgress? _progress;
+  Timer? _poll;
 
   @override
   void initState() {
     super.initState();
     _path = widget.initialPath;
+  }
+
+  @override
+  void dispose() {
+    _poll?.cancel();
+    super.dispose();
   }
 
   Future<void> _pick() async {
@@ -81,7 +91,11 @@ class _SqlImportDialogState extends State<_SqlImportDialog> {
     setState(() {
       _running = true;
       _error = null;
+      _progress = null;
     });
+    _poll?.cancel();
+    _poll = Timer.periodic(const Duration(milliseconds: 300), (_) => _tick());
+    _tick();
     try {
       final summary = await importSqlFile(
         sessionId: widget.sessionId,
@@ -97,8 +111,27 @@ class _SqlImportDialogState extends State<_SqlImportDialog> {
     } catch (e) {
       if (mounted) setState(() => _error = '$e');
     } finally {
+      _poll?.cancel();
       if (mounted) setState(() => _running = false);
     }
+  }
+
+  void _tick() {
+    fileProgress(sessionId: widget.sessionId).then((progress) {
+      if (mounted && _running) setState(() => _progress = progress);
+    });
+  }
+
+  double? _barValue(FileProgress? progress) {
+    final total = progress?.total ?? BigInt.zero;
+    if (total == BigInt.zero) return null;
+    return progress!.done.toDouble() / total.toDouble();
+  }
+
+  String _progressLabel(FileProgress? progress) {
+    final total = progress?.total ?? BigInt.zero;
+    if (total == BigInt.zero) return '正在读取文件…';
+    return '已执行 ${progress!.done} / $total 条';
   }
 
   @override
@@ -199,12 +232,12 @@ class _SqlImportDialogState extends State<_SqlImportDialog> {
                           _section(
                             icon: Icons.sync,
                             title: '正在执行',
-                            child: const Column(
+                            child: Column(
                               crossAxisAlignment: CrossAxisAlignment.stretch,
                               children: [
-                                LinearProgressIndicator(),
-                                SizedBox(height: 6),
-                                Text('正在执行，请等待结果…'),
+                                LinearProgressIndicator(value: _barValue(_progress)),
+                                const SizedBox(height: 6),
+                                Text(_progressLabel(_progress)),
                               ],
                             ),
                           ),

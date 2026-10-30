@@ -33,23 +33,159 @@ pub struct SqlToken {
 
 /// 高亮用的关键字。只放保留字和类型名，`status`、`name` 这类常见列名不算
 pub const KEYWORDS: &[&str] = &[
-    "ADD", "ALL", "ALTER", "AND", "AS", "ASC", "AUTO_INCREMENT", "BETWEEN", "BIGINT", "BINARY",
-    "BIT", "BLOB", "BOOL", "BOOLEAN", "BY", "CALL", "CASCADE", "CASE", "CAST", "CHANGE", "CHAR",
-    "CHARACTER", "CHECK", "COLLATE", "COLUMN", "CONSTRAINT", "CONVERT", "CREATE", "CROSS",
-    "CURRENT_DATE", "CURRENT_TIME", "CURRENT_TIMESTAMP", "DATABASE", "DATABASES", "DATE",
-    "DATETIME", "DECIMAL", "DECLARE", "DEFAULT", "DELETE", "DESC", "DESCRIBE", "DISTINCT", "DIV",
-    "DOUBLE", "DROP", "DUPLICATE", "ELSE", "ELSEIF", "END", "ENUM", "ESCAPE", "EXISTS", "EXPLAIN",
-    "FALSE", "FLOAT", "FOR", "FOREIGN", "FROM", "FULLTEXT", "FUNCTION", "GRANT", "GROUP", "HAVING",
-    "IF", "IGNORE", "IN", "INDEX", "INNER", "INSERT", "INT", "INTEGER", "INTERVAL", "INTO", "IS",
-    "JOIN", "JSON", "KEY", "KEYS", "LEFT", "LIKE", "LIMIT", "LOCK", "LONGBLOB", "LONGTEXT",
-    "MEDIUMBLOB", "MEDIUMINT", "MEDIUMTEXT", "MOD", "MODIFY", "NATURAL", "NOT", "NULL", "NUMERIC",
-    "OFFSET", "ON", "OR", "ORDER", "OUTER", "OVER", "PARTITION", "PRIMARY", "PROCEDURE", "RANGE",
-    "RECURSIVE", "REFERENCES", "REGEXP", "RENAME", "REPLACE", "RETURN", "RETURNS", "REVOKE",
-    "RIGHT", "RLIKE", "ROLLBACK", "ROW", "ROWS", "SCHEMA", "SELECT", "SET", "SHOW", "SIGNED",
-    "SMALLINT", "TABLE", "TABLES", "TEXT", "THEN", "TIME", "TIMESTAMP", "TINYBLOB", "TINYINT",
-    "TINYTEXT", "TO", "TRIGGER", "TRUE", "TRUNCATE", "UNION", "UNIQUE", "UNSIGNED", "UPDATE", "USE",
-    "USING", "VALUES", "VARBINARY", "VARCHAR", "VIEW", "WHEN", "WHERE", "WINDOW", "WITH", "XOR",
-    "YEAR", "ZEROFILL",
+    "ADD",
+    "ALL",
+    "ALTER",
+    "AND",
+    "AS",
+    "ASC",
+    "AUTO_INCREMENT",
+    "BETWEEN",
+    "BIGINT",
+    "BINARY",
+    "BIT",
+    "BLOB",
+    "BOOL",
+    "BOOLEAN",
+    "BY",
+    "CALL",
+    "CASCADE",
+    "CASE",
+    "CAST",
+    "CHANGE",
+    "CHAR",
+    "CHARACTER",
+    "CHECK",
+    "COLLATE",
+    "COLUMN",
+    "CONSTRAINT",
+    "CONVERT",
+    "CREATE",
+    "CROSS",
+    "CURRENT_DATE",
+    "CURRENT_TIME",
+    "CURRENT_TIMESTAMP",
+    "DATABASE",
+    "DATABASES",
+    "DATE",
+    "DATETIME",
+    "DECIMAL",
+    "DECLARE",
+    "DEFAULT",
+    "DELETE",
+    "DESC",
+    "DESCRIBE",
+    "DISTINCT",
+    "DIV",
+    "DOUBLE",
+    "DROP",
+    "DUPLICATE",
+    "ELSE",
+    "ELSEIF",
+    "END",
+    "ENUM",
+    "ESCAPE",
+    "EXISTS",
+    "EXPLAIN",
+    "FALSE",
+    "FLOAT",
+    "FOR",
+    "FOREIGN",
+    "FROM",
+    "FULLTEXT",
+    "FUNCTION",
+    "GRANT",
+    "GROUP",
+    "HAVING",
+    "IF",
+    "IGNORE",
+    "IN",
+    "INDEX",
+    "INNER",
+    "INSERT",
+    "INT",
+    "INTEGER",
+    "INTERVAL",
+    "INTO",
+    "IS",
+    "JOIN",
+    "JSON",
+    "KEY",
+    "KEYS",
+    "LEFT",
+    "LIKE",
+    "LIMIT",
+    "LOCK",
+    "LONGBLOB",
+    "LONGTEXT",
+    "MEDIUMBLOB",
+    "MEDIUMINT",
+    "MEDIUMTEXT",
+    "MOD",
+    "MODIFY",
+    "NATURAL",
+    "NOT",
+    "NULL",
+    "NUMERIC",
+    "OFFSET",
+    "ON",
+    "OR",
+    "ORDER",
+    "OUTER",
+    "OVER",
+    "PARTITION",
+    "PRIMARY",
+    "PROCEDURE",
+    "RANGE",
+    "RECURSIVE",
+    "REFERENCES",
+    "REGEXP",
+    "RENAME",
+    "REPLACE",
+    "RETURN",
+    "RETURNS",
+    "REVOKE",
+    "RIGHT",
+    "RLIKE",
+    "ROLLBACK",
+    "ROW",
+    "ROWS",
+    "SCHEMA",
+    "SELECT",
+    "SET",
+    "SHOW",
+    "SIGNED",
+    "SMALLINT",
+    "TABLE",
+    "TABLES",
+    "TEXT",
+    "THEN",
+    "TIME",
+    "TIMESTAMP",
+    "TINYBLOB",
+    "TINYINT",
+    "TINYTEXT",
+    "TO",
+    "TRIGGER",
+    "TRUE",
+    "TRUNCATE",
+    "UNION",
+    "UNIQUE",
+    "UNSIGNED",
+    "UPDATE",
+    "USE",
+    "USING",
+    "VALUES",
+    "VARBINARY",
+    "VARCHAR",
+    "VIEW",
+    "WHEN",
+    "WHERE",
+    "WINDOW",
+    "WITH",
+    "XOR",
+    "YEAR",
+    "ZEROFILL",
 ];
 
 pub fn is_keyword(word: &str) -> bool {
@@ -83,7 +219,13 @@ pub fn tokenize(sql: &str) -> Vec<SqlToken> {
         let kind = if ch.is_whitespace() {
             i += 1;
             continue;
-        } else if ch == '#' || (ch == '-' && next == Some('-') && chars.get(i + 2).is_none_or(|c| c.is_whitespace() || c.is_control())) {
+        } else if ch == '#'
+            || (ch == '-'
+                && next == Some('-')
+                && chars
+                    .get(i + 2)
+                    .is_none_or(|c| c.is_whitespace() || c.is_control()))
+        {
             // MySQL 的 -- 注释后面必须跟空白，`--1` 是两个减号
             while i < chars.len() && chars[i] != '\n' {
                 i += 1;
@@ -144,7 +286,11 @@ pub fn tokenize(sql: &str) -> Vec<SqlToken> {
             SqlTokenKind::Operator
         };
 
-        tokens.push(SqlToken { kind, start: offsets[start], end: offsets[i] });
+        tokens.push(SqlToken {
+            kind,
+            start: offsets[start],
+            end: offsets[i],
+        });
     }
     tokens
 }
@@ -214,7 +360,9 @@ mod tests {
         let units: Vec<u16> = sql.encode_utf16().collect();
         let mut out = Vec::new();
         for token in tokenize(sql) {
-            let text = std::string::String::from_utf16(&units[token.start as usize..token.end as usize]).unwrap();
+            let text =
+                std::string::String::from_utf16(&units[token.start as usize..token.end as usize])
+                    .unwrap();
             out.push((token.kind, text));
         }
         out
@@ -279,15 +427,32 @@ mod tests {
 
     #[test]
     fn unterminated_string_runs_to_the_end_instead_of_failing() {
-        assert_eq!(pieces("select 'abc"), vec![(Keyword, "select".into()), (String, "'abc".into())]);
+        assert_eq!(
+            pieces("select 'abc"),
+            vec![(Keyword, "select".into()), (String, "'abc".into())]
+        );
     }
 
     #[test]
     fn offsets_are_utf16_units() {
         // 😀 占两个 UTF-16 单位，中文各占一个
         let tokens = tokenize("'😀中' x");
-        assert_eq!(tokens[0], SqlToken { kind: String, start: 0, end: 5 });
-        assert_eq!(tokens[1], SqlToken { kind: Identifier, start: 6, end: 7 });
+        assert_eq!(
+            tokens[0],
+            SqlToken {
+                kind: String,
+                start: 0,
+                end: 5
+            }
+        );
+        assert_eq!(
+            tokens[1],
+            SqlToken {
+                kind: Identifier,
+                start: 6,
+                end: 7
+            }
+        );
     }
 
     #[test]

@@ -337,20 +337,32 @@ class _TableSidebarState extends State<TableSidebar> {
     final int written;
     try {
       if (dump != null) {
-        written = await widget.source.exportSqlDump(
-          database,
-          dump.tables,
-          path,
-          SqlDumpOptions(
-            encoding: choice.options.encoding,
-            createDatabase: dump.createDatabase,
-            dropTable: dump.dropTable,
-            createTable: dump.createTable,
-            includeData: dump.includeData,
+        written = await runWithFileProgress(
+          context,
+          title: '正在导出',
+          subtitle: label,
+          readProgress: widget.source.fileProgress,
+          work: () => widget.source.exportSqlDump(
+            database,
+            dump.tables,
+            path,
+            SqlDumpOptions(
+              encoding: choice.options.encoding,
+              createDatabase: dump.createDatabase,
+              dropTable: dump.dropTable,
+              createTable: dump.createTable,
+              includeData: dump.includeData,
+            ),
           ),
         );
       } else {
-        written = await widget.source.exportTable(database, csvTable, path, choice.options);
+        written = await runWithFileProgress(
+          context,
+          title: '正在导出',
+          subtitle: label,
+          readProgress: widget.source.fileProgress,
+          work: () => widget.source.exportTable(database, csvTable, path, choice.options),
+        );
       }
     } catch (e) {
       if (mounted) setState(() => _error = '导出 $label 失败：$e');

@@ -92,7 +92,10 @@ mod tests {
     }
 
     fn layout(name: &str, width: f64) -> ColumnLayout {
-        ColumnLayout { name: name.to_string(), width }
+        ColumnLayout {
+            name: name.to_string(),
+            width,
+        }
     }
 
     #[test]
@@ -116,14 +119,29 @@ mod tests {
 
         assert!(load("s/shop.orders").unwrap().is_empty(), "没记过是空列表");
 
-        save("s/shop.orders", vec![layout("id", 80.0), layout("name", 200.0), layout("note", 300.0)])
-            .unwrap();
+        save(
+            "s/shop.orders",
+            vec![
+                layout("id", 80.0),
+                layout("name", 200.0),
+                layout("note", 300.0),
+            ],
+        )
+        .unwrap();
         // 这次只查了两列，还换了顺序
-        save("s/shop.orders", vec![layout("name", 250.0), layout("id", 90.0)]).unwrap();
+        save(
+            "s/shop.orders",
+            vec![layout("name", 250.0), layout("id", 90.0)],
+        )
+        .unwrap();
 
         assert_eq!(
             load("s/shop.orders").unwrap(),
-            vec![layout("name", 250.0), layout("id", 90.0), layout("note", 300.0)]
+            vec![
+                layout("name", 250.0),
+                layout("id", 90.0),
+                layout("note", 300.0)
+            ]
         );
         // 别的表不受影响
         assert!(load("s/shop.users").unwrap().is_empty());

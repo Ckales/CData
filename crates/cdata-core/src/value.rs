@@ -40,9 +40,9 @@ pub fn cell_from_value(value: Value, is_binary_column: bool) -> CellValue {
         Value::Date(year, month, day, hour, min, sec, micros) => {
             CellValue::Text(format_datetime(year, month, day, hour, min, sec, micros))
         }
-        Value::Time(is_negative, days, hours, minutes, seconds, micros) => {
-            CellValue::Text(format_time(is_negative, days, hours, minutes, seconds, micros))
-        }
+        Value::Time(is_negative, days, hours, minutes, seconds, micros) => CellValue::Text(
+            format_time(is_negative, days, hours, minutes, seconds, micros),
+        ),
     }
 }
 
@@ -59,7 +59,15 @@ fn bytes_to_cell(bytes: Vec<u8>, is_binary_column: bool) -> CellValue {
 }
 
 /// 按 MySQL 的字面形式格式化，零日期 0000-00-00 必须原样保留
-fn format_datetime(year: u16, month: u8, day: u8, hour: u8, min: u8, sec: u8, micros: u32) -> String {
+fn format_datetime(
+    year: u16,
+    month: u8,
+    day: u8,
+    hour: u8,
+    min: u8,
+    sec: u8,
+    micros: u32,
+) -> String {
     let date = format!("{:04}-{:02}-{:02}", year, month, day);
 
     // DATE 列没有时间部分，MySQL 给的是全零
@@ -75,7 +83,14 @@ fn format_datetime(year: u16, month: u8, day: u8, hour: u8, min: u8, sec: u8, mi
 }
 
 /// TIME 的范围是 ±838:59:59，天数要折算进小时
-fn format_time(is_negative: bool, days: u32, hours: u8, minutes: u8, seconds: u8, micros: u32) -> String {
+fn format_time(
+    is_negative: bool,
+    days: u32,
+    hours: u8,
+    minutes: u8,
+    seconds: u8,
+    micros: u32,
+) -> String {
     let total_hours = days * 24 + hours as u32;
     let sign = if is_negative { "-" } else { "" };
 
@@ -166,8 +181,14 @@ pub struct DisplayCell {
 }
 
 pub fn display_cell(value: &CellValue) -> DisplayCell {
-    let placeholder = matches!(value, CellValue::Null | CellValue::Bytes(_) | CellValue::InvalidText(_));
-    DisplayCell { text: display_text(value), placeholder }
+    let placeholder = matches!(
+        value,
+        CellValue::Null | CellValue::Bytes(_) | CellValue::InvalidText(_)
+    );
+    DisplayCell {
+        text: display_text(value),
+        placeholder,
+    }
 }
 
 /// 二进制内容的十六进制视图：偏移、16 字节一行、可打印 ASCII。
@@ -184,13 +205,21 @@ pub fn hex_dump(bytes: &[u8], limit: usize) -> String {
                 hex.push(' ');
             }
             hex.push_str(&format!("{byte:02X} "));
-            ascii.push(if byte.is_ascii_graphic() || *byte == b' ' { *byte as char } else { '.' });
+            ascii.push(if byte.is_ascii_graphic() || *byte == b' ' {
+                *byte as char
+            } else {
+                '.'
+            });
         }
         lines.push(format!("{:08X}  {hex:<49} {ascii}", line_index * 16));
     }
 
     if bytes.len() > shown.len() {
-        lines.push(format!("…… 只显示前 {} 字节，共 {} 字节", shown.len(), bytes.len()));
+        lines.push(format!(
+            "…… 只显示前 {} 字节，共 {} 字节",
+            shown.len(),
+            bytes.len()
+        ));
     }
     lines.join("\n")
 }
@@ -242,7 +271,10 @@ mod tests {
     fn unsigned_bigint_beyond_i64_survives() {
         // 18446744073709551615 塞进 i64 会溢出，必须走 UInt
         let max = u64::MAX;
-        assert_eq!(cell_from_value(Value::UInt(max), false), CellValue::UInt(max));
+        assert_eq!(
+            cell_from_value(Value::UInt(max), false),
+            CellValue::UInt(max)
+        );
     }
 
     #[test]
@@ -304,19 +336,46 @@ mod tests {
 
     #[test]
     fn time_accepts_durations_beyond_a_day_and_negative() {
-        for ok in ["00:00:00", "-838:59:59", "838:59:59", "838:59:59.000000", "100:00:00.5", "-0:00:00.000001", "8:05:09"] {
+        for ok in [
+            "00:00:00",
+            "-838:59:59",
+            "838:59:59",
+            "838:59:59.000000",
+            "100:00:00.5",
+            "-0:00:00.000001",
+            "8:05:09",
+        ] {
             assert_eq!(check_time_text(ok, 6), Ok(()), "{ok}");
         }
     }
 
     #[test]
     fn time_refuses_other_shapes_and_out_of_range() {
-        for bad in ["", "-", "12:30", "1 12:00:00", "123000", " 12:00:00", "12:0:00", "1000:00:00", "12:00:00.", "12:00:00.1234567", "12:00:00.1a", "+12:00:00"] {
+        for bad in [
+            "",
+            "-",
+            "12:30",
+            "1 12:00:00",
+            "123000",
+            " 12:00:00",
+            "12:0:00",
+            "1000:00:00",
+            "12:00:00.",
+            "12:00:00.1234567",
+            "12:00:00.1a",
+            "+12:00:00",
+        ] {
             assert!(check_time_text(bad, 6).is_err(), "{bad:?} 不该通过");
         }
-        assert!(check_time_text("12:60:00", 6).unwrap_err().contains("00–59"));
-        assert!(check_time_text("839:00:00", 6).unwrap_err().contains("范围"));
-        assert!(check_time_text("-838:59:59.5", 6).unwrap_err().contains("范围"));
+        assert!(check_time_text("12:60:00", 6)
+            .unwrap_err()
+            .contains("00–59"));
+        assert!(check_time_text("839:00:00", 6)
+            .unwrap_err()
+            .contains("范围"));
+        assert!(check_time_text("-838:59:59.5", 6)
+            .unwrap_err()
+            .contains("范围"));
     }
 
     #[test]
@@ -324,8 +383,12 @@ mod tests {
         // TIME(2)：二进制协议读回来总是 6 位，尾部补零不算多
         assert_eq!(check_time_text("12:00:00.500000", 2), Ok(()));
         assert_eq!(check_time_text("12:00:00.12", 2), Ok(()));
-        assert!(check_time_text("12:00:00.125", 2).unwrap_err().contains("只存 2 位"));
-        assert!(check_time_text("12:00:00.5", 0).unwrap_err().contains("不存小数秒"));
+        assert!(check_time_text("12:00:00.125", 2)
+            .unwrap_err()
+            .contains("只存 2 位"));
+        assert!(check_time_text("12:00:00.5", 0)
+            .unwrap_err()
+            .contains("不存小数秒"));
         // decimals = 31 是表达式列，不固定，按 6 位算
         assert_eq!(check_time_text("12:00:00.123456", 31), Ok(()));
     }
@@ -359,7 +422,10 @@ mod tests {
         assert!(!display_cell(&CellValue::Text("<二进制 12 字节>".into())).placeholder);
         assert!(display_cell(&CellValue::Bytes(vec![1])).placeholder);
         assert!(display_cell(&CellValue::InvalidText(vec![0xE9])).placeholder);
-        assert_eq!(display_text(&CellValue::Bytes(vec![0u8; 12])), "<二进制 12 字节>");
+        assert_eq!(
+            display_text(&CellValue::Bytes(vec![0u8; 12])),
+            "<二进制 12 字节>"
+        );
         assert_eq!(
             display_text(&CellValue::InvalidText(vec![0xE9, 0x42])),
             "<无法解码 2 字节>"
@@ -368,8 +434,14 @@ mod tests {
 
     #[test]
     fn display_keeps_exact_numbers() {
-        assert_eq!(display_text(&CellValue::UInt(u64::MAX)), "18446744073709551615");
-        assert_eq!(display_text(&CellValue::Text("1234567.89".into())), "1234567.89");
+        assert_eq!(
+            display_text(&CellValue::UInt(u64::MAX)),
+            "18446744073709551615"
+        );
+        assert_eq!(
+            display_text(&CellValue::Text("1234567.89".into())),
+            "1234567.89"
+        );
     }
 
     #[test]
@@ -408,8 +480,9 @@ mod tests {
 
     #[test]
     fn format_json_keeps_key_order_and_number_precision() {
-        let formatted = format_json(r#"{"z":1,"a":12345678901234567890.123456789,"m":[1.0,true,null]}"#)
-            .expect("应该能格式化");
+        let formatted =
+            format_json(r#"{"z":1,"a":12345678901234567890.123456789,"m":[1.0,true,null]}"#)
+                .expect("应该能格式化");
         assert_eq!(
             formatted,
             "{\n  \"z\": 1,\n  \"a\": 12345678901234567890.123456789,\n  \"m\": [\n    1.0,\n    true,\n    null\n  ]\n}"
@@ -425,7 +498,10 @@ mod tests {
     #[test]
     fn hex_dump_shows_offsets_and_ascii() {
         let dump = hex_dump(b"CData\x00\xFF", 1024);
-        assert_eq!(dump, "00000000  43 44 61 74 61 00 FF                              CData..");
+        assert_eq!(
+            dump,
+            "00000000  43 44 61 74 61 00 FF                              CData.."
+        );
     }
 
     #[test]

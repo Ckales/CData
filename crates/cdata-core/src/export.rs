@@ -68,7 +68,10 @@ pub(crate) fn create_database_if_not_exists(show_create: &str) -> Result<String,
     }
     const PREFIX: &str = "CREATE DATABASE";
     if upper.starts_with(PREFIX) {
-        return Ok(format!("CREATE DATABASE IF NOT EXISTS{}", &sql[PREFIX.len()..]));
+        return Ok(format!(
+            "CREATE DATABASE IF NOT EXISTS{}",
+            &sql[PREFIX.len()..]
+        ));
     }
     Err(format!("认不出的建库语句：{sql}"))
 }
@@ -99,7 +102,10 @@ pub fn write_file(
 }
 
 pub(crate) fn temp_path(path: &Path) -> PathBuf {
-    let mut name = path.file_name().map(|n| n.to_os_string()).unwrap_or_default();
+    let mut name = path
+        .file_name()
+        .map(|n| n.to_os_string())
+        .unwrap_or_default();
     name.push(".cdata-part");
     path.with_file_name(name)
 }
@@ -123,7 +129,11 @@ pub struct ExportWriter {
 }
 
 enum RowFormat {
-    Csv { delimiter: char, separator: String, null_text: String },
+    Csv {
+        delimiter: char,
+        separator: String,
+        null_text: String,
+    },
     /// head 是 `INSERT INTO … VALUES\n`，每 ROWS_PER_INSERT 行重复一次
     Sql { head: String },
 }
@@ -149,17 +159,31 @@ impl ExportWriter {
                 let mut delimiter_chars = options.delimiter.chars();
                 let delimiter = match (delimiter_chars.next(), delimiter_chars.next()) {
                     (Some(ch), None) => ch,
-                    _ => return Err(format!("分隔符必须是单个字符，现在是 {:?}", options.delimiter)),
+                    _ => {
+                        return Err(format!(
+                            "分隔符必须是单个字符，现在是 {:?}",
+                            options.delimiter
+                        ))
+                    }
                 };
-                RowFormat::Csv { delimiter, separator: delimiter.to_string(), null_text: options.null_text.clone() }
+                RowFormat::Csv {
+                    delimiter,
+                    separator: delimiter.to_string(),
+                    null_text: options.null_text.clone(),
+                }
             }
-            ExportFormat::SqlInsert => RowFormat::Sql { head: insert_head(columns, column_indexes, options)? },
+            ExportFormat::SqlInsert => RowFormat::Sql {
+                head: insert_head(columns, column_indexes, options)?,
+            },
         };
 
         let temp = temp_path(path);
         let file = File::create(&temp).map_err(|e| format!("创建文件失败：{e}"))?;
         let mut writer = ExportWriter {
-            out: Some(Encoder { writer: BufWriter::new(file), encoding: options.encoding }),
+            out: Some(Encoder {
+                writer: BufWriter::new(file),
+                encoding: options.encoding,
+            }),
             path: path.to_path_buf(),
             temp,
             column_indexes: column_indexes.to_vec(),
@@ -185,11 +209,16 @@ impl ExportWriter {
         let temp = temp_path(path);
         let file = File::create(&temp).map_err(|e| format!("创建文件失败：{e}"))?;
         let mut writer = ExportWriter {
-            out: Some(Encoder { writer: BufWriter::new(file), encoding }),
+            out: Some(Encoder {
+                writer: BufWriter::new(file),
+                encoding,
+            }),
             path: path.to_path_buf(),
             temp,
             column_indexes: Vec::new(),
-            format: RowFormat::Sql { head: String::new() },
+            format: RowFormat::Sql {
+                head: String::new(),
+            },
             rows: 0,
             batch_rows: 0,
             insert_open: false,
@@ -221,7 +250,11 @@ impl ExportWriter {
             names.push(quote_ident(name));
         }
         self.format = RowFormat::Sql {
-            head: format!("INSERT INTO {} ({}) VALUES\n", quote_ident(table), names.join(", ")),
+            head: format!(
+                "INSERT INTO {} ({}) VALUES\n",
+                quote_ident(table),
+                names.join(", ")
+            ),
         };
         self.column_indexes = (0..column_names.len()).collect();
         self.batch_rows = 0;
@@ -237,15 +270,25 @@ impl ExportWriter {
     }
 
     fn out(&mut self) -> &mut Encoder {
-        self.out.as_mut().expect("ExportWriter 在 finish 之后不能再写")
+        self.out
+            .as_mut()
+            .expect("ExportWriter 在 finish 之后不能再写")
     }
 
-    fn write_header(&mut self, columns: &[ColumnMeta], options: &ExportOptions) -> Result<(), String> {
+    fn write_header(
+        &mut self,
+        columns: &[ColumnMeta],
+        options: &ExportOptions,
+    ) -> Result<(), String> {
         if options.encoding == ExportEncoding::Utf8Bom {
             self.out().raw(&[0xEF, 0xBB, 0xBF])?;
         }
         match &self.format {
-            RowFormat::Csv { delimiter, separator, null_text } => {
+            RowFormat::Csv {
+                delimiter,
+                separator,
+                null_text,
+            } => {
                 if !options.header {
                     return Ok(());
                 }
@@ -276,7 +319,11 @@ impl ExportWriter {
     pub fn write_row(&mut self, row: &[CellValue]) -> Result<(), String> {
         let location = format!("第 {} 行", self.rows + 1);
         let line = match &self.format {
-            RowFormat::Csv { delimiter, separator, null_text } => {
+            RowFormat::Csv {
+                delimiter,
+                separator,
+                null_text,
+            } => {
                 let mut fields = Vec::with_capacity(self.column_indexes.len());
                 for &index in &self.column_indexes {
                     let field = match &row[index] {
@@ -328,7 +375,9 @@ impl ExportWriter {
                 tail.push_str(";\n");
                 self.insert_open = false;
             }
-            tail.push_str(&format!("\n-- 共 {rows} 行\nSET SESSION sql_mode = @CDATA_OLD_SQL_MODE;\n"));
+            tail.push_str(&format!(
+                "\n-- 共 {rows} 行\nSET SESSION sql_mode = @CDATA_OLD_SQL_MODE;\n"
+            ));
             self.out().text(&tail, "文件尾")?;
         }
         let mut out = self.out.take().expect("ExportWriter 只能 finish 一次");
@@ -348,7 +397,11 @@ impl Drop for ExportWriter {
 }
 
 /// INSERT 的头：目标表名和列名
-fn insert_head(columns: &[ColumnMeta], column_indexes: &[usize], options: &ExportOptions) -> Result<String, String> {
+fn insert_head(
+    columns: &[ColumnMeta],
+    column_indexes: &[usize],
+    options: &ExportOptions,
+) -> Result<String, String> {
     let table = if options.table_name.is_empty() {
         match crate::edit::single_source_table(columns) {
             Ok((_, table)) => table,
@@ -362,10 +415,18 @@ fn insert_head(columns: &[ColumnMeta], column_indexes: &[usize], options: &Expor
     let mut names = Vec::with_capacity(column_indexes.len());
     for &index in column_indexes {
         let column = &columns[index];
-        let name = if column.org_table == table { &column.org_name } else { &column.name };
+        let name = if column.org_table == table {
+            &column.org_name
+        } else {
+            &column.name
+        };
         names.push(quote_ident(name));
     }
-    Ok(format!("INSERT INTO {} ({}) VALUES\n", quote_ident(&table), names.join(", ")))
+    Ok(format!(
+        "INSERT INTO {} ({}) VALUES\n",
+        quote_ident(&table),
+        names.join(", ")
+    ))
 }
 
 /// 按目标编码写文本。GBK 表示不了的字符报错并带上位置，不替换成 ?
@@ -381,7 +442,9 @@ impl Encoder {
             ExportEncoding::Gbk => {
                 let (bytes, _, had_errors) = encoding_rs::GBK.encode(text);
                 if had_errors {
-                    return Err(format!("{location} 里有 GBK 表示不了的字符，换成 UTF-8 导出"));
+                    return Err(format!(
+                        "{location} 里有 GBK 表示不了的字符，换成 UTF-8 导出"
+                    ));
                 }
                 self.raw(&bytes)
             }
@@ -389,15 +452,16 @@ impl Encoder {
     }
 
     pub(crate) fn raw(&mut self, bytes: &[u8]) -> Result<(), String> {
-        self.writer.write_all(bytes).map_err(|e| format!("写文件失败：{e}"))
+        self.writer
+            .write_all(bytes)
+            .map_err(|e| format!("写文件失败：{e}"))
     }
 }
 
 /// RFC 4180 的引号规则，外加一条：和 NULL 的写法撞车的文本也加引号（空串就写成 ""）
 pub(crate) fn csv_quote(text: &str, delimiter: char, null_text: &str) -> String {
-    let needs_quotes = text == null_text
-        || text.contains(delimiter)
-        || text.contains(['"', '\r', '\n']);
+    let needs_quotes =
+        text == null_text || text.contains(delimiter) || text.contains(['"', '\r', '\n']);
     if needs_quotes {
         format!("\"{}\"", text.replace('"', "\"\""))
     } else {
@@ -471,18 +535,41 @@ mod tests {
     }
 
     fn sample() -> (Vec<ColumnMeta>, Vec<Vec<CellValue>>) {
-        let columns = vec![column("id", "id"), column("备注", "note"), column("amount", "amount")];
+        let columns = vec![
+            column("id", "id"),
+            column("备注", "note"),
+            column("amount", "amount"),
+        ];
         let rows = vec![
-            vec![CellValue::Int(1), CellValue::Text("a,b \"引号\"".into()), CellValue::Text("1.50".into())],
-            vec![CellValue::UInt(u64::MAX), CellValue::Null, CellValue::Text(String::new())],
-            vec![CellValue::Int(3), CellValue::Text("it's C:\\temp".into()), CellValue::Bytes(vec![0x00, 0xFF])],
+            vec![
+                CellValue::Int(1),
+                CellValue::Text("a,b \"引号\"".into()),
+                CellValue::Text("1.50".into()),
+            ],
+            vec![
+                CellValue::UInt(u64::MAX),
+                CellValue::Null,
+                CellValue::Text(String::new()),
+            ],
+            vec![
+                CellValue::Int(3),
+                CellValue::Text("it's C:\\temp".into()),
+                CellValue::Bytes(vec![0x00, 0xFF]),
+            ],
         ];
         (columns, rows)
     }
 
-    fn export_to_string(options: &ExportOptions, column_indexes: &[usize]) -> Result<Vec<u8>, String> {
+    fn export_to_string(
+        options: &ExportOptions,
+        column_indexes: &[usize],
+    ) -> Result<Vec<u8>, String> {
         let (columns, rows) = sample();
-        let dir = std::env::temp_dir().join(format!("cdata-export-{}-{:?}", std::process::id(), std::thread::current().id()));
+        let dir = std::env::temp_dir().join(format!(
+            "cdata-export-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
         fs::create_dir_all(&dir).unwrap();
         let path = dir.join("out.txt");
         let result = write_file(&path, &columns, &rows, column_indexes, options);
@@ -512,7 +599,11 @@ mod tests {
         opts.delimiter = "\t".to_string();
 
         let (columns, _) = sample();
-        let rows = vec![vec![CellValue::Null, CellValue::Text("NULL".into()), CellValue::Text(String::new())]];
+        let rows = vec![vec![
+            CellValue::Null,
+            CellValue::Text("NULL".into()),
+            CellValue::Text(String::new()),
+        ]];
         let dir = std::env::temp_dir().join(format!("cdata-export-null-{}", std::process::id()));
         fs::create_dir_all(&dir).unwrap();
         let path = dir.join("out.tsv");
@@ -530,11 +621,24 @@ mod tests {
 
         assert!(text.contains("SET NAMES utf8mb4;"), "{text}");
         // 别名「备注」写进 INSERT 会找不到列，要用原始列名 note
-        assert!(text.contains("INSERT INTO `orders` (`id`, `note`, `amount`) VALUES\n"), "{text}");
+        assert!(
+            text.contains("INSERT INTO `orders` (`id`, `note`, `amount`) VALUES\n"),
+            "{text}"
+        );
         assert!(text.contains("  (1, 'a,b \"引号\"', '1.50'),\n"), "{text}");
-        assert!(text.contains("  (18446744073709551615, NULL, ''),\n"), "{text}");
-        assert!(text.contains("  (3, 'it''s C:\\\\temp', X'00FF');\n"), "{text}");
-        assert!(text.trim_end().ends_with("SET SESSION sql_mode = @CDATA_OLD_SQL_MODE;"), "{text}");
+        assert!(
+            text.contains("  (18446744073709551615, NULL, ''),\n"),
+            "{text}"
+        );
+        assert!(
+            text.contains("  (3, 'it''s C:\\\\temp', X'00FF');\n"),
+            "{text}"
+        );
+        assert!(
+            text.trim_end()
+                .ends_with("SET SESSION sql_mode = @CDATA_OLD_SQL_MODE;"),
+            "{text}"
+        );
     }
 
     #[test]
@@ -542,15 +646,26 @@ mod tests {
         let mut opts = options(ExportFormat::SqlInsert);
         opts.table_name = "archive".to_string();
         let text = String::from_utf8(export_to_string(&opts, &[1]).unwrap()).unwrap();
-        assert!(text.contains("INSERT INTO `archive` (`备注`) VALUES"), "{text}");
+        assert!(
+            text.contains("INSERT INTO `archive` (`备注`) VALUES"),
+            "{text}"
+        );
     }
 
     #[test]
     fn sql_without_a_single_source_table_asks_for_a_name() {
         let (mut columns, rows) = sample();
         columns[0].org_table = "users".to_string();
-        let path = std::env::temp_dir().join(format!("cdata-export-join-{}.sql", std::process::id()));
-        let err = write_file(&path, &columns, &rows, &[0, 1], &options(ExportFormat::SqlInsert)).unwrap_err();
+        let path =
+            std::env::temp_dir().join(format!("cdata-export-join-{}.sql", std::process::id()));
+        let err = write_file(
+            &path,
+            &columns,
+            &rows,
+            &[0, 1],
+            &options(ExportFormat::SqlInsert),
+        )
+        .unwrap_err();
         assert!(err.contains("表名"), "{err}");
         assert!(!path.exists(), "失败时不能留下文件");
         assert!(!temp_path(&path).exists(), "临时文件也要清掉");
@@ -561,8 +676,12 @@ mod tests {
         let mut opts = options(ExportFormat::Csv);
         opts.encoding = ExportEncoding::Gbk;
         let columns = vec![column("name", "name")];
-        let rows = vec![vec![CellValue::Text("中文".into())], vec![CellValue::Text("emoji 😀".into())]];
-        let path = std::env::temp_dir().join(format!("cdata-export-gbk-{}.csv", std::process::id()));
+        let rows = vec![
+            vec![CellValue::Text("中文".into())],
+            vec![CellValue::Text("emoji 😀".into())],
+        ];
+        let path =
+            std::env::temp_dir().join(format!("cdata-export-gbk-{}.csv", std::process::id()));
 
         let err = write_file(&path, &columns, &rows, &[0], &opts).unwrap_err();
         assert!(err.contains("第 2 行"), "要指出是哪一行：{err}");
@@ -573,7 +692,10 @@ mod tests {
         let ok_rows = vec![vec![CellValue::Text("中文".into())]];
         opts.header = false;
         write_file(&path, &columns, &ok_rows, &[0], &opts).unwrap();
-        assert_eq!(fs::read(&path).unwrap(), [0xD6, 0xD0, 0xCE, 0xC4, b'\r', b'\n']);
+        assert_eq!(
+            fs::read(&path).unwrap(),
+            [0xD6, 0xD0, 0xCE, 0xC4, b'\r', b'\n']
+        );
         fs::remove_file(&path).ok();
     }
 
@@ -589,26 +711,45 @@ mod tests {
     fn multi_char_delimiter_is_refused() {
         let mut opts = options(ExportFormat::Csv);
         opts.delimiter = ";;".to_string();
-        assert!(export_to_string(&opts, &[0]).unwrap_err().contains("单个字符"));
+        assert!(export_to_string(&opts, &[0])
+            .unwrap_err()
+            .contains("单个字符"));
     }
 
     #[test]
     fn sql_with_no_rows_is_still_a_valid_script() {
-        let path = std::env::temp_dir().join(format!("cdata-export-empty-{}.sql", std::process::id()));
-        let rows_written = write_file(&path, &[column("id", "id")], &[], &[0], &options(ExportFormat::SqlInsert)).unwrap();
+        let path =
+            std::env::temp_dir().join(format!("cdata-export-empty-{}.sql", std::process::id()));
+        let rows_written = write_file(
+            &path,
+            &[column("id", "id")],
+            &[],
+            &[0],
+            &options(ExportFormat::SqlInsert),
+        )
+        .unwrap();
         let text = fs::read_to_string(&path).unwrap();
         fs::remove_file(&path).ok();
         assert_eq!(rows_written, 0);
-        assert!(!text.contains("INSERT"), "空表不能写出没有 VALUES 的 INSERT：{text}");
+        assert!(
+            !text.contains("INSERT"),
+            "空表不能写出没有 VALUES 的 INSERT：{text}"
+        );
         assert!(!text.contains(";\n;"), "{text}");
         assert!(text.contains("-- 共 0 行"), "{text}");
     }
 
     #[test]
     fn dropping_an_unfinished_writer_leaves_no_file() {
-        let path = std::env::temp_dir().join(format!("cdata-export-abandon-{}.csv", std::process::id()));
-        let mut writer =
-            ExportWriter::create(&path, &[column("id", "id")], &[0], &options(ExportFormat::Csv)).unwrap();
+        let path =
+            std::env::temp_dir().join(format!("cdata-export-abandon-{}.csv", std::process::id()));
+        let mut writer = ExportWriter::create(
+            &path,
+            &[column("id", "id")],
+            &[0],
+            &options(ExportFormat::Csv),
+        )
+        .unwrap();
         writer.write_row(&[CellValue::Int(1)]).unwrap();
         drop(writer);
         assert!(!path.exists());
@@ -622,11 +763,23 @@ mod tests {
         for i in 0..250 {
             rows.push(vec![CellValue::Int(i)]);
         }
-        let path = std::env::temp_dir().join(format!("cdata-export-batch-{}.sql", std::process::id()));
-        write_file(&path, &columns, &rows, &[0], &options(ExportFormat::SqlInsert)).unwrap();
+        let path =
+            std::env::temp_dir().join(format!("cdata-export-batch-{}.sql", std::process::id()));
+        write_file(
+            &path,
+            &columns,
+            &rows,
+            &[0],
+            &options(ExportFormat::SqlInsert),
+        )
+        .unwrap();
         let text = fs::read_to_string(&path).unwrap();
         fs::remove_file(&path).ok();
-        assert_eq!(text.matches("INSERT INTO").count(), 3, "250 行分成 100 + 100 + 50");
+        assert_eq!(
+            text.matches("INSERT INTO").count(),
+            3,
+            "250 行分成 100 + 100 + 50"
+        );
     }
 
     #[test]
@@ -635,29 +788,48 @@ mod tests {
         fs::create_dir_all(&dir).unwrap();
         let path = dir.join("dump.sql");
         let mut writer = ExportWriter::create_sql_dump(&path, ExportEncoding::Utf8).unwrap();
-        writer.write_sql("USE `shop`;\nSET FOREIGN_KEY_CHECKS=0;\n").unwrap();
+        writer
+            .write_sql("USE `shop`;\nSET FOREIGN_KEY_CHECKS=0;\n")
+            .unwrap();
         writer.begin_insert("orders", &["id".to_string()]).unwrap();
         writer.write_row(&[CellValue::Int(1)]).unwrap();
         writer.write_row(&[CellValue::Int(2)]).unwrap();
         writer.write_sql("DROP TABLE IF EXISTS `items`;\n").unwrap();
-        writer.begin_insert("items", &["id".to_string(), "name".to_string()]).unwrap();
-        writer.write_row(&[CellValue::Int(9), CellValue::Text("a'b".into())]).unwrap();
+        writer
+            .begin_insert("items", &["id".to_string(), "name".to_string()])
+            .unwrap();
+        writer
+            .write_row(&[CellValue::Int(9), CellValue::Text("a'b".into())])
+            .unwrap();
         let rows = writer.finish().unwrap();
         let text = fs::read_to_string(&path).unwrap();
         fs::remove_dir_all(&dir).ok();
 
         assert_eq!(rows, 3);
         assert_eq!(text.matches("SET NAMES").count(), 1, "文件头只写一次");
-        assert!(text.contains("USE `shop`;\nSET FOREIGN_KEY_CHECKS=0;\n"), "{text}");
+        assert!(
+            text.contains("USE `shop`;\nSET FOREIGN_KEY_CHECKS=0;\n"),
+            "{text}"
+        );
         assert!(text.contains("INSERT INTO `orders` (`id`) VALUES\n  (1),\n  (2);\n\nDROP TABLE IF EXISTS `items`;\n"), "{text}");
-        assert!(text.contains("INSERT INTO `items` (`id`, `name`) VALUES\n  (9, 'a''b');\n"), "{text}");
-        assert_eq!(text.matches("SET SESSION sql_mode = @CDATA_OLD_SQL_MODE;").count(), 1);
+        assert!(
+            text.contains("INSERT INTO `items` (`id`, `name`) VALUES\n  (9, 'a''b');\n"),
+            "{text}"
+        );
+        assert_eq!(
+            text.matches("SET SESSION sql_mode = @CDATA_OLD_SQL_MODE;")
+                .count(),
+            1
+        );
     }
 
     #[test]
     fn create_database_statement_gains_if_not_exists() {
         assert_eq!(
-            create_database_if_not_exists("CREATE DATABASE `shop` /*!40100 DEFAULT CHARACTER SET utf8mb4 */").unwrap(),
+            create_database_if_not_exists(
+                "CREATE DATABASE `shop` /*!40100 DEFAULT CHARACTER SET utf8mb4 */"
+            )
+            .unwrap(),
             "CREATE DATABASE IF NOT EXISTS `shop` /*!40100 DEFAULT CHARACTER SET utf8mb4 */"
         );
         assert_eq!(

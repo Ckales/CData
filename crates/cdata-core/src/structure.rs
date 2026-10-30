@@ -149,7 +149,10 @@ pub async fn read_structure(
             descending: collation.as_deref() == Some("D"),
         };
         // 函数索引（MySQL 8.0.13+）没有列名；表达式本身在建表语句里看
-        let mut label = part.column.clone().unwrap_or_else(|| "<表达式>".to_string());
+        let mut label = part
+            .column
+            .clone()
+            .unwrap_or_else(|| "<表达式>".to_string());
         if let Some(length) = part.prefix {
             label = format!("{label}({length})");
         }
@@ -208,13 +211,23 @@ pub async fn read_structure(
 
     // 表返回 (Table, Create Table)，视图返回 (View, Create View, …)，建表语句都在第 2 列
     let create_row: Option<Row> = conn
-        .query_first(format!("SHOW CREATE TABLE {}.{}", quote_ident(schema), quote_ident(table)))
+        .query_first(format!(
+            "SHOW CREATE TABLE {}.{}",
+            quote_ident(schema),
+            quote_ident(table)
+        ))
         .await?;
     let create_sql = create_row
         .and_then(|row| row.get::<String, usize>(1))
         .unwrap_or_default();
 
-    type TableRow = (Option<String>, Option<String>, Option<String>, Option<String>, Option<String>);
+    type TableRow = (
+        Option<String>,
+        Option<String>,
+        Option<String>,
+        Option<String>,
+        Option<String>,
+    );
     let table_row: Option<TableRow> = conn
         .exec_first(
             "SELECT t.TABLE_COLLATION, c.CHARACTER_SET_NAME, t.ENGINE, t.TABLE_COMMENT, t.CREATE_OPTIONS \
@@ -224,10 +237,14 @@ pub async fn read_structure(
             (schema, table),
         )
         .await?;
-    let (table_collation, table_charset, engine, table_comment, create_options) = table_row.unwrap_or_default();
+    let (table_collation, table_charset, engine, table_comment, create_options) =
+        table_row.unwrap_or_default();
 
     // CHECK_CONSTRAINTS 是 8.0.16 才有的；MariaDB 也有这张表，但 TABLE_CONSTRAINTS 没有 ENFORCED 列
-    let version: String = conn.query_first("SELECT VERSION()").await?.unwrap_or_default();
+    let version: String = conn
+        .query_first("SELECT VERSION()")
+        .await?
+        .unwrap_or_default();
     let checks = if mysql_at_least(&version, (8, 0, 16)) {
         let rows: Vec<(String, String, String)> = conn
             .exec(
@@ -242,7 +259,11 @@ pub async fn read_structure(
             .await?;
         let mut checks = Vec::with_capacity(rows.len());
         for (name, expression, enforced) in rows {
-            checks.push(CheckDef { name, expression, enforced: enforced == "YES" });
+            checks.push(CheckDef {
+                name,
+                expression,
+                enforced: enforced == "YES",
+            });
         }
         Some(checks)
     } else {
@@ -277,7 +298,9 @@ fn explicit_row_format(create_options: &str) -> Option<String> {
 /// SHOW CREATE 的表选项行 `) ENGINE=InnoDB AUTO_INCREMENT=100 DEFAULT CHARSET=… COMMENT='…'`。
 /// 只看 COMMENT= 之前的部分，免得表注释里的字被当成选项
 fn create_auto_increment(create_sql: &str) -> Option<u64> {
-    let line = create_sql.lines().find(|line| line.starts_with(") ENGINE="))?;
+    let line = create_sql
+        .lines()
+        .find(|line| line.starts_with(") ENGINE="))?;
     let options = line.split(" COMMENT=").next().unwrap_or(line);
     let rest = options.split(" AUTO_INCREMENT=").nth(1)?;
     let digits: String = rest.chars().take_while(|c| c.is_ascii_digit()).collect();
@@ -294,7 +317,11 @@ pub async fn table_columns(
     read_columns(&mut conn, schema, table).await
 }
 
-pub async fn read_columns(conn: &mut Conn, schema: &str, table: &str) -> Result<Vec<ColumnDef>, mysql_async::Error> {
+pub async fn read_columns(
+    conn: &mut Conn,
+    schema: &str,
+    table: &str,
+) -> Result<Vec<ColumnDef>, mysql_async::Error> {
     let rows: Vec<Row> = conn
         .exec(
             "SELECT COLUMN_NAME, COLUMN_TYPE, IS_NULLABLE, COLUMN_DEFAULT, EXTRA, \
@@ -402,20 +429,34 @@ mod tests {
     fn parses_enum_and_set_choices_with_quotes_and_commas() {
         assert_eq!(
             parse_choices("enum('draft','it''s','a,b')"),
-            Some(vec!["draft".to_string(), "it's".to_string(), "a,b".to_string()])
+            Some(vec![
+                "draft".to_string(),
+                "it's".to_string(),
+                "a,b".to_string()
+            ])
         );
-        assert_eq!(parse_choices("set('x','y')"), Some(vec!["x".to_string(), "y".to_string()]));
+        assert_eq!(
+            parse_choices("set('x','y')"),
+            Some(vec!["x".to_string(), "y".to_string()])
+        );
         assert_eq!(parse_choices("varchar(20)"), None);
     }
 
     #[test]
     fn table_options_come_from_the_right_places() {
-        assert_eq!(explicit_row_format("row_format=DYNAMIC stats_persistent=0"), Some("DYNAMIC".to_string()));
+        assert_eq!(
+            explicit_row_format("row_format=DYNAMIC stats_persistent=0"),
+            Some("DYNAMIC".to_string())
+        );
         assert_eq!(explicit_row_format(""), None);
         let create = "CREATE TABLE `t` (\n  `id` int NOT NULL AUTO_INCREMENT\n) ENGINE=InnoDB AUTO_INCREMENT=100 DEFAULT CHARSET=utf8mb4 COMMENT='x AUTO_INCREMENT=5'";
         assert_eq!(create_auto_increment(create), Some(100));
         let no_counter = "CREATE TABLE `t` (\n  `id` int\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT=' AUTO_INCREMENT=5'";
-        assert_eq!(create_auto_increment(no_counter), None, "注释里的字不能当成选项");
+        assert_eq!(
+            create_auto_increment(no_counter),
+            None,
+            "注释里的字不能当成选项"
+        );
     }
 
     #[test]
@@ -430,7 +471,10 @@ mod tests {
     #[test]
     fn missing_default_depends_on_nullability() {
         assert_eq!(classify_default(None, true, ""), DefaultValue::Null);
-        assert_eq!(classify_default(None, false, "auto_increment"), DefaultValue::NoDefault);
+        assert_eq!(
+            classify_default(None, false, "auto_increment"),
+            DefaultValue::NoDefault
+        );
     }
 
     #[test]
@@ -440,7 +484,10 @@ mod tests {
             DefaultValue::Literal("draft".into())
         );
         // 空字符串默认值是字面量，不能当成「没有默认值」
-        assert_eq!(classify_default(Some(String::new()), false, ""), DefaultValue::Literal(String::new()));
+        assert_eq!(
+            classify_default(Some(String::new()), false, ""),
+            DefaultValue::Literal(String::new())
+        );
         assert_eq!(
             classify_default(Some("CURRENT_TIMESTAMP".into()), false, "DEFAULT_GENERATED"),
             DefaultValue::Expression("CURRENT_TIMESTAMP".into())

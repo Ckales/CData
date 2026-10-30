@@ -11,8 +11,8 @@ use mysql_async::{ClientIdentity, Column, Conn, Opts, OptsBuilder, Pool, SslOpts
 use serde::{Deserialize, Serialize};
 
 use crate::options::{ConnectionOptions, SshAuth, SslMode, SslOptions};
-use crate::sql_import::{ImportStatement, SqlImportFailure, SqlImportSummary};
 use crate::sql::quote_ident;
+use crate::sql_import::{pack_import_batches, ImportStatement, SqlImportFailure, SqlImportSummary};
 use crate::ssh::Tunnel;
 use crate::value::{cell_from_value, CellValue};
 
@@ -51,7 +51,10 @@ impl std::fmt::Debug for ConnectionConfig {
             .field("password", &"<隐去>")
             .field("database", &self.database)
             .field("options", &self.options)
-            .field("ssh_secrets", &format!("<{} 份，隐去>", self.ssh_secrets.len()))
+            .field(
+                "ssh_secrets",
+                &format!("<{} 份，隐去>", self.ssh_secrets.len()),
+            )
             .field("saved_id", &self.saved_id)
             .finish()
     }
@@ -169,7 +172,10 @@ impl std::fmt::Display for QueryTimedOut {
             write!(f, "已发出 KILL QUERY，但没等到服务器确认停止，原连接已丢弃")?;
         }
         // KILL 之前刚好执行完的写操作已经生效，被打断的会回滚 —— 从客户端分辨不出是哪一种
-        write!(f, "。如果是写操作，它可能已经执行完，也可能被回滚了，请确认后再决定是否重跑")
+        write!(
+            f,
+            "。如果是写操作，它可能已经执行完，也可能被回滚了，请确认后再决定是否重跑"
+        )
     }
 }
 
@@ -227,9 +233,15 @@ pub async fn open_pool(config: &ConnectionConfig) -> Result<DbPool, OpenError> {
     let mut tls_host = None;
     if !hops.is_empty() {
         let secrets = resolve_ssh_secrets(config)?;
-        let opened = Tunnel::open(hops.clone(), secrets, config.host.clone(), config.port, timeouts.connect())
-            .await
-            .map_err(OpenError::Ssh)?;
+        let opened = Tunnel::open(
+            hops.clone(),
+            secrets,
+            config.host.clone(),
+            config.port,
+            timeouts.connect(),
+        )
+        .await
+        .map_err(OpenError::Ssh)?;
         host = "127.0.0.1".to_string();
         port = opened.local_port();
         tls_host = Some(config.host.as_str());
@@ -351,7 +363,12 @@ impl DbPool {
     // ponytail: 只增不减，断开的连接也留着；服务器重启后线程 id 从头编号，旧 id 可能撞上别人的新连接，
     // 被误认成自己的（只会多拦，不会少拦）。要精确就得在连接断开时移除，mysql_async 没有这个回调
     pub fn connection_ids(&self) -> Vec<u32> {
-        self.connection_ids.lock().unwrap().iter().copied().collect()
+        self.connection_ids
+            .lock()
+            .unwrap()
+            .iter()
+            .copied()
+            .collect()
     }
 
     fn tunnel_error(&self) -> Option<String> {
@@ -423,45 +440,75 @@ pub async fn run_script(
                 if !usable {
                     let _ = conn.disconnect().await;
                 }
-                return Ok(ScriptRun { results, failure: Some((index, err)) });
+                return Ok(ScriptRun {
+                    results,
+                    failure: Some((index, err)),
+                });
             }
         }
     }
-    Ok(ScriptRun { results, failure: None })
+    Ok(ScriptRun {
+        results,
+        failure: None,
+    })
 }
 
 /// 导入文件使用文本协议，MySQL dump 中的 LOCK TABLES 等语句不能走 prepared statement。
-/// 每条语句的结果立即丢弃；全部在一条连接上执行，失败后停在该条。
+/// 全部在一条连接上执行，失败后停在该条。能合并的语句拼成一批，少走远程往返；
+/// 失败位置仍按原文件里的语句序号报。
 pub async fn run_sql_import(
     pool: &DbPool,
     statements: &[ImportStatement],
     database: &str,
+    on_statement: &(dyn Fn(u64, u64) + Send + Sync),
 ) -> Result<SqlImportSummary, mysql_async::Error> {
     let mut conn = pool.get_conn().await?;
     if !database.is_empty() {
-        conn.query_drop(format!("USE {}", quote_ident(database))).await?;
+        conn.query_drop(format!("USE {}", quote_ident(database)))
+            .await?;
     }
     let mut summary = SqlImportSummary {
         executed: 0,
         affected_rows: 0,
         failure: None,
     };
-    for (index, statement) in statements.iter().enumerate() {
-        let (result, usable) = run_drop_on_conn(pool, &mut conn, &statement.sql).await;
+    let total = statements.len() as u64;
+    on_statement(0, total);
+    for batch in pack_import_batches(statements) {
+        let (result, usable) =
+            run_import_batch(pool, &mut conn, &batch.sql, batch.len as u64).await;
         match result {
-            Ok(()) => {
-                summary.executed += 1;
-                summary.affected_rows += conn.affected_rows();
+            Ok((executed, affected)) => {
+                summary.executed += executed;
+                summary.affected_rows += affected;
+                on_statement(summary.executed, total);
+                if (executed as usize) < batch.len {
+                    let index = batch.start + executed as usize;
+                    summary.failure = Some(SqlImportFailure {
+                        statement: index as u64 + 1,
+                        line: statements[index].line,
+                        message: "服务器没有返回这条语句的结果".to_string(),
+                    });
+                    if !usable {
+                        let _ = conn.disconnect().await;
+                    }
+                    return Ok(summary);
+                }
             }
-            Err(err) => {
-                // 保留 MySQL 错误码、SQLSTATE 与服务器返回的详细信息。
+            Err((executed, affected, err)) => {
+                summary.executed += executed;
+                summary.affected_rows += affected;
+                on_statement(summary.executed, total);
+                let index = batch.start + executed as usize;
                 let message = match &err {
-                    mysql_async::Error::Server(server) => crate::sql_import::server_error_message(server),
+                    mysql_async::Error::Server(server) => {
+                        crate::sql_import::server_error_message(server)
+                    }
                     _ => err.to_string(),
                 };
                 summary.failure = Some(SqlImportFailure {
                     statement: index as u64 + 1,
-                    line: statement.line,
+                    line: statements[index].line,
                     message,
                 });
                 if !usable {
@@ -474,16 +521,19 @@ pub async fn run_sql_import(
     Ok(summary)
 }
 
-async fn run_drop_on_conn(
+/// 一批语句的结果。第二项为 false 表示连接状态不明，调用方必须丢掉它。
+/// 成功时的语句数可能少于 `batch_len`：服务器没把后面的结果返回来。
+async fn run_import_batch(
     pool: &DbPool,
     conn: &mut Conn,
     sql: &str,
-) -> (Result<(), mysql_async::Error>, bool) {
+    batch_len: u64,
+) -> (Result<(u64, u64), (u64, u64, mysql_async::Error)>, bool) {
     let Some(limit) = pool.query_timeout else {
-        return (conn.query_drop(sql).await, true);
+        return (read_import_batch(conn, sql, batch_len).await, true);
     };
     let connection_id = conn.id();
-    let mut running = Box::pin(conn.query_drop(sql));
+    let mut running = Box::pin(read_import_batch(conn, sql, batch_len));
     if let Ok(result) = tokio::time::timeout(limit, &mut running).await {
         return (result, true);
     }
@@ -495,7 +545,11 @@ async fn run_drop_on_conn(
     };
     let finished = match tokio::time::timeout(KILL_GRACE, &mut running).await {
         Ok(Ok(_)) => true,
-        Ok(Err(mysql_async::Error::Server(ref err))) if err.code == ER_QUERY_INTERRUPTED => true,
+        Ok(Err((_, _, mysql_async::Error::Server(ref err))))
+            if err.code == ER_QUERY_INTERRUPTED =>
+        {
+            true
+        }
         Ok(Err(_)) | Err(_) => false,
     };
     drop(running);
@@ -504,7 +558,54 @@ async fn run_drop_on_conn(
         confirmed_stopped: kill_error.is_none() && finished,
         kill_error,
     }));
-    (Err(err), finished)
+    (Err((0, 0, err)), finished)
+}
+
+/// 读完一批的每个结果集。错误若出在读下一条结果头时，算下一条失败，本条已经成功。
+async fn read_import_batch(
+    conn: &mut Conn,
+    sql: &str,
+    batch_len: u64,
+) -> Result<(u64, u64), (u64, u64, mysql_async::Error)> {
+    let mut result = match conn.query_iter(sql).await {
+        Ok(result) => result,
+        Err(err) => return Err((0, 0, err)),
+    };
+    let mut seen = 0u64;
+    let mut affected = 0u64;
+    loop {
+        if result.columns().is_none() {
+            break;
+        }
+        let ok_only = result.columns_ref().is_empty();
+        let rows = if ok_only { result.affected_rows() } else { 0 };
+        let within = seen < batch_len;
+        let last_expected = seen + 1 == batch_len;
+        match discard_result_set(&mut result).await {
+            Ok(()) => {
+                if within {
+                    seen += 1;
+                    affected += rows;
+                }
+            }
+            Err(err) => {
+                // 本条的结果头已经拿到。非最后一条时，错误来自下一条的结果头。
+                if within && !last_expected {
+                    seen += 1;
+                    affected += rows;
+                }
+                return Err((seen, affected, err));
+            }
+        }
+    }
+    Ok((seen, affected))
+}
+
+async fn discard_result_set(
+    result: &mut mysql_async::QueryResult<'_, 'static, mysql_async::TextProtocol>,
+) -> Result<(), mysql_async::Error> {
+    while result.next().await?.is_some() {}
+    Ok(())
 }
 
 /// 在给定连接上跑一条，带查询超时。第二项为 false 表示连接状态不明，调用方必须丢掉它

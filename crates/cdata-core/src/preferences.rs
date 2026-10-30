@@ -80,11 +80,16 @@ impl Preferences {
             ("Query 最近查询条数", self.query_history_limit),
         ] {
             if limit == 0 || limit > MAX_HISTORY_LIMIT {
-                return Err(Error::Invalid(format!("{name}要在 1 到 {MAX_HISTORY_LIMIT} 之间，现在是 {limit}")));
+                return Err(Error::Invalid(format!(
+                    "{name}要在 1 到 {MAX_HISTORY_LIMIT} 之间，现在是 {limit}"
+                )));
             }
         }
         if self.operation_log_limit == 0 || self.operation_log_limit > MAX_OPERATION_LOG_LIMIT {
-            return Err(Error::Invalid(format!("SQL 操作日志保留条数要在 1 到 {MAX_OPERATION_LOG_LIMIT} 之间，现在是 {}", self.operation_log_limit)));
+            return Err(Error::Invalid(format!(
+                "SQL 操作日志保留条数要在 1 到 {MAX_OPERATION_LOG_LIMIT} 之间，现在是 {}",
+                self.operation_log_limit
+            )));
         }
         Ok(())
     }
@@ -98,7 +103,8 @@ pub fn load() -> Result<Preferences> {
     }
 
     let text = fs::read_to_string(&path).map_err(|e| Error::Io(e.to_string()))?;
-    let preferences: Preferences = serde_json::from_str(&text).map_err(|e| Error::Parse(e.to_string()))?;
+    let preferences: Preferences =
+        serde_json::from_str(&text).map_err(|e| Error::Parse(e.to_string()))?;
     preferences.validate()?;
     Ok(preferences)
 }
@@ -111,7 +117,8 @@ pub fn save(preferences: &Preferences) -> Result<()> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|e| Error::Io(e.to_string()))?;
     }
-    let text = serde_json::to_string_pretty(preferences).map_err(|e| Error::Parse(e.to_string()))?;
+    let text =
+        serde_json::to_string_pretty(preferences).map_err(|e| Error::Parse(e.to_string()))?;
     fs::write(&path, text).map_err(|e| Error::Io(e.to_string()))
 }
 
@@ -119,26 +126,55 @@ pub fn save(preferences: &Preferences) -> Result<()> {
 mod tests {
     use super::*;
 
-
     #[test]
     fn rejects_out_of_range_values() {
-        let too_many = Preferences { max_rows: MAX_ROWS_LIMIT + 1, ..Preferences::default() };
+        let too_many = Preferences {
+            max_rows: MAX_ROWS_LIMIT + 1,
+            ..Preferences::default()
+        };
         assert!(too_many.validate().is_err());
 
-        let zero = Preferences { max_rows: 0, ..Preferences::default() };
+        let zero = Preferences {
+            max_rows: 0,
+            ..Preferences::default()
+        };
         assert!(zero.validate().is_err());
 
-        let tiny_font = Preferences { editor_font_size: 6, ..Preferences::default() };
+        let tiny_font = Preferences {
+            editor_font_size: 6,
+            ..Preferences::default()
+        };
         assert!(tiny_font.validate().is_err());
 
-        let no_history = Preferences { query_history_limit: 0, ..Preferences::default() };
+        let no_history = Preferences {
+            query_history_limit: 0,
+            ..Preferences::default()
+        };
         assert!(no_history.validate().is_err());
-        let too_much_history = Preferences { transcript_history_limit: MAX_HISTORY_LIMIT + 1, ..Preferences::default() };
+        let too_much_history = Preferences {
+            transcript_history_limit: MAX_HISTORY_LIMIT + 1,
+            ..Preferences::default()
+        };
         assert!(too_much_history.validate().is_err());
 
-        assert!(Preferences { operation_log_limit: 0, ..Preferences::default() }.validate().is_err());
-        assert!(Preferences { operation_log_limit: 10_001, ..Preferences::default() }.validate().is_err());
-        assert!(Preferences { operation_log_limit: 250, ..Preferences::default() }.validate().is_ok());
+        assert!(Preferences {
+            operation_log_limit: 0,
+            ..Preferences::default()
+        }
+        .validate()
+        .is_err());
+        assert!(Preferences {
+            operation_log_limit: 10_001,
+            ..Preferences::default()
+        }
+        .validate()
+        .is_err());
+        assert!(Preferences {
+            operation_log_limit: 250,
+            ..Preferences::default()
+        }
+        .validate()
+        .is_ok());
         assert!(Preferences::default().validate().is_ok());
     }
 
@@ -167,12 +203,21 @@ mod tests {
         // 文件不存在是默认值，不是错误
         assert_eq!(load().unwrap(), Preferences::default());
 
-        let changed = Preferences { theme: ThemeMode::Dark, editor_font_size: 15, max_rows: 5000, operation_log_limit: 250, ..Preferences::default() };
+        let changed = Preferences {
+            theme: ThemeMode::Dark,
+            editor_font_size: 15,
+            max_rows: 5000,
+            operation_log_limit: 250,
+            ..Preferences::default()
+        };
         save(&changed).unwrap();
         assert_eq!(load().unwrap(), changed);
 
         // 不合法的值存不进去，文件保持上一次的内容
-        let invalid = Preferences { max_rows: 0, ..changed.clone() };
+        let invalid = Preferences {
+            max_rows: 0,
+            ..changed.clone()
+        };
         assert!(save(&invalid).is_err());
         assert_eq!(load().unwrap(), changed);
 

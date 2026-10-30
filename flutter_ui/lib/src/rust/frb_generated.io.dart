@@ -213,6 +213,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   Favorite dco_decode_favorite(dynamic raw);
 
   @protected
+  FileProgress dco_decode_file_progress(dynamic raw);
+
+  @protected
   FilterCondition dco_decode_filter_condition(dynamic raw);
 
   @protected
@@ -820,6 +823,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   Favorite sse_decode_favorite(SseDeserializer deserializer);
+
+  @protected
+  FileProgress sse_decode_file_progress(SseDeserializer deserializer);
 
   @protected
   FilterCondition sse_decode_filter_condition(SseDeserializer deserializer);
@@ -1541,6 +1547,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_favorite(Favorite self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_file_progress(FileProgress self, SseSerializer serializer);
 
   @protected
   void sse_encode_filter_condition(
