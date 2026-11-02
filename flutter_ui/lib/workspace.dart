@@ -13,6 +13,7 @@ import 'server_status.dart';
 import 'sql_library.dart';
 import 'sql_import_dialog.dart';
 import 'src/rust/api/db.dart';
+import 'src/rust/api/connections.dart';
 import 'src/rust/api/editor.dart';
 import 'src/rust/api/options.dart';
 import 'src/rust/api/schema.dart';
@@ -35,6 +36,8 @@ class Workspace {
   final ConnectionConfig config;
   final BigInt schemaId;
   final String? initialTable;
+  final List<OpenTabState> initialTabs;
+  final int initialActiveTab;
 
   /// 连接页勾选的库。空表示不限制
   final List<String> databases;
@@ -60,6 +63,8 @@ class Workspace {
     required this.config,
     required this.schemaId,
     this.initialTable,
+    this.initialTabs = const [],
+    this.initialActiveTab = 0,
     List<String> databases = const [],
   }) : schema = RustSchemaSource(schemaId),
        server = RustServerSource(schemaId),
@@ -189,7 +194,14 @@ class WorkspaceViewState extends State<WorkspaceView> {
   void initState() {
     super.initState();
     if (_ws.tabs.isEmpty) {
-      _addTab(database: _ws.config.database ?? '', table: _ws.initialTable);
+      if (_ws.initialTabs.isEmpty) {
+        _addTab(database: _ws.config.database ?? '', table: _ws.initialTable);
+      } else {
+        for (final tab in _ws.initialTabs) {
+          _addTab(database: tab.database, table: tab.table);
+        }
+        _ws.active = _ws.initialActiveTab.clamp(0, _ws.tabs.length - 1);
+      }
     }
     _ensureCatalog(_tab);
   }

@@ -57,17 +57,26 @@ class OpenConnectionState {
   final String? database;
   final String? table;
   final bool active;
+  final List<OpenTabState> tabs;
+  final int activeTab;
 
   const OpenConnectionState({
     required this.id,
     this.database,
     this.table,
     required this.active,
+    required this.tabs,
+    required this.activeTab,
   });
 
   @override
   int get hashCode =>
-      id.hashCode ^ database.hashCode ^ table.hashCode ^ active.hashCode;
+      id.hashCode ^
+      database.hashCode ^
+      table.hashCode ^
+      active.hashCode ^
+      tabs.hashCode ^
+      activeTab.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -77,7 +86,27 @@ class OpenConnectionState {
           id == other.id &&
           database == other.database &&
           table == other.table &&
-          active == other.active;
+          active == other.active &&
+          tabs == other.tabs &&
+          activeTab == other.activeTab;
+}
+
+class OpenTabState {
+  final String database;
+  final String? table;
+
+  const OpenTabState({required this.database, this.table});
+
+  @override
+  int get hashCode => database.hashCode ^ table.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is OpenTabState &&
+          runtimeType == other.runtimeType &&
+          database == other.database &&
+          table == other.table;
 }
 
 class SavedConnection {

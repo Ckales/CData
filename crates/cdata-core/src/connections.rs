@@ -62,7 +62,14 @@ pub struct SavedConnection {
     pub options: ConnectionOptions,
 }
 
-/// 上次打开的收藏连接及当前标签的库、表；不含连接参数或凭据。
+/// 一个数据库标签的选择；不含查询内容或凭据。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct OpenTabState {
+    pub database: String,
+    pub table: Option<String>,
+}
+
+/// 上次打开的收藏连接及各标签的库、表；不含连接参数或凭据。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct OpenConnectionState {
     pub id: String,
@@ -71,6 +78,10 @@ pub struct OpenConnectionState {
     pub table: Option<String>,
     #[serde(default)]
     pub active: bool,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tabs: Vec<OpenTabState>,
+    #[serde(default)]
+    pub active_tab: u32,
 }
 
 impl SavedConnection {
@@ -161,7 +172,7 @@ pub fn save_open_connection_ids(ids: &[String]) -> Result<()> {
 pub fn open_connections() -> Result<Vec<OpenConnectionState>> {
     let ids = open_connection_ids()?;
     let path = data_file("CDATA_OPEN_SELECTIONS_PATH", "open_selections.json")?;
-    let selections: Vec<OpenConnectionState> = if path.exists() {
+    let mut selections: Vec<OpenConnectionState> = if path.exists() {
         let text = fs::read_to_string(&path).map_err(|e| Error::Io(e.to_string()))?;
         serde_json::from_str(&text).map_err(|e| Error::Parse(e.to_string()))?
     } else {
@@ -170,15 +181,16 @@ pub fn open_connections() -> Result<Vec<OpenConnectionState>> {
     Ok(ids
         .into_iter()
         .map(|id| {
-            selections
-                .iter()
-                .find(|state| state.id == id)
-                .cloned()
+            let position = selections.iter().position(|state| state.id == id);
+            position
+                .map(|index| selections.remove(index))
                 .unwrap_or(OpenConnectionState {
                     id,
                     database: None,
                     table: None,
                     active: false,
+                    tabs: Vec::new(),
+                    active_tab: 0,
                 })
         })
         .collect())
@@ -316,12 +328,16 @@ mod tests {
                 database: Some("shop".into()),
                 table: Some("orders".into()),
                 active: true,
+                tabs: Vec::new(),
+                active_tab: 0,
             },
             OpenConnectionState {
                 id: "two".into(),
                 database: Some("".into()),
                 table: None,
                 active: false,
+                tabs: Vec::new(),
+                active_tab: 0,
             },
         ];
         save_open_connections(&connections).unwrap();
@@ -330,6 +346,21 @@ mod tests {
             std::fs::read_to_string(&path).unwrap(),
             "[\n  \"one\",\n  \"two\"\n]"
         );
+
+        // 同一个收藏连接打开多个工作区、每个工作区打开多个数据库标签。
+        let multi = serde_json::json!([
+            {"id":"one", "database":"sportkeep", "table":null, "active":false,
+             "tabs":[{"database":"sportkeep","table":null},
+                     {"database":"unifly","table":null}], "active_tab":0},
+            {"id":"one", "database":"unifly", "table":null, "active":true,
+             "tabs":[{"database":"unifly","table":null}], "active_tab":0}
+        ]);
+        let states: Vec<OpenConnectionState> = serde_json::from_value(multi.clone()).unwrap();
+        save_open_connections(&states).unwrap();
+        let restored = open_connections().unwrap();
+        assert_eq!(restored, states);
+        assert_eq!(serde_json::to_value(restored).unwrap(), multi);
+        save_open_connections(&connections).unwrap();
 
         // 早期的库表选择文件没有 active 字段，沿用旧的最后连接优先行为。
         std::fs::write(
@@ -348,13 +379,17 @@ mod tests {
                     id: "one".into(),
                     database: None,
                     table: None,
-                    active: false
+                    active: false,
+                    tabs: Vec::new(),
+                    active_tab: 0,
                 },
                 OpenConnectionState {
                     id: "two".into(),
                     database: None,
                     table: None,
-                    active: false
+                    active: false,
+                    tabs: Vec::new(),
+                    active_tab: 0,
                 },
             ]
         );

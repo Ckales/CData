@@ -5,7 +5,7 @@
 
 use flutter_rust_bridge::frb;
 
-pub use cdata_core::connections::{OpenConnectionState, SavedConnection};
+pub use cdata_core::connections::{OpenConnectionState, OpenTabState, SavedConnection};
 
 use crate::api::db::Result;
 use crate::api::options::{ConnectionOptions, SshHop};
@@ -28,6 +28,14 @@ pub struct _OpenConnectionState {
     pub database: Option<String>,
     pub table: Option<String>,
     pub active: bool,
+    pub tabs: Vec<OpenTabState>,
+    pub active_tab: u32,
+}
+
+#[frb(mirror(OpenTabState))]
+pub struct _OpenTabState {
+    pub database: String,
+    pub table: Option<String>,
 }
 
 fn to_message(err: cdata_core::connections::Error) -> String {

@@ -95,6 +95,8 @@ class _QueryPageState extends State<QueryPage> {
           connection.name,
           remember: false,
           initialTable: state.table,
+          initialTabs: state.tabs,
+          initialActiveTab: state.activeTab,
           databases: connection.databases,
         );
         if (error != null) {
@@ -142,21 +144,22 @@ class _QueryPageState extends State<QueryPage> {
         database: database,
         table: tab?.table,
         active: workspace == _workspaces[_active],
+        tabs: [
+          for (final tab in workspace.tabs)
+            OpenTabState(database: tab.database, table: tab.table),
+        ],
+        activeTab: workspace.active,
       );
-      final existing = opened.indexWhere((item) => item.id == id);
-      if (existing < 0) {
-        opened.add(state);
-      } else if (state.active) {
-        opened[existing] = state;
-      }
+      opened.add(state);
     }
     for (final state in preserve) {
-      if (opened.any((item) => item.id == state.id)) continue;
       opened.add(OpenConnectionState(
         id: state.id,
         database: state.database,
         table: state.table,
         active: false,
+        tabs: state.tabs,
+        activeTab: state.activeTab,
       ));
     }
     // 选库、选表可能连续触发，按触发顺序写，避免旧状态最后落盘。
@@ -187,6 +190,8 @@ class _QueryPageState extends State<QueryPage> {
     String name, {
     required bool remember,
     String? initialTable,
+    List<OpenTabState> initialTabs = const [],
+    int initialActiveTab = 0,
     List<String> databases = const [],
   }) async {
     final BigInt sessionId;
@@ -214,6 +219,8 @@ class _QueryPageState extends State<QueryPage> {
           config: config,
           schemaId: sessionId,
           initialTable: initialTable,
+          initialTabs: initialTabs,
+          initialActiveTab: initialActiveTab,
           databases: databases,
         ),
       );

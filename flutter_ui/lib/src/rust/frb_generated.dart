@@ -4603,6 +4603,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  List<OpenTabState> dco_decode_list_open_tab_state(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>).map(dco_decode_open_tab_state).toList();
+  }
+
+  @protected
   List<OperationLogEntry> dco_decode_list_operation_log_entry(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return (raw as List<dynamic>).map(dco_decode_operation_log_entry).toList();
@@ -4758,13 +4764,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   OpenConnectionState dco_decode_open_connection_state(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 4)
-      throw Exception('unexpected arr length: expect 4 but see ${arr.length}');
+    if (arr.length != 6)
+      throw Exception('unexpected arr length: expect 6 but see ${arr.length}');
     return OpenConnectionState(
       id: dco_decode_String(arr[0]),
       database: dco_decode_opt_String(arr[1]),
       table: dco_decode_opt_String(arr[2]),
       active: dco_decode_bool(arr[3]),
+      tabs: dco_decode_list_open_tab_state(arr[4]),
+      activeTab: dco_decode_u_32(arr[5]),
     );
   }
 
@@ -4777,6 +4785,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     return OpenSessionError(
       message: dco_decode_String(arr[0]),
       hostKey: dco_decode_opt_box_autoadd_host_key_issue(arr[1]),
+    );
+  }
+
+  @protected
+  OpenTabState dco_decode_open_tab_state(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 2)
+      throw Exception('unexpected arr length: expect 2 but see ${arr.length}');
+    return OpenTabState(
+      database: dco_decode_String(arr[0]),
+      table: dco_decode_opt_String(arr[1]),
     );
   }
 
@@ -6780,6 +6800,20 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  List<OpenTabState> sse_decode_list_open_tab_state(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <OpenTabState>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_open_tab_state(deserializer));
+    }
+    return ans_;
+  }
+
+  @protected
   List<OperationLogEntry> sse_decode_list_operation_log_entry(
     SseDeserializer deserializer,
   ) {
@@ -7060,11 +7094,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_database = sse_decode_opt_String(deserializer);
     var var_table = sse_decode_opt_String(deserializer);
     var var_active = sse_decode_bool(deserializer);
+    var var_tabs = sse_decode_list_open_tab_state(deserializer);
+    var var_activeTab = sse_decode_u_32(deserializer);
     return OpenConnectionState(
       id: var_id,
       database: var_database,
       table: var_table,
       active: var_active,
+      tabs: var_tabs,
+      activeTab: var_activeTab,
     );
   }
 
@@ -7074,6 +7112,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_message = sse_decode_String(deserializer);
     var var_hostKey = sse_decode_opt_box_autoadd_host_key_issue(deserializer);
     return OpenSessionError(message: var_message, hostKey: var_hostKey);
+  }
+
+  @protected
+  OpenTabState sse_decode_open_tab_state(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_database = sse_decode_String(deserializer);
+    var var_table = sse_decode_opt_String(deserializer);
+    return OpenTabState(database: var_database, table: var_table);
   }
 
   @protected
@@ -8994,6 +9040,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_list_open_tab_state(
+    List<OpenTabState> self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_open_tab_state(item, serializer);
+    }
+  }
+
+  @protected
   void sse_encode_list_operation_log_entry(
     List<OperationLogEntry> self,
     SseSerializer serializer,
@@ -9262,6 +9320,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_opt_String(self.database, serializer);
     sse_encode_opt_String(self.table, serializer);
     sse_encode_bool(self.active, serializer);
+    sse_encode_list_open_tab_state(self.tabs, serializer);
+    sse_encode_u_32(self.activeTab, serializer);
   }
 
   @protected
@@ -9272,6 +9332,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_String(self.message, serializer);
     sse_encode_opt_box_autoadd_host_key_issue(self.hostKey, serializer);
+  }
+
+  @protected
+  void sse_encode_open_tab_state(OpenTabState self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.database, serializer);
+    sse_encode_opt_String(self.table, serializer);
   }
 
   @protected

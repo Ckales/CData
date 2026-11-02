@@ -3830,6 +3830,13 @@ const _: fn() = || {
         let _: Option<String> = OpenConnectionState.database;
         let _: Option<String> = OpenConnectionState.table;
         let _: bool = OpenConnectionState.active;
+        let _: Vec<crate::api::connections::OpenTabState> = OpenConnectionState.tabs;
+        let _: u32 = OpenConnectionState.active_tab;
+    }
+    {
+        let OpenTabState = None::<crate::api::connections::OpenTabState>.unwrap();
+        let _: String = OpenTabState.database;
+        let _: Option<String> = OpenTabState.table;
     }
     {
         let OperationLogEntry = None::<crate::api::value::OperationLogEntry>.unwrap();
@@ -5436,6 +5443,20 @@ impl SseDecode for Vec<crate::api::connections::OpenConnectionState> {
     }
 }
 
+impl SseDecode for Vec<crate::api::connections::OpenTabState> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<crate::api::connections::OpenTabState>::sse_decode(
+                deserializer,
+            ));
+        }
+        return ans_;
+    }
+}
+
 impl SseDecode for Vec<crate::api::value::OperationLogEntry> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -5735,11 +5756,15 @@ impl SseDecode for crate::api::connections::OpenConnectionState {
         let mut var_database = <Option<String>>::sse_decode(deserializer);
         let mut var_table = <Option<String>>::sse_decode(deserializer);
         let mut var_active = <bool>::sse_decode(deserializer);
+        let mut var_tabs = <Vec<crate::api::connections::OpenTabState>>::sse_decode(deserializer);
+        let mut var_activeTab = <u32>::sse_decode(deserializer);
         return crate::api::connections::OpenConnectionState {
             id: var_id,
             database: var_database,
             table: var_table,
             active: var_active,
+            tabs: var_tabs,
+            active_tab: var_activeTab,
         };
     }
 }
@@ -5752,6 +5777,18 @@ impl SseDecode for crate::api::db::OpenSessionError {
         return crate::api::db::OpenSessionError {
             message: var_message,
             host_key: var_hostKey,
+        };
+    }
+}
+
+impl SseDecode for crate::api::connections::OpenTabState {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_database = <String>::sse_decode(deserializer);
+        let mut var_table = <Option<String>>::sse_decode(deserializer);
+        return crate::api::connections::OpenTabState {
+            database: var_database,
+            table: var_table,
         };
     }
 }
@@ -8228,6 +8265,8 @@ impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::connections::OpenC
             self.0.database.into_into_dart().into_dart(),
             self.0.table.into_into_dart().into_dart(),
             self.0.active.into_into_dart().into_dart(),
+            self.0.tabs.into_into_dart().into_dart(),
+            self.0.active_tab.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -8262,6 +8301,27 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::db::OpenSessionError>
 {
     fn into_into_dart(self) -> crate::api::db::OpenSessionError {
         self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::connections::OpenTabState> {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.0.database.into_into_dart().into_dart(),
+            self.0.table.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for FrbWrapper<crate::api::connections::OpenTabState>
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<crate::api::connections::OpenTabState>>
+    for crate::api::connections::OpenTabState
+{
+    fn into_into_dart(self) -> FrbWrapper<crate::api::connections::OpenTabState> {
+        self.into()
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
@@ -10274,6 +10334,16 @@ impl SseEncode for Vec<crate::api::connections::OpenConnectionState> {
     }
 }
 
+impl SseEncode for Vec<crate::api::connections::OpenTabState> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::api::connections::OpenTabState>::sse_encode(item, serializer);
+        }
+    }
+}
+
 impl SseEncode for Vec<crate::api::value::OperationLogEntry> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -10523,6 +10593,8 @@ impl SseEncode for crate::api::connections::OpenConnectionState {
         <Option<String>>::sse_encode(self.database, serializer);
         <Option<String>>::sse_encode(self.table, serializer);
         <bool>::sse_encode(self.active, serializer);
+        <Vec<crate::api::connections::OpenTabState>>::sse_encode(self.tabs, serializer);
+        <u32>::sse_encode(self.active_tab, serializer);
     }
 }
 
@@ -10531,6 +10603,14 @@ impl SseEncode for crate::api::db::OpenSessionError {
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         <String>::sse_encode(self.message, serializer);
         <Option<crate::api::options::HostKeyIssue>>::sse_encode(self.host_key, serializer);
+    }
+}
+
+impl SseEncode for crate::api::connections::OpenTabState {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.database, serializer);
+        <Option<String>>::sse_encode(self.table, serializer);
     }
 }
 

@@ -368,6 +368,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<OpenConnectionState> dco_decode_list_open_connection_state(dynamic raw);
 
   @protected
+  List<OpenTabState> dco_decode_list_open_tab_state(dynamic raw);
+
+  @protected
   List<OperationLogEntry> dco_decode_list_operation_log_entry(dynamic raw);
 
   @protected
@@ -444,6 +447,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   OpenSessionError dco_decode_open_session_error(dynamic raw);
+
+  @protected
+  OpenTabState dco_decode_open_tab_state(dynamic raw);
 
   @protected
   OperationLogEntry dco_decode_operation_log_entry(dynamic raw);
@@ -998,6 +1004,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  List<OpenTabState> sse_decode_list_open_tab_state(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   List<OperationLogEntry> sse_decode_list_operation_log_entry(
     SseDeserializer deserializer,
   );
@@ -1092,6 +1103,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   OpenSessionError sse_decode_open_session_error(SseDeserializer deserializer);
+
+  @protected
+  OpenTabState sse_decode_open_tab_state(SseDeserializer deserializer);
 
   @protected
   OperationLogEntry sse_decode_operation_log_entry(
@@ -1776,6 +1790,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_list_open_tab_state(
+    List<OpenTabState> self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_list_operation_log_entry(
     List<OperationLogEntry> self,
     SseSerializer serializer,
@@ -1903,6 +1923,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
     OpenSessionError self,
     SseSerializer serializer,
   );
+
+  @protected
+  void sse_encode_open_tab_state(OpenTabState self, SseSerializer serializer);
 
   @protected
   void sse_encode_operation_log_entry(
