@@ -34,7 +34,9 @@ class Workspace {
   final int id;
   final String name;
   final ConnectionConfig config;
-  final BigInt schemaId;
+  late final BigInt schemaId;
+  bool connected = false;
+  String? connectionError;
   final String? initialTable;
   final List<OpenTabState> initialTabs;
   final int initialActiveTab;
@@ -43,10 +45,10 @@ class Workspace {
   final List<String> databases;
 
   // 数据源随会话建一次，每次重绘都新建的话侧栏会以为换了库，重读一遍
-  final RustSchemaSource schema;
-  final RustServerSource server;
-  final RustUserSource users;
-  final RustImportSource imports;
+  late final RustSchemaSource schema;
+  late final RustServerSource server;
+  late final RustUserSource users;
+  late final RustImportSource imports;
 
   final List<WorkspaceTab> tabs = [];
   int active = 0;
@@ -61,16 +63,38 @@ class Workspace {
     required this.id,
     required this.name,
     required this.config,
-    required this.schemaId,
+    BigInt? schemaId,
     this.initialTable,
     this.initialTabs = const [],
     this.initialActiveTab = 0,
     List<String> databases = const [],
-  }) : schema = RustSchemaSource(schemaId),
-       server = RustServerSource(schemaId),
-       users = RustUserSource(schemaId),
-       imports = RustImportSource(schemaId),
-       databases = List.of(databases);
+  }) : databases = List.of(databases) {
+    if (schemaId != null) attachSession(schemaId);
+    final restored = initialTabs.isEmpty
+        ? [OpenTabState(database: config.database ?? '', table: initialTable)]
+        : initialTabs;
+    for (final tab in restored) {
+      tabs.add(
+        WorkspaceTab(
+          id: takeTabNumber(),
+          mode: WorkspaceMode.content,
+          database: tab.database,
+          table: tab.table,
+        ),
+      );
+    }
+    active = initialActiveTab.clamp(0, tabs.length - 1);
+  }
+
+  void attachSession(BigInt sessionId) {
+    schemaId = sessionId;
+    schema = RustSchemaSource(sessionId);
+    server = RustServerSource(sessionId);
+    users = RustUserSource(sessionId);
+    imports = RustImportSource(sessionId);
+    connected = true;
+    connectionError = null;
+  }
 
   WorkspaceTab get activeTab => tabs[active];
 
@@ -111,6 +135,7 @@ class WorkspaceTab {
 
   final contentKey = GlobalKey<QueryTabState>();
   final queryKey = GlobalKey<QueryTabState>();
+  bool _runnersInitialized = false;
   late final RustQueryRunner contentRunner;
   late final RustQueryRunner queryRunner;
 
@@ -131,6 +156,7 @@ class WorkspaceTab {
   }
 
   Future<void> close() async {
+    if (!_runnersInitialized) return;
     await contentRunner.close();
     await queryRunner.close();
   }
@@ -152,6 +178,7 @@ class WorkspaceView extends StatefulWidget {
   final VoidCallback onDisconnect;
   final VoidCallback onSelectionChanged;
   final VoidCallback onPreferences;
+  final VoidCallback? onRetryConnection;
 
   final BigInt Function() maxRows;
   final double editorFontSize;
@@ -167,6 +194,7 @@ class WorkspaceView extends StatefulWidget {
     required this.onDisconnect,
     required this.onSelectionChanged,
     required this.onPreferences,
+    this.onRetryConnection,
     required this.maxRows,
     required this.editorFontSize,
     required this.confirmHostKey,
@@ -193,17 +221,29 @@ class WorkspaceViewState extends State<WorkspaceView> {
   @override
   void initState() {
     super.initState();
-    if (_ws.tabs.isEmpty) {
-      if (_ws.initialTabs.isEmpty) {
-        _addTab(database: _ws.config.database ?? '', table: _ws.initialTable);
-      } else {
-        for (final tab in _ws.initialTabs) {
-          _addTab(database: tab.database, table: tab.table);
-        }
-        _ws.active = _ws.initialActiveTab.clamp(0, _ws.tabs.length - 1);
-      }
+    for (final tab in _ws.tabs) {
+      _initializeRunners(tab);
     }
+    _contentStarted = _ws.connected;
+    if (_ws.connected) _loadInitialContent();
+  }
+
+  late bool _contentStarted;
+
+  @override
+  void didUpdateWidget(covariant WorkspaceView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!_contentStarted && _ws.connected) {
+      _contentStarted = true;
+      _loadInitialContent();
+    }
+  }
+
+  void _loadInitialContent() {
     _ensureCatalog(_tab);
+    for (final tab in _ws.tabs) {
+      if (tab.table != null) _loadTable(tab);
+    }
   }
 
   @override
@@ -223,6 +263,14 @@ class WorkspaceViewState extends State<WorkspaceView> {
       database: database,
       table: table,
     );
+    _initializeRunners(tab);
+    _ws.tabs.add(tab);
+    _ws.active = _ws.tabs.length - 1;
+    _keepShortcutsAlive();
+    if (table != null) _loadTable(tab);
+  }
+
+  void _initializeRunners(WorkspaceTab tab) {
     tab.contentRunner = RustQueryRunner(
       readConfig: () => _ws.configFor(tab.database),
       maxRows: widget.maxRows,
@@ -233,10 +281,7 @@ class WorkspaceViewState extends State<WorkspaceView> {
       maxRows: widget.maxRows,
       confirmHostKey: widget.confirmHostKey,
     );
-    _ws.tabs.add(tab);
-    _ws.active = _ws.tabs.length - 1;
-    _keepShortcutsAlive();
-    if (table != null) _loadTable(tab);
+    tab._runnersInitialized = true;
   }
 
   /// 新标签沿用当前标签的库、表和模式。菜单栏的「新建已连接标签」也调这个
@@ -359,10 +404,19 @@ class WorkspaceViewState extends State<WorkspaceView> {
   /// 内容模式的网格跑 SELECT * FROM 表。要等内容页建好（第一次进内容模式时它还不在树上）
   void _loadTable(WorkspaceTab tab) {
     final table = tab.table;
-    if (table == null) return;
+    if (!_ws.connected || table == null) return;
     tab.visited.add(WorkspaceMode.content);
+    final database = tab.database;
+    bool isCurrent() =>
+        mounted &&
+        _ws.connected &&
+        _ws.tabs.contains(tab) &&
+        tab.table == table &&
+        tab.database == database;
     WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!isCurrent()) return;
       final sql = await browseSql(table: table);
+      if (!isCurrent()) return;
       await tab.contentKey.currentState?.runSql(sql);
     });
   }
@@ -370,7 +424,9 @@ class WorkspaceViewState extends State<WorkspaceView> {
   /// 换库：这个标签的两个会话按新库重开，选中的表清掉。
   /// 勾选过库时，新建的库也加进这份清单，不然建完一刷新就从侧栏消失
   Future<void> _switchDatabase(String database) async {
-    if (database.isNotEmpty && _ws.databases.isNotEmpty && !_ws.databases.contains(database)) {
+    if (database.isNotEmpty &&
+        _ws.databases.isNotEmpty &&
+        !_ws.databases.contains(database)) {
       _ws.databases.add(database);
     }
     final tab = _tab;
@@ -389,7 +445,7 @@ class WorkspaceViewState extends State<WorkspaceView> {
   /// 补全目录跟着当前标签的库走
   Future<void> _ensureCatalog(WorkspaceTab tab, {bool force = false}) async {
     final database = tab.database;
-    if (database.isEmpty) return;
+    if (!_ws.connected || database.isEmpty) return;
     if (!force && _ws.catalogDatabase == database) return;
     try {
       await loadCatalog(sessionId: _ws.schemaId, database: database);
@@ -547,6 +603,7 @@ class WorkspaceViewState extends State<WorkspaceView> {
 
   @override
   Widget build(BuildContext context) {
+    if (!_ws.connected) return _buildConnectingPage();
     final mac = MacColors.of(context);
     final tab = _tab;
     return CallbackShortcuts(
@@ -672,26 +729,7 @@ class WorkspaceViewState extends State<WorkspaceView> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: [
-                              MacTabStrip(
-                                tabs: [
-                                  for (final (workspace, index) in _allTabs)
-                                    MacTab(
-                                      key: ValueKey(
-                                        'tab-${workspace.tabs[index].id}',
-                                      ),
-                                      title: workspace.tabs[index].title,
-                                      tooltip:
-                                          '${workspace.name} · ${workspace.tabs[index].title}',
-                                    ),
-                                ],
-                                active: _allTabs.indexOf((_ws, _ws.active)),
-                                onSelect: _selectAt,
-                                onClose: _closeAt,
-                                onReorder: _reorderAt,
-                                onAdd: duplicateTab,
-                                addTooltip:
-                                    '新标签（${_isMac ? '⇧⌘T' : 'Ctrl+Shift+T'}）',
-                              ),
+                              _buildTabStrip(),
                               Expanded(
                                 // 不在前台的标签也留着，切回来结果、编辑器内容、滚动位置都还在
                                 child: IndexedStack(
@@ -702,6 +740,94 @@ class WorkspaceViewState extends State<WorkspaceView> {
                                   ],
                                 ),
                               ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTabStrip() => MacTabStrip(
+    tabs: [
+      for (final (workspace, index) in _allTabs)
+        MacTab(
+          key: ValueKey('tab-${workspace.tabs[index].id}'),
+          title: workspace.tabs[index].title,
+          tooltip: '${workspace.name} · ${workspace.tabs[index].title}',
+        ),
+    ],
+    active: _allTabs.indexOf((_ws, _ws.active)),
+    onSelect: _selectAt,
+    onClose: _closeAt,
+    onReorder: _reorderAt,
+    onAdd: duplicateTab,
+    addTooltip: '新标签（${_isMac ? '⇧⌘T' : 'Ctrl+Shift+T'}）',
+  );
+
+  Widget _buildConnectingPage() {
+    final mac = MacColors.of(context);
+    final error = _ws.connectionError;
+    final status = error == null
+        ? const Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircularProgressIndicator(),
+              SizedBox(height: 16),
+              Text('正在恢复连接…'),
+            ],
+          )
+        : Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                SelectableText('连接失败：$error'),
+                const SizedBox(height: 12),
+                FilledButton(
+                  onPressed: widget.onRetryConnection,
+                  child: const Text('重新连接'),
+                ),
+              ],
+            ),
+          );
+    return CallbackShortcuts(
+      bindings: _shortcuts,
+      child: Focus(
+        focusNode: _pageFocus,
+        autofocus: true,
+        child: Scaffold(
+          backgroundColor: mac.content,
+          body: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _buildToolbar(mac, _tab),
+              Expanded(
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final maxWidth = (constraints.maxWidth - 365).clamp(
+                      180.0,
+                      560.0,
+                    );
+                    return Row(
+                      children: [
+                        Container(
+                          width: _sidebarWidth.clamp(180.0, maxWidth) + 5,
+                          color: mac.sidebar,
+                        ),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              _buildTabStrip(),
+                              Expanded(child: Center(child: status)),
                             ],
                           ),
                         ),

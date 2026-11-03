@@ -42,11 +42,12 @@ class QueryPage extends StatefulWidget {
 
 class _QueryPageState extends State<QueryPage> {
   final List<Workspace> _workspaces = [];
+  final List<OpenConnectionState> _missingConnections = [];
   // 菜单栏的「新建已连接标签」要找到当前工作区的状态
   final Map<Workspace, GlobalKey<WorkspaceViewState>> _workspaceKeys = {};
   Future<void> _pendingSave = Future.value();
-  bool _restoringConnections = false;
-  bool _selectionChangedDuringRestore = false;
+  bool _loadingRestoreState = false;
+  bool _saveAfterRestore = false;
   int _active = 0;
   int _nextWorkspaceId = 1;
 
@@ -59,77 +60,127 @@ class _QueryPageState extends State<QueryPage> {
   void initState() {
     super.initState();
     if (widget.preferences.restoreConnections) {
-      WidgetsBinding.instance.addPostFrameCallback((_) => _restoreConnections());
+      _loadingRestoreState = true;
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => _restoreConnections(),
+      );
     }
   }
 
   Future<void> _restoreConnections() async {
-    _restoringConnections = true;
-    final failed = <OpenConnectionState>[];
     try {
       final opened = await openConnections();
       final saved = await listConnections();
+      if (!mounted) return;
       final byId = {for (final connection in saved) connection.id: connection};
-      final errors = <String>[];
-      int? activeIndex;
+      final restored = <Workspace>[];
+      Workspace? selected;
       for (final state in opened) {
-        if (!mounted) return;
         final connection = byId[state.id];
         if (connection == null) {
-          failed.add(state);
-          errors.add('找不到收藏的连接 ${state.id}');
+          _missingConnections.add(state);
+          if (state.active) _showError('恢复连接失败：找不到收藏的连接 ${state.id}');
           continue;
         }
-        final config = ConnectionConfig(
-          host: connection.host,
-          port: connection.port,
-          user: connection.user,
-          password: '',
-          database: state.database ?? connection.database,
-          options: connection.options,
-          sshSecrets: const [],
-          savedId: connection.id,
-        );
-        final error = await _openConnection(
-          config,
-          connection.name,
-          remember: false,
+        final workspace = Workspace(
+          id: _nextWorkspaceId++,
+          name: connection.name,
+          config: ConnectionConfig(
+            host: connection.host,
+            port: connection.port,
+            user: connection.user,
+            password: '',
+            database: state.database ?? connection.database,
+            options: connection.options,
+            sshSecrets: const [],
+            savedId: state.id,
+          ),
           initialTable: state.table,
           initialTabs: state.tabs,
           initialActiveTab: state.activeTab,
           databases: connection.databases,
         );
-        if (error != null) {
-          failed.add(state);
-          errors.add('${connection.name}：$error');
+        restored.add(workspace);
+        if (state.active) selected = workspace;
+      }
+      setState(() {
+        final wasEmpty = _workspaces.isEmpty;
+        _workspaces.addAll(restored);
+        if (wasEmpty && restored.isNotEmpty) {
+          _active = _workspaces.indexOf(selected ?? restored.first);
         }
-        if (error == null && state.active) activeIndex = _workspaces.length - 1;
+      });
+      _loadingRestoreState = false;
+      if (_saveAfterRestore) {
+        _saveAfterRestore = false;
+        await _rememberConnections();
       }
-      if (mounted && activeIndex != null && !_selectionChangedDuringRestore) {
-        setState(() => _active = activeIndex!);
-      }
-      if (mounted && errors.isNotEmpty) {
-        _showError('恢复连接失败：${errors.join('；')}');
-      }
+      // 标签和当前选择一次建好，各连接独立恢复，不再随完成顺序切页。
+      final priority = selected ?? (restored.isEmpty ? null : restored.first);
+      await Future.wait([
+        if (priority != null) _restoreWorkspace(priority),
+        for (final workspace in restored)
+          if (workspace != priority) _restoreWorkspace(workspace),
+      ]);
     } catch (e) {
-      if (mounted) _showError('恢复连接失败：$e');
+      if (mounted) {
+        final pendingSave = _saveAfterRestore
+            ? '；恢复列表未能读取，为避免覆盖原记录，本次新打开的连接尚未保存'
+            : '';
+        _showError('恢复连接失败：$e$pendingSave');
+      }
     } finally {
-      _restoringConnections = false;
-      if (mounted && _selectionChangedDuringRestore) {
-        _selectionChangedDuringRestore = false;
-        await _rememberConnections(preserve: failed);
+      _loadingRestoreState = false;
+      _saveAfterRestore = false;
+    }
+  }
+
+  Future<void> _restoreWorkspace(Workspace workspace) async {
+    if (!mounted || !_workspaces.contains(workspace)) return;
+    setState(() => workspace.connectionError = null);
+    BigInt? sessionId;
+    try {
+      sessionId = await openSessionTrusting(
+        workspace.config,
+        (issue) => _confirmWorkspaceHostKey(workspace, issue),
+      );
+      await listDatabases(sessionId: sessionId);
+      if (!mounted || !_workspaces.contains(workspace)) {
+        await closeSession(sessionId: sessionId);
+        return;
+      }
+      setState(() => workspace.attachSession(sessionId!));
+    } catch (e) {
+      if (sessionId != null) await closeSession(sessionId: sessionId);
+      if (!mounted || !_workspaces.contains(workspace)) return;
+      setState(() => workspace.connectionError = '$e');
+      if (!_showConnectionScreen && _workspaces[_active] == workspace) {
+        _showError('恢复连接失败：$e');
       }
     }
   }
 
-  void _showError(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+  Future<bool> _confirmWorkspaceHostKey(
+    Workspace workspace,
+    HostKeyIssue issue,
+  ) async {
+    if (!mounted ||
+        _showConnectionScreen ||
+        _workspaces[_active] != workspace) {
+      return false;
+    }
+    return _confirmHostKey(issue);
   }
 
-  Future<void> _rememberConnections({List<OpenConnectionState> preserve = const []}) async {
+  void _showError(String message) {
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  Future<void> _rememberConnections() async {
     if (!widget.rememberOpenConnections) return;
-    if (_restoringConnections) {
-      _selectionChangedDuringRestore = true;
+    if (_loadingRestoreState) {
+      _saveAfterRestore = true;
       return;
     }
     final opened = <OpenConnectionState>[];
@@ -152,15 +203,17 @@ class _QueryPageState extends State<QueryPage> {
       );
       opened.add(state);
     }
-    for (final state in preserve) {
-      opened.add(OpenConnectionState(
-        id: state.id,
-        database: state.database,
-        table: state.table,
-        active: false,
-        tabs: state.tabs,
-        activeTab: state.activeTab,
-      ));
+    for (final state in _missingConnections) {
+      opened.add(
+        OpenConnectionState(
+          id: state.id,
+          database: state.database,
+          table: state.table,
+          active: false,
+          tabs: state.tabs,
+          activeTab: state.activeTab,
+        ),
+      );
     }
     // 选库、选表可能连续触发，按触发顺序写，避免旧状态最后落盘。
     _pendingSave = _pendingSave.then((_) async {
@@ -182,8 +235,11 @@ class _QueryPageState extends State<QueryPage> {
   }
 
   /// 连上一条新连接：开侧栏会话，列一次库确认真的连得上，再开工作区。失败返回原因
-  Future<String?> _connect(ConnectionConfig config, String name, List<String> databases) =>
-      _openConnection(config, name, remember: true, databases: databases);
+  Future<String?> _connect(
+    ConnectionConfig config,
+    String name,
+    List<String> databases,
+  ) => _openConnection(config, name, remember: true, databases: databases);
 
   Future<String?> _openConnection(
     ConnectionConfig config,
@@ -235,7 +291,7 @@ class _QueryPageState extends State<QueryPage> {
     for (final tab in workspace.tabs) {
       await tab.close();
     }
-    await closeSession(sessionId: workspace.schemaId);
+    if (workspace.connected) await closeSession(sessionId: workspace.schemaId);
   }
 
   /// 标签栏点了别的连接的标签：那条连接先选中这个标签，再整个工作区切过去
@@ -277,8 +333,14 @@ class _QueryPageState extends State<QueryPage> {
           style: const TextStyle(fontSize: 12, fontFamily: 'Menlo'),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('取消')),
-          FilledButton(onPressed: () => Navigator.of(context).pop(true), child: const Text('信任并连接')),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('信任并连接'),
+          ),
         ],
       ),
     );
@@ -300,14 +362,23 @@ class _QueryPageState extends State<QueryPage> {
     try {
       if (Platform.isMacOS) {
         // resolvedExecutable 是 CData.app/Contents/MacOS/xxx，往上三层是 .app
-        final bundle = File(Platform.resolvedExecutable).parent.parent.parent.path;
+        final bundle = File(Platform.resolvedExecutable)
+            .parent
+            .parent
+            .parent
+            .path;
         await Process.run('open', ['-n', bundle]);
       } else {
-        await Process.start(Platform.resolvedExecutable, [], mode: ProcessStartMode.detached);
+        await Process.start(
+          Platform.resolvedExecutable,
+          [],
+          mode: ProcessStartMode.detached,
+        );
       }
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('打开新窗口失败：$e')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('打开新窗口失败：$e')));
     }
   }
 
@@ -318,27 +389,48 @@ class _QueryPageState extends State<QueryPage> {
       PlatformMenu(
         label: 'CData',
         menus: [
-          const PlatformMenuItemGroup(members: [PlatformProvidedMenuItem(type: PlatformProvidedMenuItemType.about)]),
+          const PlatformMenuItemGroup(
+            members: [
+              PlatformProvidedMenuItem(
+                type: PlatformProvidedMenuItemType.about,
+              ),
+            ],
+          ),
           PlatformMenuItemGroup(
             members: [
               PlatformMenuItem(
                 label: '偏好设置…',
-                shortcut: const SingleActivator(LogicalKeyboardKey.comma, meta: true),
+                shortcut: const SingleActivator(
+                  LogicalKeyboardKey.comma,
+                  meta: true,
+                ),
                 onSelected: _editPreferences,
               ),
             ],
           ),
           const PlatformMenuItemGroup(
-            members: [PlatformProvidedMenuItem(type: PlatformProvidedMenuItemType.servicesSubmenu)],
+            members: [
+              PlatformProvidedMenuItem(
+                type: PlatformProvidedMenuItemType.servicesSubmenu,
+              ),
+            ],
           ),
           const PlatformMenuItemGroup(
             members: [
               PlatformProvidedMenuItem(type: PlatformProvidedMenuItemType.hide),
-              PlatformProvidedMenuItem(type: PlatformProvidedMenuItemType.hideOtherApplications),
-              PlatformProvidedMenuItem(type: PlatformProvidedMenuItemType.showAllApplications),
+              PlatformProvidedMenuItem(
+                type: PlatformProvidedMenuItemType.hideOtherApplications,
+              ),
+              PlatformProvidedMenuItem(
+                type: PlatformProvidedMenuItemType.showAllApplications,
+              ),
             ],
           ),
-          const PlatformMenuItemGroup(members: [PlatformProvidedMenuItem(type: PlatformProvidedMenuItemType.quit)]),
+          const PlatformMenuItemGroup(
+            members: [
+              PlatformProvidedMenuItem(type: PlatformProvidedMenuItemType.quit),
+            ],
+          ),
         ],
       ),
       PlatformMenu(
@@ -346,20 +438,31 @@ class _QueryPageState extends State<QueryPage> {
         menus: [
           PlatformMenuItem(
             label: '新建连接窗口',
-            shortcut: const SingleActivator(LogicalKeyboardKey.keyN, meta: true),
+            shortcut: const SingleActivator(
+              LogicalKeyboardKey.keyN,
+              meta: true,
+            ),
             onSelected: _newWindow,
           ),
           PlatformMenuItem(
             label: '新建连接标签',
-            shortcut: const SingleActivator(LogicalKeyboardKey.keyT, meta: true),
+            shortcut: const SingleActivator(
+              LogicalKeyboardKey.keyT,
+              meta: true,
+            ),
             onSelected: () => setState(() => _connecting = true),
           ),
           PlatformMenuItem(
             label: '新建已连接标签',
-            shortcut: const SingleActivator(LogicalKeyboardKey.keyT, meta: true, shift: true),
+            shortcut: const SingleActivator(
+              LogicalKeyboardKey.keyT,
+              meta: true,
+              shift: true,
+            ),
             // 连接页上没有「当前连接」，置灰
             onSelected: showingWorkspace
-                ? () => _workspaceKeys[_workspaces[_active]]?.currentState?.duplicateTab()
+                ? () => _workspaceKeys[_workspaces[_active]]?.currentState
+                      ?.duplicateTab()
                 : null,
           ),
         ],
@@ -367,11 +470,21 @@ class _QueryPageState extends State<QueryPage> {
       const PlatformMenu(
         label: '窗口',
         menus: [
-          PlatformProvidedMenuItem(type: PlatformProvidedMenuItemType.minimizeWindow),
-          PlatformProvidedMenuItem(type: PlatformProvidedMenuItemType.zoomWindow),
-          PlatformProvidedMenuItem(type: PlatformProvidedMenuItemType.toggleFullScreen),
+          PlatformProvidedMenuItem(
+            type: PlatformProvidedMenuItemType.minimizeWindow,
+          ),
+          PlatformProvidedMenuItem(
+            type: PlatformProvidedMenuItemType.zoomWindow,
+          ),
+          PlatformProvidedMenuItem(
+            type: PlatformProvidedMenuItemType.toggleFullScreen,
+          ),
           PlatformMenuItemGroup(
-            members: [PlatformProvidedMenuItem(type: PlatformProvidedMenuItemType.arrangeWindowsInFront)],
+            members: [
+              PlatformProvidedMenuItem(
+                type: PlatformProvidedMenuItemType.arrangeWindowsInFront,
+              ),
+            ],
           ),
         ],
       ),
@@ -391,7 +504,9 @@ class _QueryPageState extends State<QueryPage> {
       onConnect: _connect,
       openSession: (config) => openSessionTrusting(config, _confirmHostKey),
       onPreferences: _editPreferences,
-      onCancel: _workspaces.isEmpty ? null : () => setState(() => _connecting = false),
+      onCancel: _workspaces.isEmpty
+          ? null
+          : () => setState(() => _connecting = false),
       startupError: widget.startupError,
     );
     if (_workspaces.isEmpty) return connectionScreen;
@@ -402,7 +517,10 @@ class _QueryPageState extends State<QueryPage> {
       children: [
         for (final workspace in _workspaces)
           WorkspaceView(
-            key: _workspaceKeys.putIfAbsent(workspace, () => GlobalKey(debugLabel: 'workspace-${workspace.id}')),
+            key: _workspaceKeys.putIfAbsent(
+              workspace,
+              () => GlobalKey(debugLabel: 'workspace-${workspace.id}'),
+            ),
             workspace: workspace,
             all: _workspaces,
             onSwitch: _switchTo,
@@ -415,9 +533,11 @@ class _QueryPageState extends State<QueryPage> {
             onDisconnect: () => _disconnect(workspace),
             onSelectionChanged: _rememberConnections,
             onPreferences: _editPreferences,
+            onRetryConnection: () => _restoreWorkspace(workspace),
             maxRows: () => widget.preferences.maxRows,
             editorFontSize: widget.preferences.editorFontSize.toDouble(),
-            confirmHostKey: _confirmHostKey,
+            confirmHostKey: (issue) =>
+                _confirmWorkspaceHostKey(workspace, issue),
           ),
         connectionScreen,
       ],
