@@ -7,6 +7,7 @@ import 'package:cdata_flutter/structure_view.dart';
 import 'package:cdata_flutter/theme.dart';
 import 'package:flutter/gestures.dart' show kSecondaryButton;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'fakes.dart';
@@ -112,6 +113,52 @@ Future<FakeSchemaSource> openEditor(WidgetTester tester, {VoidCallback? onAltere
 }
 
 void main() {
+  testWidgets('行复制跟随移动和删除，编辑时只复制选中文字', (tester) async {
+    String? copied;
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
+      if (call.method == 'Clipboard.setData') copied = (call.arguments as Map)['text'] as String?;
+      return null;
+    });
+    addTearDown(() => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(SystemChannels.platform, null));
+    await openEditor(tester);
+    Future<void> copy() async {
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyC);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+      await tester.pump();
+    }
+    await doubleTapCell(tester, find.byKey(const ValueKey('column-name-display-1')));
+    await settle(tester);
+    final input = tester.widget<TextField>(find.byKey(const ValueKey('column-name-1')));
+    input.controller!.selection = const TextSelection(baseOffset: 1, extentOffset: 4);
+    await tester.pump();
+    await copy();
+    expect(copied, 'itl');
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await settle(tester);
+    await tester.tap(find.text('body'));
+    await settle(tester);
+    await copy();
+    expect(copied, 'body');
+    await tester.tap(find.byKey(const ValueKey('column-row-2')), buttons: kSecondaryButton);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('上移'));
+    await settle(tester);
+    await copy();
+    expect(copied, 'body');
+    await tester.tap(find.byKey(const ValueKey('column-row-1')), buttons: kSecondaryButton);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('删除列'));
+    await settle(tester);
+    copied = 'unchanged';
+    await copy();
+    expect(copied, 'unchanged');
+    await tester.tap(find.text('title'));
+    await settle(tester);
+    await copy();
+    expect(copied, 'title');
+  });
+
   testWidgets('结构列超宽时显示可拖动的底部横向滚动条', (tester) async {
     await openEditor(tester);
 

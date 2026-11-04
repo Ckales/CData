@@ -85,6 +85,42 @@ Future<void> pumpStructure(WidgetTester tester, FakeSchemaSource source, String 
 }
 
 void main() {
+  for (final editable in [true, false]) {
+    testWidgets('字段行单击选中并用快捷键复制名称 editable=$editable', (tester) async {
+      String? copied;
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
+        if (call.method == 'Clipboard.setData') copied = (call.arguments as Map)['text'] as String?;
+        return null;
+      });
+      addTearDown(() => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(SystemChannels.platform, null));
+      final source = FakeSchemaSource.simple()..structures['posts'] = sampleStructure();
+      await pumpStructure(tester, source, 'posts', editable: editable);
+      await tester.tap(find.text('title'));
+      await tester.pumpAndSettle();
+      for (final modifier in [LogicalKeyboardKey.metaLeft, LogicalKeyboardKey.controlLeft]) {
+        await tester.sendKeyDownEvent(modifier);
+        await tester.sendKeyEvent(LogicalKeyboardKey.keyC);
+        await tester.sendKeyUpEvent(modifier);
+        await tester.pump();
+        expect(copied, 'title');
+        copied = null;
+      }
+      final selectedRow = find.ancestor(
+        of: find.text('title'),
+        matching: find.byWidgetPredicate((widget) => widget is Semantics && widget.properties.selected == true),
+      );
+      expect(selectedRow, findsOneWidget);
+      await tester.tap(find.text('body'));
+      await tester.pumpAndSettle();
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyC);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+      await tester.pump();
+      expect(copied, 'body');
+      expect(source.applied, isEmpty);
+    });
+  }
+
   testWidgets('取消撤销未执行的索引修改并留在当前编辑页', (tester) async {
     final source = FakeSchemaSource.simple()..structures['posts'] = sampleStructure();
     await pumpStructure(tester, source, 'posts', editable: true);

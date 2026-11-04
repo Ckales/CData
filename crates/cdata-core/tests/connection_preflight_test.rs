@@ -7,7 +7,7 @@ use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
 
-use cdata_core::db::{open_pool, run_sql_import, ConnectionConfig};
+use cdata_core::db::{open_pool, run_query, run_sql_import, ConnectionConfig};
 use cdata_core::options::ConnectionOptions;
 use cdata_core::sql_import::ImportStatement;
 use mysql_async::prelude::Queryable;
@@ -554,4 +554,120 @@ async fn failed_checkout_reconnect_is_reported_after_two_attempts() {
     assert!(matches!(result, Err(mysql_async::Error::Other(ref err))
         if err.downcast_ref::<cdata_core::db::ConnectFailed>().is_some()));
     server.join().unwrap();
+}
+
+/// Several tabs can leave several idle sessions behind. A retry from the same pool
+/// can select another dead session instead of establishing a new connection.
+#[tokio::test]
+async fn table_query_recovers_with_multiple_stale_pooled_connections() {
+    let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+    let port = listener.local_addr().unwrap().port();
+    listener.set_nonblocking(true).unwrap();
+    let (stop_tx, stop_rx) = mpsc::channel();
+    let received = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let server_received = received.clone();
+    let stale_pings = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let server_stale_pings = stale_pings.clone();
+    let server = thread::spawn(move || {
+        let mut handlers = Vec::new();
+        let mut id = 0;
+        loop {
+            if stop_rx.try_recv().is_ok() {
+                break;
+            }
+            match listener.accept() {
+                Ok((mut stream, _)) => {
+                    id += 1;
+                    stream.set_nonblocking(false).unwrap();
+                    let connection_id = id;
+                    let received = server_received.clone();
+                    let stale_pings = server_stale_pings.clone();
+                    handlers.push(thread::spawn(move || {
+                        stream
+                            .set_read_timeout(Some(Duration::from_secs(3)))
+                            .unwrap();
+                        handshake(&mut stream, connection_id);
+                        let mut pings = 0;
+                        let mut prepared_sql = Vec::new();
+                        loop {
+                            let mut byte = [0];
+                            match stream.peek(&mut byte) {
+                                Ok(0) | Err(_) => break,
+                                Ok(_) => {}
+                            }
+                            let (command, payload) = next_command(&mut stream);
+                            match command {
+                                0x01 => break,                     // COM_QUIT
+                                0x1f => ok_packet(&mut stream, 1), // COM_RESET_CONNECTION
+                                0x0e => {
+                                    pings += 1;
+                                    if connection_id <= 3 && pings > 1 {
+                                        stale_pings
+                                            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                                        // Socket still appears live, but its server session is gone.
+                                        send_packet(
+                                            &mut stream,
+                                            1,
+                                            &[0xff, 0xbf, 0x0f, b'#', b'H', b'Y', b'0', b'0', b'0'],
+                                        );
+                                    } else {
+                                        ok_packet(&mut stream, 1);
+                                    }
+                                }
+                                0x03 => query_reply(&mut stream, &payload),
+                                0x16 => {
+                                    // COM_STMT_PREPARE
+                                    assert!(connection_id > 3, "query sent to stale session");
+                                    assert!(pings > 0, "fresh session must pass preflight");
+                                    prepared_sql = payload;
+                                    // Statement id 1, no result columns or parameters.
+                                    send_packet(
+                                        &mut stream,
+                                        1,
+                                        &[0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                                    );
+                                }
+                                0x17 => {
+                                    // COM_STMT_EXECUTE
+                                    received.lock().unwrap().push(prepared_sql.clone());
+                                    ok_packet(&mut stream, 1);
+                                }
+                                0x19 => {} // COM_STMT_CLOSE has no response
+                                other => panic!("unexpected command {other:#x}"),
+                            }
+                        }
+                    }));
+                }
+                Err(err) if err.kind() == std::io::ErrorKind::WouldBlock => {
+                    thread::sleep(Duration::from_millis(1));
+                }
+                Err(err) => panic!("accept failed: {err}"),
+            }
+        }
+        for handler in handlers {
+            handler.join().unwrap();
+        }
+    });
+    let pool = open_pool(&config(port, 3)).await.unwrap();
+    let mut idle = Vec::new();
+    for _ in 0..3 {
+        let mut conn = pool.get_conn().await.unwrap();
+        // Avoid resetting the synthetic sessions when returning them to the pool.
+        conn.reset_connection(false);
+        idle.push(conn);
+    }
+    drop(idle);
+    // Let mysql_async's recycler place the clean connections into its idle queue.
+    tokio::task::yield_now().await;
+    let sql = "SELECT * FROM `synthetic_db`.`another_table` LIMIT 10";
+    let result = run_query(&pool, sql, 10).await;
+    pool.disconnect().await.unwrap();
+    stop_tx.send(()).unwrap();
+    server.join().unwrap();
+    assert!(
+        stale_pings.load(std::sync::atomic::Ordering::SeqCst) > 0,
+        "query must actually encounter a stale pooled session"
+    );
+    result.expect("first table query should reconnect without opening a second tab");
+    assert_eq!(*received.lock().unwrap(), vec![sql.as_bytes().to_vec()]);
 }

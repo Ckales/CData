@@ -5,6 +5,7 @@ import 'data_source.dart';
 import 'mac_widgets.dart';
 import 'src/rust/api/schema.dart';
 import 'structure_editor.dart';
+import 'structure_selection.dart';
 import 'theme.dart';
 
 /// 表结构对话框：Dialog 里包一个 StructurePanel，外加标题和关闭按钮
@@ -243,25 +244,31 @@ class _StructurePanelState extends State<StructurePanel> {
       if (index.name == 'PRIMARY') primary.addAll(index.columns);
     }
 
-    return _Grid(
-      headers: const ['', '列名', '类型', '可空', '默认值', '附加', '排序规则', '注释'],
-      widths: const [22, 150, 170, 44, 150, 150, 140, 200],
-      rows: [
-        for (final column in structure.columns)
-          [
-            primary.contains(column.name)
-                // 主键钥匙沿用约定俗成的金色：只是图标、不承载文字，深浅背景上都看得见
-                ? const Icon(Icons.key, size: 12, color: Colors.amber)
-                : const SizedBox.shrink(),
-            _text(column.name, bold: true),
-            _text(column.columnType, mono: true),
-            _text(column.nullable ? '是' : '否'),
-            _defaultValue(column.default_),
-            _text(column.extra, mono: true),
-            _text(column.collation ?? '', muted: true),
-            _text(column.comment),
-          ],
-      ],
+    return StructureColumnSelection(
+      rows: structure.columns,
+      names: [for (final column in structure.columns) column.name],
+      builder: (selectedRow, selectRow) => _Grid(
+        selectedRow: selectedRow,
+        onRowSelected: selectRow,
+        headers: const ['', '列名', '类型', '可空', '默认值', '附加', '排序规则', '注释'],
+        widths: const [22, 150, 170, 44, 150, 150, 140, 200],
+        rows: [
+          for (final column in structure.columns)
+            [
+              primary.contains(column.name)
+                  // 主键钥匙沿用约定俗成的金色：只是图标、不承载文字，深浅背景上都看得见
+                  ? const Icon(Icons.key, size: 12, color: Colors.amber)
+                  : const SizedBox.shrink(),
+              _text(column.name, bold: true),
+              _text(column.columnType, mono: true),
+              _text(column.nullable ? '是' : '否'),
+              _defaultValue(column.default_),
+              _text(column.extra, mono: true),
+              _text(column.collation ?? '', muted: true),
+              _text(column.comment),
+            ],
+        ],
+      ),
     );
   }
 
@@ -402,7 +409,10 @@ class _Grid extends StatefulWidget {
   final List<double> widths;
   final List<List<Widget>> rows;
 
-  const _Grid({required this.headers, required this.widths, required this.rows});
+  final int? selectedRow;
+  final ValueChanged<int>? onRowSelected;
+
+  const _Grid({required this.headers, required this.widths, required this.rows, this.selectedRow, this.onRowSelected});
 
   @override
   State<_Grid> createState() => _GridState();
@@ -462,11 +472,18 @@ class _GridState extends State<_Grid> {
                     child: ListView.builder(
                       itemCount: widget.rows.length,
                       itemExtent: 29,
-                      itemBuilder: (context, index) => ColoredBox(
-                        color: index.isOdd ? scheme.surfaceContainerLow : scheme.surface,
-                        child: DecoratedBox(
-                          decoration: BoxDecoration(border: Border(bottom: BorderSide(color: scheme.outlineVariant))),
-                          child: _cells(widget.rows[index]),
+                      itemBuilder: (context, index) => Listener(
+                        behavior: HitTestBehavior.opaque,
+                        onPointerDown: widget.onRowSelected == null ? null : (_) => widget.onRowSelected!(index),
+                        child: Semantics(
+                          selected: widget.onRowSelected == null ? null : widget.selectedRow == index,
+                          child: ColoredBox(
+                            color: widget.selectedRow == index ? scheme.primaryContainer : index.isOdd ? scheme.surfaceContainerLow : scheme.surface,
+                            child: DecoratedBox(
+                              decoration: BoxDecoration(border: Border(bottom: BorderSide(color: scheme.outlineVariant))),
+                              child: _cells(widget.rows[index]),
+                            ),
+                          ),
                         ),
                       ),
                     ),

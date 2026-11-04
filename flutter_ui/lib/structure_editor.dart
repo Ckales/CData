@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 
 import 'data_source.dart';
 import 'mac_widgets.dart';
+import 'structure_selection.dart';
 import 'src/rust/api/schema.dart';
 
 /// 表结构编辑器。改动先攒在界面里，预览 core 生成的 DDL 确认后才执行。
@@ -171,7 +172,19 @@ class _InlineTextCell extends StatefulWidget {
 }
 
 class _InlineTextCellState extends State<_InlineTextCell> {
+  final _inputFocus = FocusNode();
   bool _editing = false;
+
+  @override
+  void dispose() {
+    _inputFocus.dispose();
+    super.dispose();
+  }
+
+  void _startEditing() {
+    setState(() => _editing = true);
+    _inputFocus.requestFocus();
+  }
 
   void _stop() {
     if (_editing && mounted) setState(() => _editing = false);
@@ -191,6 +204,7 @@ class _InlineTextCellState extends State<_InlineTextCell> {
         },
         child: TextField(
           key: widget.inputKey,
+          focusNode: _inputFocus,
           controller: widget.controller,
           enabled: widget.enabled,
           autofocus: true,
@@ -209,7 +223,7 @@ class _InlineTextCellState extends State<_InlineTextCell> {
     return GestureDetector(
       key: widget.displayKey,
       behavior: HitTestBehavior.opaque,
-      onDoubleTap: widget.enabled ? () => setState(() => _editing = true) : null,
+      onDoubleTap: widget.enabled ? _startEditing : null,
       child: SizedBox(
         height: 25,
         child: Align(
@@ -249,6 +263,7 @@ class _ColumnTypeCellState extends State<_ColumnTypeCell> {
   final _link = LayerLink();
   final _filter = TextEditingController();
   final _filterFocus = FocusNode();
+  final _inputFocus = FocusNode();
   final _tapGroup = Object();
   bool _editing = false;
   bool _above = false;
@@ -257,7 +272,13 @@ class _ColumnTypeCellState extends State<_ColumnTypeCell> {
   void dispose() {
     _filter.dispose();
     _filterFocus.dispose();
+    _inputFocus.dispose();
     super.dispose();
+  }
+
+  void _startEditing() {
+    setState(() => _editing = true);
+    _inputFocus.requestFocus();
   }
 
   void _open() {
@@ -389,7 +410,7 @@ class _ColumnTypeCellState extends State<_ColumnTypeCell> {
                     InkWell(
                       onTap: () {
                         _close();
-                        setState(() => _editing = true);
+                        _startEditing();
                       },
                       child: const SizedBox(
                         height: 29,
@@ -410,6 +431,7 @@ class _ColumnTypeCellState extends State<_ColumnTypeCell> {
           child: _editing && widget.enabled
               ? TextField(
                   key: ValueKey('column-type-${widget.row}'),
+                  focusNode: _inputFocus,
                   controller: widget.controller,
                   enabled: widget.enabled,
                   autofocus: true,
@@ -435,7 +457,7 @@ class _ColumnTypeCellState extends State<_ColumnTypeCell> {
                         child: GestureDetector(
                           key: ValueKey('column-type-display-${widget.row}'),
                           behavior: HitTestBehavior.opaque,
-                          onDoubleTap: widget.enabled ? () => setState(() => _editing = true) : null,
+                          onDoubleTap: widget.enabled ? _startEditing : null,
                           child: Align(
                             alignment: Alignment.centerLeft,
                             child: Text(
@@ -1019,13 +1041,19 @@ class _StructureEditorPanelState extends State<StructureEditorPanel> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Expanded(
-          child: _Table(
-            widths: _columnWidths,
-            headers: const ['列名', '类型', '可空', '默认值', '自增', 'ON UPDATE', '排序规则', '注释'],
-            rows: [for (var i = 0; i < _columns.length; i++) _columnRow(i)],
-            headerHeight: 29,
-            rowHeight: 29,
-            onRowSecondaryTap: _showColumnMenu,
+          child: StructureColumnSelection(
+            rows: _columns,
+            names: [for (final column in _columns) column.name.text],
+            builder: (selectedRow, selectRow) => _Table(
+              selectedRow: selectedRow,
+              onRowSelected: selectRow,
+              widths: _columnWidths,
+              headers: const ['列名', '类型', '可空', '默认值', '自增', 'ON UPDATE', '排序规则', '注释'],
+              rows: [for (var i = 0; i < _columns.length; i++) _columnRow(i)],
+              headerHeight: 29,
+              rowHeight: 29,
+              onRowSecondaryTap: _showColumnMenu,
+            ),
           ),
         ),
         _addBar(TextButton.icon(
@@ -1552,6 +1580,8 @@ class _Table extends StatefulWidget {
   final double headerHeight;
   final double? rowHeight;
   final Future<void> Function(int row, Offset position)? onRowSecondaryTap;
+  final int? selectedRow;
+  final ValueChanged<int>? onRowSelected;
 
   const _Table({
     required this.widths,
@@ -1560,6 +1590,8 @@ class _Table extends StatefulWidget {
     this.headerHeight = 22,
     this.rowHeight,
     this.onRowSecondaryTap,
+    this.selectedRow,
+    this.onRowSelected,
   });
 
   @override
@@ -1617,23 +1649,30 @@ class _TableState extends State<_Table> {
                   child: ListView(
                     children: [
                       for (var i = 0; i < widget.rows.length; i++)
-                        GestureDetector(
-                          key: widget.onRowSecondaryTap == null ? null : ValueKey('column-row-$i'),
+                        Listener(
                           behavior: HitTestBehavior.opaque,
-                          onSecondaryTapUp: widget.onRowSecondaryTap == null
-                              ? null
-                              : (details) async {
-                                  setState(() => _menuRow = i);
-                                  await widget.onRowSecondaryTap!(i, details.globalPosition);
-                                  if (mounted) setState(() => _menuRow = null);
-                                },
-                          child: Container(
-                            height: widget.rowHeight,
-                            color: _menuRow == i
-                                ? scheme.primaryContainer
-                                : i.isOdd ? scheme.surfaceContainerLow : scheme.surface,
-                            padding: widget.rowHeight == null ? const EdgeInsets.symmetric(vertical: 2) : null,
-                            child: _cells(widget.rows[i]),
+                          onPointerDown: widget.onRowSelected == null ? null : (_) => widget.onRowSelected!(i),
+                          child: Semantics(
+                            selected: widget.onRowSelected == null ? null : widget.selectedRow == i,
+                            child: GestureDetector(
+                              key: widget.onRowSecondaryTap == null ? null : ValueKey('column-row-$i'),
+                              behavior: HitTestBehavior.opaque,
+                              onSecondaryTapUp: widget.onRowSecondaryTap == null
+                                  ? null
+                                  : (details) async {
+                                      setState(() => _menuRow = i);
+                                      await widget.onRowSecondaryTap!(i, details.globalPosition);
+                                      if (mounted) setState(() => _menuRow = null);
+                                    },
+                              child: Container(
+                                height: widget.rowHeight,
+                                color: _menuRow == i || widget.selectedRow == i
+                                    ? scheme.primaryContainer
+                                    : i.isOdd ? scheme.surfaceContainerLow : scheme.surface,
+                                padding: widget.rowHeight == null ? const EdgeInsets.symmetric(vertical: 2) : null,
+                                child: _cells(widget.rows[i]),
+                              ),
+                            ),
                           ),
                         ),
                     ],

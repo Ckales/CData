@@ -110,7 +110,8 @@ pub struct ResultSet {
 /// 隧道跟着池走，池还在隧道就在
 #[derive(Clone)]
 pub struct DbPool {
-    pool: Pool,
+    pool: Arc<std::sync::Mutex<Arc<Pool>>>,
+    pool_options: Opts,
     connect_timeout: Option<Duration>,
     query_timeout: Option<Duration>,
     tunnel: Option<Arc<Tunnel>>,
@@ -280,8 +281,12 @@ pub async fn open_pool(config: &ConnectionConfig) -> Result<DbPool, OpenError> {
         builder = builder.db_name(Some(database.clone()));
     }
 
+    let pool_options = Opts::from(builder);
     Ok(DbPool {
-        pool: Pool::new(Opts::from(builder)),
+        pool: Arc::new(std::sync::Mutex::new(Arc::new(Pool::new(
+            pool_options.clone(),
+        )))),
+        pool_options,
         connect_timeout: timeouts.connect(),
         query_timeout: timeouts.query(),
         tunnel,
@@ -316,12 +321,12 @@ fn resolve_ssh_secrets(config: &ConnectionConfig) -> Result<Vec<Option<String>>,
 
 impl DbPool {
     /// 取一条连接，在任何业务语句发出前用 PING 确认服务器仍可用。
-    /// mysql_async 的套接字检查不能确认远端会话存活；取连接或 PING 失败都重取一次。
+    /// mysql_async 的套接字检查不能确认远端会话存活；取连接或 PING 失败后换新池再试一次。
     ///
     /// 这一步的失败统一包成 ConnectFailed：语句还没发出去，界面可以明确告诉用户没有执行
     pub async fn get_conn(&self) -> Result<Conn, mysql_async::Error> {
-        let checkout = || async {
-            let mut conn = self.pool.get_conn().await?;
+        let checkout = |pool: Arc<Pool>| async move {
+            let mut conn = pool.get_conn().await?;
             if let Err(err) = conn.ping().await {
                 let _ = conn.disconnect().await;
                 return Err(err);
@@ -331,9 +336,21 @@ impl DbPool {
         let attempt = async {
             // 连接初始化也可能先于 PING 报断开；整个预检最多尝试两次。
             // 此时尚未发出业务语句，恢复连接不会重复执行用户的操作。
-            match checkout().await {
+            let original = self.pool.lock().unwrap().clone();
+            match checkout(original.clone()).await {
                 Ok(conn) => Ok(conn),
-                Err(_) => checkout().await,
+                Err(_) => {
+                    let replacement = {
+                        let mut current = self.pool.lock().unwrap();
+                        // 原池可能还有多条失效连接，不能把重取旧连接当成重连。
+                        // 并发操作若已换过池，就复用它；在途查询仍持有原池，不中断它们。
+                        if Arc::ptr_eq(&current, &original) {
+                            *current = Arc::new(Pool::new(self.pool_options.clone()));
+                        }
+                        current.clone()
+                    };
+                    checkout(replacement).await
+                }
             }
         };
         let result = match self.connect_timeout {
@@ -377,7 +394,8 @@ impl DbPool {
 
     /// 断开池里的全部连接。隧道随最后一个 DbPool 副本释放
     pub async fn disconnect(self) -> Result<(), mysql_async::Error> {
-        self.pool.disconnect().await
+        let pool = self.pool.lock().unwrap().as_ref().clone();
+        pool.disconnect().await
     }
 
     /// 另开一条连接停掉 connection_id 上正在跑的语句。KILL 自己用户的线程不需要额外权限
