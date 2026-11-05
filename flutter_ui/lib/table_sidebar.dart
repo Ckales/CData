@@ -8,6 +8,7 @@ import 'src/rust/api/db.dart' show ExportFormat, SqlDumpOptions;
 import 'src/rust/api/schema.dart';
 import 'structure_editor.dart' show showDdlPreview;
 import 'theme.dart';
+import 'workspace.dart' show commandLabel;
 
 /// 左侧的库表清单：库选择器、过滤框、当前库和表列表。
 /// 选库、过滤、点表浏览数据，右键看结构、导入、新建表。
@@ -67,6 +68,7 @@ class TableSidebar extends StatefulWidget {
 
 class _TableSidebarState extends State<TableSidebar> {
   final _filter = TextEditingController();
+  final _listFocus = FocusNode(debugLabel: 'table-list');
 
   List<String> _databases = [];
   List<TableInfo> _tables = [];
@@ -94,6 +96,7 @@ class _TableSidebarState extends State<TableSidebar> {
   @override
   void dispose() {
     _filter.dispose();
+    _listFocus.dispose();
     super.dispose();
   }
 
@@ -151,7 +154,10 @@ class _TableSidebarState extends State<TableSidebar> {
     return matched;
   }
 
-  void _browse(String table) => widget.onTableSelected(table);
+  void _browse(String table) {
+    _listFocus.requestFocus();
+    widget.onTableSelected(table);
+  }
 
   /// 建好之后重读清单。选不选中新表由调用方决定（它知道当前标签在什么模式）
   Future<void> _createTable() async {
@@ -237,7 +243,7 @@ class _TableSidebarState extends State<TableSidebar> {
       const PopupMenuDivider(height: 8),
       _menuItem('drop', '删除…', Icons.delete_outline, destructive: true),
       const PopupMenuDivider(height: 8),
-      _menuItem('copy-name', '复制名称', Icons.short_text),
+      _menuItem('copy-name', '复制名称（${commandLabel('C')}）', Icons.short_text),
       _menuItem('copy-create', '复制建表语句', Icons.code),
       if (!isView) _menuItem('copy-insert', '复制 INSERT 语句', Icons.data_object),
       const PopupMenuDivider(height: 8),
@@ -270,7 +276,7 @@ class _TableSidebarState extends State<TableSidebar> {
       case 'drop':
         await _runAction(table, const TableAction.drop());
       case 'copy-name':
-        await Clipboard.setData(ClipboardData(text: table));
+        await _copyName(table);
       case 'copy-create':
         await _copy(
           () async =>
@@ -461,6 +467,29 @@ class _TableSidebarState extends State<TableSidebar> {
       await _runAction(table, const TableAction.truncate());
     }
     if (choice is Maintenance) await _maintain(table, choice);
+  }
+
+  Future<void> _copyName(String table) async {
+    await Clipboard.setData(ClipboardData(text: table));
+  }
+
+  /// 焦点在表列表上时，⌘C / Ctrl+C 复制当前表名。过滤框和结果网格里的复制不经过这里
+  KeyEventResult _handleListKey(FocusNode node, KeyEvent event) {
+    if (!node.hasPrimaryFocus || event is! KeyDownEvent) {
+      return KeyEventResult.ignored;
+    }
+    final keyboard = HardwareKeyboard.instance;
+    final command = keyboard.isMetaPressed || keyboard.isControlPressed;
+    if (!command ||
+        keyboard.isShiftPressed ||
+        keyboard.isAltPressed ||
+        event.logicalKey != LogicalKeyboardKey.keyC) {
+      return KeyEventResult.ignored;
+    }
+    final table = widget.selectedTable;
+    if (table == null || table.isEmpty) return KeyEventResult.ignored;
+    _copyName(table);
+    return KeyEventResult.handled;
   }
 
   Future<void> _copy(Future<String> Function() read) async {
@@ -723,30 +752,34 @@ class _TableSidebarState extends State<TableSidebar> {
                         _showBlankMenu(details.globalPosition),
                     child: const SizedBox.expand(),
                   )
-                : ListView.builder(
-                    padding: const EdgeInsets.only(bottom: 6),
-                    itemCount: visible.length,
-                    itemExtent: 29,
-                    itemBuilder: (context, index) {
-                      final table = visible[index];
-                      return SidebarItem(
-                        showOverflowTooltip: true,
-                        icon: table.isView
-                            ? Icons.visibility_outlined
-                            : Icons.grid_on,
-                        iconColor: mac.tableIcon,
-                        label: table.name,
-                        // InnoDB 的行数是估算值，标个 ~ 免得被当成精确数字
-                        trailing:
-                            !table.isView && table.estimatedRows > BigInt.zero
-                            ? '~${table.estimatedRows}'
-                            : null,
-                        selected: table.name == widget.selectedTable,
-                        onTap: () => _browse(table.name),
-                        onSecondaryTap: (position) =>
-                            _showMenu(table, position),
-                      );
-                    },
+                : Focus(
+                    focusNode: _listFocus,
+                    onKeyEvent: _handleListKey,
+                    child: ListView.builder(
+                      padding: const EdgeInsets.only(bottom: 6),
+                      itemCount: visible.length,
+                      itemExtent: 29,
+                      itemBuilder: (context, index) {
+                        final table = visible[index];
+                        return SidebarItem(
+                          showOverflowTooltip: true,
+                          icon: table.isView
+                              ? Icons.visibility_outlined
+                              : Icons.grid_on,
+                          iconColor: mac.tableIcon,
+                          label: table.name,
+                          // InnoDB 的行数是估算值，标个 ~ 免得被当成精确数字
+                          trailing:
+                              !table.isView && table.estimatedRows > BigInt.zero
+                              ? '~${table.estimatedRows}'
+                              : null,
+                          selected: table.name == widget.selectedTable,
+                          onTap: () => _browse(table.name),
+                          onSecondaryTap: (position) =>
+                              _showMenu(table, position),
+                        );
+                      },
+                    ),
                   ),
           ),
           _SidebarFooter(

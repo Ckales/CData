@@ -1,9 +1,12 @@
 // 查询标签的 widget 测试：运行、快捷键、历史收藏、筛选排序怎么传给后端、高亮。
 // 查询本身的行为由 cdata-core 的真库测试保证，这里用内存的 runner 和 library。
 
+import 'dart:async';
+
 import 'package:cdata_flutter/data_source.dart';
 import 'package:cdata_flutter/filter_panel.dart';
 import 'package:cdata_flutter/query_tab.dart';
+import 'package:cdata_flutter/result_grid.dart';
 import 'package:cdata_flutter/sql_editor.dart';
 import 'package:cdata_flutter/sql_library.dart';
 import 'package:cdata_flutter/src/rust/api/db.dart';
@@ -22,13 +25,14 @@ class FakeRunner implements QueryRunner {
   final runs = <({String sql, FilterGroup filter, String? sortColumn, bool ascending})>[];
   String? error;
   bool closed = false;
+  Completer<QuerySummary>? pending;
 
   @override
   Future<QuerySummary> run(String sql, FilterGroup filter, String? sortColumn, bool sortAscending) async {
     runs.add((sql: sql, filter: filter, sortColumn: sortColumn, ascending: sortAscending));
     final message = error;
     if (message != null) throw Exception(message);
-    return FakeGridSource.rows(2).summary;
+    return pending == null ? FakeGridSource.rows(2).summary : await pending!.future;
   }
 
   @override
@@ -177,6 +181,76 @@ Future<GlobalKey<QueryTabState>> pumpTab(
 }
 
 void main() {
+  testWidgets('切表等待期间遮住旧数据，连续切表最终加载最后选中的表', (tester) async {
+    final runner = FakeRunner();
+    final key = await pumpTab(tester, runner, FakeLibrary());
+    await key.currentState!.runSql('SELECT * FROM first');
+    await tester.pumpAndSettle();
+
+    final pending = Completer<QuerySummary>();
+    runner.pending = pending;
+    final second = key.currentState!.runSql('SELECT * FROM second');
+    await tester.pump();
+    expect(find.byType(CircularProgressIndicator), findsOneWidget);
+    expect(find.text('正在执行查询…'), findsOneWidget);
+    expect(find.byType(AbsorbPointer).evaluate().any((e) => (e.widget as AbsorbPointer).absorbing), isTrue);
+    final third = key.currentState!.runSql('SELECT * FROM third');
+    await tester.pump();
+    runner.pending = null;
+    pending.complete(FakeGridSource.rows(2).summary);
+    await second;
+    await third;
+    await tester.pumpAndSettle();
+    expect(runner.runs.last.sql, 'SELECT * FROM third');
+    expect(find.byType(CircularProgressIndicator), findsNothing);
+
+    // 排序/刷新等已有查询进行中时，切表也要等待后继续执行。
+    runner.pending = Completer<QuerySummary>();
+    final refreshing = key.currentState!.run();
+    await tester.pump();
+    final next = key.currentState!.runSql('SELECT * FROM after_refresh');
+    final refreshResult = runner.pending!;
+    runner.pending = null;
+    refreshResult.complete(FakeGridSource.rows(2).summary);
+    await refreshing;
+    await next;
+    await tester.pumpAndSettle();
+    expect(runner.runs.last.sql, 'SELECT * FROM after_refresh');
+
+    runner.pending = Completer<QuerySummary>();
+    final failed = key.currentState!.runSql('SELECT * FROM broken');
+    await tester.pump();
+    expect(find.byType(CircularProgressIndicator), findsOneWidget);
+    runner.pending!.completeError(Exception('加载失败'));
+    await failed;
+    await tester.pumpAndSettle();
+    expect(find.byType(CircularProgressIndicator), findsNothing);
+    expect(find.textContaining('加载失败'), findsOneWidget);
+  });
+
+  testWidgets('切库重置会作废排队的旧表查询，等待当前查询结束再关闭会话', (tester) async {
+    final runner = FakeRunner()..pending = Completer<QuerySummary>();
+    final key = await pumpTab(tester, runner, FakeLibrary());
+    final first = key.currentState!.runSql('SELECT * FROM old_first');
+    await tester.pump();
+    final queued = key.currentState!.runSql('SELECT * FROM old_second');
+    final reset = key.currentState!.reset();
+    expect(runner.closed, isFalse);
+    runner.pending!.complete(FakeGridSource.rows(2).summary);
+    await first;
+    await queued;
+    await reset;
+    await tester.pumpAndSettle();
+    expect(runner.closed, isTrue);
+    expect(runner.runs.map((r) => r.sql), ['SELECT * FROM old_first']);
+    expect(find.byType(CircularProgressIndicator), findsNothing);
+    expect(find.byType(ResultGrid), findsNothing);
+    runner.pending = null;
+    await key.currentState!.runSql('SELECT * FROM new_table');
+    await tester.pumpAndSettle();
+    expect(runner.runs.last.sql, 'SELECT * FROM new_table');
+  });
+
   testWidgets('SQL 编辑区默认紧凑，拖动分隔条同时扩大输入区域', (tester) async {
     await pumpTab(tester, FakeRunner(), FakeLibrary());
     final divider = find.byKey(const ValueKey('sql-editor-resize'));

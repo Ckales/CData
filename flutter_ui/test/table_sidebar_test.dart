@@ -2,6 +2,7 @@
 
 import 'package:cdata_flutter/src/rust/api/schema.dart';
 import 'package:cdata_flutter/table_sidebar.dart';
+import 'package:cdata_flutter/workspace.dart' show commandLabel;
 import 'package:flutter/gestures.dart' show kSecondaryButton, PointerDeviceKind;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -22,6 +23,7 @@ Future<void> pumpSidebar(
   void Function(String table)? onOpenInNewTab,
   void Function(String table, TableAction action)? onTableAction,
   Future<String?> Function(String suggestedName)? pickSavePath,
+  String? selectedTable,
 }) async {
   await tester.pumpWidget(
     MaterialApp(
@@ -30,6 +32,7 @@ Future<void> pumpSidebar(
           source: source,
           width: width,
           database: database,
+          selectedTable: selectedTable,
           onDatabaseChanged: onDatabaseChanged ?? (_) {},
           onTableSelected: onTableSelected ?? (_) {},
           onShowStructure: onShowStructure,
@@ -436,10 +439,64 @@ void main() {
       addTearDown(() => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(SystemChannels.platform, null));
       await pumpSidebar(tester, FakeSchemaSource.simple());
 
-      await menu(tester, 'orders', '复制名称');
+      await menu(tester, 'orders', '复制名称（${commandLabel('C')}）');
       expect(clipboard, 'orders');
       await menu(tester, 'orders', '复制 INSERT 语句');
       expect(clipboard, 'INSERT INTO `orders` (`id`)\nVALUES\n\t(?);');
+    });
+
+    testWidgets('点表后 ⌘C / Ctrl+C 复制当前表名，过滤框里的复制不接管', (tester) async {
+      String? clipboard;
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
+        if (call.method == 'Clipboard.setData') {
+          clipboard = (call.arguments as Map)['text'] as String?;
+        }
+        return null;
+      });
+      addTearDown(() => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(SystemChannels.platform, null));
+      await pumpSidebar(tester, FakeSchemaSource.simple(), selectedTable: 'orders');
+
+      await tester.tap(find.text('orders'));
+      await tester.pump();
+      for (final modifier in [LogicalKeyboardKey.metaLeft, LogicalKeyboardKey.controlLeft]) {
+        clipboard = null;
+        await tester.sendKeyDownEvent(modifier);
+        await tester.sendKeyEvent(LogicalKeyboardKey.keyC);
+        await tester.sendKeyUpEvent(modifier);
+        await tester.pump();
+        expect(clipboard, 'orders');
+      }
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: TableSidebar(
+              source: FakeSchemaSource.simple(),
+              database: 'shop',
+              selectedTable: 'users',
+              onDatabaseChanged: (_) {},
+              onTableSelected: (_) {},
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.tap(find.text('users'));
+      await tester.pump();
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyC);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
+      await tester.pump();
+      expect(clipboard, 'users');
+
+      await tester.tap(find.byType(TextField));
+      await tester.pump();
+      clipboard = 'stale';
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyC);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
+      await tester.pump();
+      expect(clipboard, 'stale');
     });
 
     testWidgets('统计行数显示精确值；表操作里的优化表显示 MySQL 的消息', (tester) async {

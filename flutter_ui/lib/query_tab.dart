@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import 'data_source.dart';
@@ -187,6 +189,10 @@ class QueryTabState extends State<QueryTab> {
   GridSource? _source;
   String? _error;
   bool _busy = false;
+  Future<void> _sqlQueue = Future.value();
+  int _queuedSql = 0;
+  int _sqlEpoch = 0;
+  Completer<void>? _queryIdle;
   Duration? _elapsed;
 
   /// 筛选、排序的基准 SQL。每次都从它包一层，
@@ -219,13 +225,29 @@ class QueryTabState extends State<QueryTab> {
 
   /// 把 SQL 放进编辑器并跑。侧栏点表、历史里选一条都走这里
   Future<void> runSql(String sql) async {
-    _sql.text = sql;
-    await run();
+    // 同一会话只保留一份结果，切表必须串行；等待时继续遮住中间结果。
+    final epoch = _sqlEpoch;
+    final previous = _sqlQueue;
+    final completed = Completer<void>();
+    _sqlQueue = completed.future;
+    setState(() => _queuedSql++);
+    try {
+      await previous;
+      if (!mounted || epoch != _sqlEpoch) return;
+      await _queryIdle?.future;
+      if (!mounted || epoch != _sqlEpoch) return;
+      _sql.text = sql;
+      await run();
+    } finally {
+      if (mounted) setState(() => _queuedSql--);
+      completed.complete();
+    }
   }
 
   /// 跑编辑器里的 SQL，筛选和排序都清掉。一条语句走能筛选排序的单条路径，多条走脚本
   Future<void> run() async {
     if (_busy) return;
+    final epoch = _sqlEpoch;
     _baseSql = _sql.text;
 
     final List<String> statements;
@@ -255,6 +277,7 @@ class QueryTabState extends State<QueryTab> {
       historyError = '记录历史失败：$e';
     }
 
+    if (!mounted || epoch != _sqlEpoch) return;
     try {
       await widget.runner.dropChildResults();
     } catch (e) {
@@ -262,6 +285,7 @@ class QueryTabState extends State<QueryTab> {
       return;
     }
 
+    if (!mounted || epoch != _sqlEpoch) return;
     if (statements.length > 1) {
       await _runScript();
     } else {
@@ -272,6 +296,8 @@ class QueryTabState extends State<QueryTab> {
   }
 
   Future<void> _runScript() async {
+    final epoch = _sqlEpoch;
+    final idle = _queryIdle = Completer<void>();
     setState(() {
       _busy = true;
       _error = null;
@@ -281,7 +307,7 @@ class QueryTabState extends State<QueryTab> {
     final started = DateTime.now();
     try {
       final summary = await widget.runner.runScript(_baseSql);
-      if (!mounted) return;
+      if (!mounted || epoch != _sqlEpoch) return;
 
       final extras = <_ExtraResult>[];
       var withoutResult = 0;
@@ -315,10 +341,12 @@ class QueryTabState extends State<QueryTab> {
       });
       widget.onConnected();
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted || epoch != _sqlEpoch) return;
       setState(() => _error = '$e');
     } finally {
       if (mounted) setState(() => _busy = false);
+      _queryIdle = null;
+      idle.complete();
     }
   }
 
@@ -334,13 +362,15 @@ class QueryTabState extends State<QueryTab> {
   /// 看当前语句的执行计划，放在一个结果标签里。同时只留一份，再看就替换
   Future<void> _explain() async {
     if (_busy) return;
+    final epoch = _sqlEpoch;
+    final idle = _queryIdle = Completer<void>();
     setState(() {
       _busy = true;
       _error = null;
     });
     try {
       final outcome = await widget.runner.explain(_sql.text);
-      if (!mounted) return;
+      if (!mounted || epoch != _sqlEpoch) return;
       final plan = _ExtraResult(
         title: '执行计划',
         sql: outcome.sql,
@@ -357,10 +387,12 @@ class QueryTabState extends State<QueryTab> {
       });
       widget.onConnected();
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted || epoch != _sqlEpoch) return;
       setState(() => _error = '$e');
     } finally {
       if (mounted) setState(() => _busy = false);
+      _queryIdle = null;
+      idle.complete();
     }
   }
 
@@ -375,16 +407,27 @@ class QueryTabState extends State<QueryTab> {
 
   /// 连接参数变了：关掉会话、清掉结果。下次 run 会按新参数重开
   Future<void> reset() async {
-    await widget.runner.close();
-    if (!mounted) return;
-    setState(() {
-      _source = null;
-      _error = null;
-      _elapsed = null;
-      _extras = const [];
-      _activeResult = 0;
-      _scriptNotice = null;
-    });
+    // 切库时废弃旧表请求，并在旧查询结束后关闭会话；新请求等重置完成。
+    _sqlEpoch++;
+    final previous = _sqlQueue;
+    final completed = Completer<void>();
+    _sqlQueue = completed.future;
+    try {
+      await previous;
+      await _queryIdle?.future;
+      await widget.runner.close();
+      if (!mounted) return;
+      setState(() {
+        _source = null;
+        _error = null;
+        _elapsed = null;
+        _extras = const [];
+        _activeResult = 0;
+        _scriptNotice = null;
+      });
+    } finally {
+      completed.complete();
+    }
   }
 
   Future<void> _sortBy(String column) async {
@@ -453,6 +496,8 @@ class QueryTabState extends State<QueryTab> {
 
   /// 按当前的基准 SQL + 筛选 + 排序跑一次。SQL 在 core 里生成
   Future<void> _runView() async {
+    final epoch = _sqlEpoch;
+    final idle = _queryIdle = Completer<void>();
     setState(() {
       _busy = true;
       _error = null;
@@ -461,7 +506,7 @@ class QueryTabState extends State<QueryTab> {
     final started = DateTime.now();
     try {
       final summary = await widget.runner.run(_baseSql, _filter, _sortColumn, _sortAscending);
-      if (!mounted) return;
+      if (!mounted || epoch != _sqlEpoch) return;
       // ALTER、INSERT 这类没有列。空网格看起来像没跑成，说清楚
       if (summary.columns.isEmpty) {
         setState(() {
@@ -480,13 +525,15 @@ class QueryTabState extends State<QueryTab> {
       });
       widget.onConnected();
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted || epoch != _sqlEpoch) return;
       setState(() {
         _error = '$e';
         _source = null;
       });
     } finally {
       if (mounted) setState(() => _busy = false);
+      _queryIdle = null;
+      idle.complete();
     }
   }
 
@@ -554,32 +601,64 @@ class QueryTabState extends State<QueryTab> {
               onSelect: (index) => setState(() => _activeResult = index),
             ),
           Expanded(
-            child: views.isEmpty
-                ? Center(child: Text(_emptyText, style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant)))
-                // 不在前台的结果也留着，切回来滚动位置和选区都还在
-                : IndexedStack(
-                    index: active,
-                    children: [
-                      for (final view in views)
-                        ResultGrid(
-                          key: ObjectKey(view.source),
-                          source: view.source,
-                          onOpenLog: () => showOperationLogDialog(context, load: widget.loadOperationLogs),
-                          // 脚本结果和执行计划不能按列重跑：单独重跑一条语句可能拿不到它依赖的会话状态
-                          onSortColumn: view.isMain ? _sortBy : null,
-                          sortColumn: view.isMain ? _sortColumn : null,
-                          sortAscending: _sortAscending,
-                          pickSavePath: widget.pickSavePath,
-                          onAddToSearch: view.isMain && !_busy ? _addToSearch : null,
-                          // 有条件时上面的筛选条已经是入口，这里不再放一个，避免两个「筛选」
-                          onEditFilter: view.isMain && !_busy && _columns.isNotEmpty && _filter.items.isEmpty
-                              ? _editFilter
-                              : null,
-                          // 按当前的 SQL + 筛选 + 排序重跑一次，拿库里最新的数据
-                          onRefreshAll: view.isMain && !_busy ? _runView : null,
-                        ),
-                    ],
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                ExcludeFocus(
+                  excluding: _busy || _queuedSql > 0,
+                  child: AbsorbPointer(
+                    absorbing: _busy || _queuedSql > 0,
+                    child: views.isEmpty
+                        ? Center(child: Text(_emptyText, style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant)))
+                        // 不在前台的结果也留着，切回来滚动位置和选区都还在
+                        : IndexedStack(
+                            index: active,
+                            children: [
+                              for (final view in views)
+                                ResultGrid(
+                                  key: ObjectKey(view.source),
+                                  source: view.source,
+                                  onOpenLog: () => showOperationLogDialog(context, load: widget.loadOperationLogs),
+                                  // 脚本结果和执行计划不能按列重跑：单独重跑一条语句可能拿不到它依赖的会话状态
+                                  onSortColumn: view.isMain ? _sortBy : null,
+                                  sortColumn: view.isMain ? _sortColumn : null,
+                                  sortAscending: _sortAscending,
+                                  pickSavePath: widget.pickSavePath,
+                                  onAddToSearch: view.isMain && !_busy ? _addToSearch : null,
+                                  // 有条件时上面的筛选条已经是入口，这里不再放一个，避免两个「筛选」
+                                  onEditFilter: view.isMain && !_busy && _columns.isNotEmpty && _filter.items.isEmpty
+                                      ? _editFilter
+                                      : null,
+                                  // 按当前的 SQL + 筛选 + 排序重跑一次，拿库里最新的数据
+                                  onRefreshAll: view.isMain && !_busy ? _runView : null,
+                                ),
+                            ],
+                          ),
                   ),
+                ),
+                if (_busy || _queuedSql > 0)
+                  ColoredBox(
+                    color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.82),
+                    child: Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const SizedBox(
+                            width: 24,
+                            height: 24,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
+                          const SizedBox(height: 12),
+                          Text(
+                            widget.showEditor ? '正在执行查询…' : '正在加载表数据…',
+                            style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+              ],
+            ),
           ),
         ],
       );
