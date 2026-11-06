@@ -390,6 +390,7 @@ class WorkspaceViewState extends State<WorkspaceView> {
   /// 侧栏点表：当前标签换成这张表。在服务器模式里点表就回到内容模式
   void _openTable(String table) {
     final tab = _tab;
+    if (tab.table == table && tab.mode == WorkspaceMode.content) return;
     setState(() {
       tab.table = table;
       if (tab.mode == WorkspaceMode.server || tab.mode == WorkspaceMode.query) {

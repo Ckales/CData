@@ -2,6 +2,8 @@ import 'package:cdata_flutter/mac_widgets.dart';
 import 'package:cdata_flutter/table_sidebar.dart';
 import 'package:cdata_flutter/src/rust/api/db.dart';
 import 'package:cdata_flutter/src/rust/api/options.dart';
+import 'package:cdata_flutter/src/rust/api/schema.dart';
+import 'package:cdata_flutter/src/rust/api/editor.dart';
 import 'package:cdata_flutter/src/rust/frb_generated.dart';
 import 'package:cdata_flutter/theme.dart';
 import 'package:cdata_flutter/workspace.dart';
@@ -12,6 +14,63 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   setUp(() => RustLib.initMock(api: _SidebarApi()));
   tearDown(RustLib.dispose);
+
+  testWidgets('重复点击当前表不再加载，换表和从查询返回仍会加载', (tester) async {
+    RustLib.dispose();
+    final api = _SidebarApi();
+    RustLib.initMock(api: api);
+    final workspace = _workspace(1);
+    workspace.activeTab.database = 'shop';
+    var selectionChanges = 0;
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: appTheme(Brightness.light),
+        home: WorkspaceView(
+          workspace: workspace,
+          all: [workspace],
+          onSwitch: (_, _) {},
+          onCloseTab: (_, _) {},
+          onNewConnection: () {},
+          onDisconnect: () {},
+          onSelectionChanged: () => selectionChanges++,
+          onPreferences: () {},
+          maxRows: () => BigInt.from(100),
+          editorFontSize: 12,
+          confirmHostKey: (_) async => false,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    Finder table(String name) => find.descendant(
+      of: find.byType(TableSidebar),
+      matching: find.text(name),
+    );
+    await tester.tap(table('users'));
+    // 同一帧内再次点击，也不应排入第二次加载。
+    await tester.tap(table('users'));
+    await tester.pumpAndSettle();
+    expect(api.browsedTables, ['users']);
+    expect(api.executedSql, ['SELECT * FROM users']);
+    expect(selectionChanges, 1);
+
+    await tester.tap(table('users'));
+    await tester.pumpAndSettle();
+    expect(api.browsedTables, ['users']);
+    expect(selectionChanges, 1);
+
+    await tester.tap(table('orders'));
+    await tester.pumpAndSettle();
+    expect(api.browsedTables, ['users', 'orders']);
+    expect(api.executedSql.length, 2);
+
+    workspace.activeTab.mode = WorkspaceMode.query;
+    await tester.tap(table('orders'));
+    await tester.pumpAndSettle();
+    expect(workspace.activeTab.mode, WorkspaceMode.content);
+    expect(api.browsedTables, ['users', 'orders', 'orders']);
+    expect(api.executedSql.length, 3);
+    expect(tester.takeException(), isNull);
+  });
 
   testWidgets('跨连接拖动只改变显示顺序，切换、关闭和新增标签仍对应原连接', (tester) async {
     final first = _workspace(1);
@@ -182,6 +241,67 @@ Workspace _workspace(int id) => Workspace(
 );
 
 class _SidebarApi implements RustLibApi {
+  final browsedTables = <String>[];
+  final executedSql = <String>[];
+
+  @override
+  Future<List<TableInfo>> crateApiSchemaListTables({
+    required BigInt sessionId,
+    required String database,
+  }) async => [
+    for (final name in ['users', 'orders'])
+      TableInfo(name: name, estimatedRows: BigInt.zero, isView: false),
+  ];
+
+  @override
+  Future<BigInt> crateApiEditorLoadCatalog({
+    required BigInt sessionId,
+    required String database,
+  }) async => BigInt.zero;
+
+  @override
+  Future<String> crateApiSchemaBrowseSql({required String table}) async {
+    browsedTables.add(table);
+    return 'SELECT * FROM $table';
+  }
+
+  @override
+  Future<BigInt> crateApiDbOpenSession({
+    required ConnectionConfig config,
+  }) async => BigInt.one;
+
+  @override
+  List<String> crateApiEditorSplitStatements({required String sql}) => [sql];
+
+  @override
+  List<SqlToken> crateApiEditorTokenizeSql({required String sql}) => [];
+
+  @override
+  Future<void> crateApiEditorAddHistory({required String sql}) async {}
+
+  @override
+  Future<void> crateApiEditorDropChildResults({
+    required BigInt sessionId,
+  }) async {}
+
+  @override
+  Future<QuerySummary> crateApiDbExecuteFilteredView({
+    required BigInt sessionId,
+    required String sql,
+    required FilterGroup filter,
+    String? sortColumn,
+    required bool sortAscending,
+    required BigInt maxRows,
+  }) async {
+    executedSql.add(sql);
+    return QuerySummary(
+      columns: [],
+      totalRows: BigInt.zero,
+      truncated: false,
+      editability: const Editability.readOnly('test'),
+    );
+  }
+
   @override
   Future<List<String>> crateApiSchemaListDatabases({
     required BigInt sessionId,
