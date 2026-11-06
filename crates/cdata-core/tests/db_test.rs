@@ -340,7 +340,7 @@ async fn writing_null_and_chinese_round_trips() {
 }
 
 #[tokio::test]
-async fn table_without_primary_key_refuses_editing() {
+async fn table_without_unique_key_refuses_editing() {
     let Some(config) = config_from_env() else {
         return;
     };
@@ -352,16 +352,16 @@ async fn table_without_primary_key_refuses_editing() {
 
     match &summary.editability {
         cdata_core::edit::Editability::ReadOnly(reason) => {
-            assert!(reason.contains("没有主键"), "原因要说清楚：{reason}");
+            assert!(reason.contains("唯一定位键"), "原因要说清楚：{reason}");
         }
-        cdata_core::edit::Editability::Editable(_) => panic!("无主键表不该可编辑"),
+        cdata_core::edit::Editability::Editable(_) => panic!("没有唯一定位键的表不该可编辑"),
     }
 
     // 硬来也得被挡住
     let err = cdata_core::session::apply_edit(id, 0, 1, CellValue::Text("x".into()))
         .await
         .unwrap_err();
-    assert!(err.to_string().contains("没有主键"), "{err}");
+    assert!(err.to_string().contains("唯一定位键"), "{err}");
 
     cdata_core::session::close_session(id).await.ok();
 }
@@ -923,7 +923,7 @@ async fn insert_without_full_composite_key_is_refused_before_writing() {
     )
     .await
     .unwrap_err();
-    assert!(err.to_string().contains("复合主键"), "{err}");
+    assert!(err.to_string().contains("复合定位键"), "{err}");
     assert_eq!(
         count_where(&config, "SELECT COUNT(*) FROM edit_composite").await,
         before
@@ -946,11 +946,11 @@ async fn read_only_result_refuses_insert_and_delete() {
     let err = cdata_core::session::insert_row(id, vec![None, None])
         .await
         .unwrap_err();
-    assert!(err.to_string().contains("没有主键"), "{err}");
+    assert!(err.to_string().contains("唯一定位键"), "{err}");
     let err = cdata_core::session::delete_rows(id, vec![0])
         .await
         .unwrap_err();
-    assert!(err.to_string().contains("没有主键"), "{err}");
+    assert!(err.to_string().contains("唯一定位键"), "{err}");
 
     cdata_core::session::close_session(id).await.ok();
 }
@@ -1079,7 +1079,7 @@ async fn paste_writes_a_block_and_caches_stored_values() {
 }
 
 #[tokio::test]
-async fn paste_refuses_primary_key_and_out_of_range_before_writing() {
+async fn paste_refuses_out_of_range_before_writing() {
     let Some(config) = config_from_env() else {
         return;
     };
@@ -1090,12 +1090,6 @@ async fn paste_refuses_primary_key_and_out_of_range_before_writing() {
             .await
             .expect("查询失败");
     let total = summary.total_rows;
-
-    let err =
-        cdata_core::session::paste_cells(id, 0, vec![0], vec![vec![CellValue::Text("99".into())]])
-            .await
-            .unwrap_err();
-    assert!(err.to_string().contains("主键"), "{err}");
 
     let two_rows = vec![
         vec![CellValue::Text("x".into())],

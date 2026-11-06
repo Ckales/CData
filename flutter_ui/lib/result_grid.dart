@@ -327,13 +327,6 @@ class _ResultGridState extends State<ResultGrid> {
   String? _editRefusal(int columnIndex) {
     final editability = widget.summary.editability;
     if (editability is Editability_ReadOnly) return editability.field0;
-    final target = (editability as Editability_Editable).field0;
-
-    // keyIndexes 是 FRB 的 Uint64List，元素是 BigInt（u64 装不进 Dart 的 int）。
-    // contains 收 Object?，拿 int 去比会永远 false 而且编译不报错
-    if (target.keyIndexes.contains(BigInt.from(columnIndex))) {
-      return '${widget.summary.columns[columnIndex].name} 是主键列，改主键要用专门的流程';
-    }
     return null;
   }
 
@@ -540,7 +533,7 @@ class _ResultGridState extends State<ResultGrid> {
     }
   }
 
-  /// 复制行：拿这一行的原始值预填新增行表单。主键交给默认 / 自增，否则一定撞主键
+  /// 复制行：拿这一行的原始值预填新增行表单。定位列留空，交给用户填新值或默认 / 自增，避免唯一键冲突
   Future<void> _duplicateRow(int rowIndex) async {
     final editability = widget.summary.editability;
     if (editability is Editability_ReadOnly) {
@@ -565,7 +558,7 @@ class _ResultGridState extends State<ResultGrid> {
     await _insertRow(initial: initial);
   }
 
-  /// 按主键从库里重读这一行
+  /// 按定位键从库里重读这一行
   Future<void> _refreshRow(int rowIndex) async {
     setState(() {
       _refusal = null;

@@ -1144,7 +1144,7 @@ pub fn plan_alter(
         if !used_indexes.contains(&index.name) {
             drop_indexes.push(drop_index_sql(&index.name));
             if index.name == "PRIMARY" {
-                dangers.push("删除主键：没有主键的表在 CData 里不能再编辑行".to_string());
+                dangers.push("删除主键：若没有可用的非空唯一索引，CData 将无法编辑行".to_string());
             } else {
                 dangers.push(format!("删除索引 {}", index.name));
             }
@@ -1190,7 +1190,7 @@ pub fn plan_alter(
         drop_indexes.push(drop_index_sql(original_name));
         add_indexes.push(add_index_sql(index, nbe)?);
         if original_name == "PRIMARY" && index.kind != IndexKind::Primary {
-            dangers.push("删除主键：没有主键的表在 CData 里不能再编辑行".to_string());
+            dangers.push("删除主键：若没有可用的非空唯一索引，CData 将无法编辑行".to_string());
         }
     }
 

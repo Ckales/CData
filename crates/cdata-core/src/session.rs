@@ -15,7 +15,7 @@ use crate::db::{
     DbPool, OpenError, QueryTimedOut, ResultSet,
 };
 use crate::edit::{
-    build_delete, build_insert, build_select_by_key, build_update, detect_editability,
+    build_delete, build_insert, build_row_update, build_select_by_key, detect_editability,
     is_auto_increment, EditTarget, Editability,
 };
 use crate::sql::{build_view, FilterCondition};
@@ -929,7 +929,7 @@ fn pool_of(session_id: u64) -> Result<DbPool> {
 /// 改一个单元格并写回数据库。
 ///
 /// 值没变就不发 SQL。连接开了 CLIENT_FOUND_ROWS，affected_rows 是匹配行数，
-/// 不为 1 就是定位失败。写回后按主键重读这一行放进缓存 —— 用户填 `7.5`，
+/// 不为 1 就是定位失败。写回后按定位键重读这一行放进缓存 —— 用户填 `7.5`，
 /// DECIMAL(12,2) 存的是 `7.50`，缓存里放填的值就是在显示假数据。
 pub async fn apply_edit(
     session_id: u64,
@@ -966,8 +966,9 @@ pub async fn apply_edit(
         return Ok(());
     }
 
-    let statement = build_update(&target, &columns, &row, column_index, &new_value)
-        .map_err(Error::NotEditable)?;
+    let (statement, locator) =
+        build_row_update(&target, &columns, &row, &[(column_index, new_value)])
+            .map_err(Error::NotEditable)?;
 
     let log_sql = crate::sql_log::render_sql(&statement.sql, &statement.params);
     let started = Instant::now();
@@ -1014,7 +1015,7 @@ pub async fn apply_edit(
     crate::sql_log::record(session_id, "update", &log_sql, started, true, "完成");
 
     drop(conn);
-    let fresh = reread_row(&pool, &target, &columns, &row).await?;
+    let fresh = reread_row(&pool, &target, &columns, &locator).await?;
 
     let mut guard = store().lock().unwrap();
     let session = guard
@@ -1027,9 +1028,9 @@ pub async fn apply_edit(
     Ok(())
 }
 
-/// 按主键从库里重读缓存里的一行，右键「刷新行」用。
+/// 按定位键从库里重读缓存里的一行，右键「刷新行」用。
 ///
-/// 库里已经没有这一行（被删了或主键被改了）就报错，缓存原样留着 —— 不替用户把行删掉，
+/// 库里已经没有这一行（被删了或定位键被改了）就报错，缓存原样留着 —— 不替用户把行删掉，
 /// 让他重新查询确认。
 pub async fn refresh_row(session_id: u64, row_index: u64) -> Result<()> {
     let row_index = row_index as usize;
@@ -1052,7 +1053,7 @@ pub async fn refresh_row(session_id: u64, row_index: u64) -> Result<()> {
     let select = build_select_by_key(&target, &columns, &row).map_err(Error::EditFailed)?;
     let reread = run_query_with_params(&pool, &select.sql, select.params, 1).await?;
     let fresh = reread.rows.into_iter().next().ok_or_else(|| {
-        Error::EditFailed("库里已经找不到这一行（可能被删除或改了主键），请重新查询".to_string())
+        Error::EditFailed("库里已经找不到这一行（可能被删除或改了定位键），请重新查询".to_string())
     })?;
 
     let mut guard = store().lock().unwrap();
@@ -1065,7 +1066,7 @@ pub async fn refresh_row(session_id: u64, row_index: u64) -> Result<()> {
     Ok(())
 }
 
-/// 按主键从库里重读一行。写库之后用它刷新缓存，界面显示的永远是库里真实存下的值
+/// 按定位键从库里重读一行。写库之后用它刷新缓存，界面显示的永远是库里真实存下的值
 async fn reread_row(
     pool: &DbPool,
     target: &EditTarget,
@@ -1076,7 +1077,8 @@ async fn reread_row(
     let reread = run_query_with_params(pool, &select.sql, select.params, 1).await?;
     reread.rows.into_iter().next().ok_or_else(|| {
         Error::EditFailed(
-            "已写入，但按主键读不回这一行（可能被 MySQL 转换了主键值），请重新查询确认".to_string(),
+            "已写入，但按定位键读不回这一行（可能被 MySQL 转换了定位键值），请重新查询确认"
+                .to_string(),
         )
     })
 }
@@ -1116,8 +1118,8 @@ pub fn copy_range(
 
 /// 从 row_start 行起，把一块值粘贴进 column_indexes 这几列，返回写了多少个单元格。
 ///
-/// 和批量删除一样放一个事务，任何一格没写成就整体回滚。主键列、二进制列拒绝粘贴。
-/// 写完按主键重读改过的行，缓存里放库里真实存下的值。
+/// 和批量删除一样放一个事务，任何一格没写成就整体回滚。二进制列拒绝粘贴。定位列允许修改，按新键读回。
+/// 写完按定位键重读改过的行，缓存里放库里真实存下的值。
 pub async fn paste_cells(
     session_id: u64,
     row_start: u64,
@@ -1154,12 +1156,6 @@ pub async fn paste_cells(
                 .columns
                 .get(index)
                 .ok_or_else(|| Error::BadInput(format!("列下标 {index} 越界")))?;
-            if target.key_indexes.contains(&index) {
-                return Err(Error::NotEditable(format!(
-                    "粘贴区域包含主键列 {}，改主键要用专门的流程",
-                    column.name
-                )));
-            }
             if column.is_binary {
                 return Err(Error::NotEditable(format!(
                     "粘贴区域包含二进制列 {}，暂不支持粘贴",
@@ -1182,18 +1178,18 @@ pub async fn paste_cells(
 
             let row_index = row_start + offset;
             let row = &result.rows[row_index];
-            let mut changed = false;
-            for (value, &column_index) in pasted_row.iter().zip(&column_indexes) {
-                if &row[column_index] == value {
-                    continue;
-                }
-                let statement = build_update(&target, &result.columns, row, column_index, value)
-                    .map_err(Error::NotEditable)?;
-                statements.push((row_index, statement));
-                changed = true;
-            }
-            if changed {
-                touched.push((row_index, row.clone()));
+            let changes: Vec<_> = pasted_row
+                .iter()
+                .zip(&column_indexes)
+                .filter(|(value, index)| &row[**index] != *value)
+                .map(|(value, index)| (*index, value.clone()))
+                .collect();
+            if !changes.is_empty() {
+                let (statement, locator) =
+                    build_row_update(&target, &result.columns, row, &changes)
+                        .map_err(Error::NotEditable)?;
+                statements.push((row_index, statement, changes.len() as u64));
+                touched.push((row_index, locator));
             }
         }
 
@@ -1209,14 +1205,14 @@ pub async fn paste_cells(
     if statements.is_empty() {
         return Ok(0);
     }
-    let written = statements.len() as u64;
+    let written = statements.iter().map(|(_, _, count)| *count).sum();
 
-    // ponytail: 一格一条 UPDATE，粘贴几千格以内够用；更大再改成一行一条多列 SET
+    // 一行一条多列 UPDATE，使用原定位键匹配，同时修改所有目标列。
     let mut conn = pool.get_conn().await?;
     let mut tx = conn.start_transaction(TxOpts::default()).await?;
     let started = Instant::now();
     let mut executed_sql: Vec<String> = Vec::with_capacity(statements.len());
-    for (row_index, statement) in statements {
+    for (row_index, statement, _) in statements {
         let log_sql = crate::sql_log::render_sql(&statement.sql, &statement.params);
         if let Err(error) = tx.exec_drop(&statement.sql, statement.params).await {
             let _ = tx.rollback().await;
@@ -1288,7 +1284,7 @@ pub async fn paste_cells(
 /// 插一行并把它追加到结果集末尾，返回新的总行数。
 ///
 /// `values[i]` 为 None 表示这一列交给 DEFAULT / AUTO_INCREMENT。
-/// 插入前先确认插完能按主键找回这一行，找不回就拒绝 —— 不然库里多了一行、界面却看不到。
+/// 插入前先确认插完能按定位键找回这一行，找不回就拒绝 —— 不然库里多了一行、界面却看不到。
 /// 追加进缓存的是从库里读回来的真实值，不是用户填的值。
 pub async fn insert_row(session_id: u64, values: Vec<Option<CellValue>>) -> Result<u64> {
     let (pool, target, columns) = {
@@ -1307,7 +1303,7 @@ pub async fn insert_row(session_id: u64, values: Vec<Option<CellValue>>) -> Resu
 
     let insert = build_insert(&target, &columns, &values).map_err(Error::NotEditable)?;
 
-    // 没填（或填了 NULL）的主键列。只有「单列主键 + 自增」能靠 LAST_INSERT_ID 找回
+    // 没填（或填了 NULL）的定位列。只有「单列定位键 + 自增」能靠 LAST_INSERT_ID 找回
     let mut missing_keys = Vec::new();
     for &key_index in &target.key_indexes {
         if matches!(values[key_index], None | Some(CellValue::Null)) {
@@ -1322,7 +1318,7 @@ pub async fn insert_row(session_id: u64, values: Vec<Option<CellValue>>) -> Resu
                 .await?
             {
                 return Err(Error::NotEditable(format!(
-                    "主键列 {} 没有填值，且不是自增列，插入后无法定位这一行",
+                    "定位列 {} 没有填值，且不是自增列，插入后无法定位这一行",
                     key_column.name
                 )));
             }
@@ -1330,7 +1326,7 @@ pub async fn insert_row(session_id: u64, values: Vec<Option<CellValue>>) -> Resu
         }
         _ => {
             return Err(Error::NotEditable(
-                "复合主键的每一列都要填值，否则插入后无法定位这一行".to_string(),
+                "复合定位键的每一列都要填值，否则插入后无法定位这一行".to_string(),
             ))
         }
     };
@@ -1378,7 +1374,7 @@ pub async fn insert_row(session_id: u64, values: Vec<Option<CellValue>>) -> Resu
     }
     crate::sql_log::record(session_id, "insert", &log_sql, started, true, "完成");
 
-    // 拼一行只有主键有意义的「定位行」，交给 build_select_by_key 生成 WHERE
+    // 拼一行只有定位列有意义的「定位行」，交给 build_select_by_key 生成 WHERE
     let mut locator = vec![CellValue::Null; columns.len()];
     for &key_index in &target.key_indexes {
         if let Some(value) = &values[key_index] {
@@ -1409,7 +1405,7 @@ pub async fn insert_row(session_id: u64, values: Vec<Option<CellValue>>) -> Resu
 /// 删若干行，返回新的总行数。
 ///
 /// 放在一个事务里，每条都必须恰好删掉 1 行，否则整体回滚 —— 缓存里的行可能已经被
-/// 别人删了或改了主键，删一半留一半比全不删更难收拾。
+/// 别人删了或改了定位键，删一半留一半比全不删更难收拾。
 pub async fn delete_rows(session_id: u64, row_indexes: Vec<u64>) -> Result<u64> {
     let mut row_indexes: Vec<usize> = row_indexes.into_iter().map(|i| i as usize).collect();
     // 重复的下标会让第二条 DELETE 影响 0 行，把整批都回滚掉
@@ -1439,7 +1435,7 @@ pub async fn delete_rows(session_id: u64, row_indexes: Vec<u64>) -> Result<u64> 
         (session.pool.clone(), statements)
     };
 
-    // ponytail: 一行一条 DELETE，几千行以内够用；要删上万行再改成按主键 IN 分批
+    // ponytail: 一行一条 DELETE，几千行以内够用；要删上万行再改成按定位键 IN 分批
     // MyISAM 这类不支持事务的引擎回滚无效，报错信息里要说清楚
     let mut conn = pool.get_conn().await?;
     let mut tx = conn.start_transaction(TxOpts::default()).await?;

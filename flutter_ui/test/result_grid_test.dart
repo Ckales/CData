@@ -359,16 +359,15 @@ void main() {
     expect(source.edits.last.$3, const CellValue.text(''));
   });
 
-  testWidgets('主键列拒绝编辑并说明原因', (tester) async {
+  testWidgets('定位列可以编辑并提交新值', (tester) async {
     final source = FakeGridSource.rows(2);
     await pumpGrid(tester, source);
-
-    // 第 0 行第 0 列是主键。用 key 定位，行号列也显示 1
     await doubleTap(tester, find.byKey(const ValueKey('cell-0-0')));
-
-    expect(find.byType(TextField), findsNothing);
-    expect(find.textContaining('主键'), findsOneWidget);
-    expect(source.edits, isEmpty);
+    expect(find.byType(TextField), findsOneWidget);
+    await tester.enterText(find.byType(TextField), '43');
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.pumpAndSettle();
+    expect(source.edits.single, (0, 0, const CellValue.text('43')));
   });
 
   testWidgets('只读结果集在状态栏说明原因', (tester) async {
@@ -700,7 +699,7 @@ void main() {
       expect(source.copies.last.$3, [0, 1]);
     });
 
-    testWidgets('设为 NULL 写回 NULL；主键列拒绝并说明原因', (tester) async {
+    testWidgets('设为 NULL 包括定位列，约束错误由数据源返回', (tester) async {
       final source = FakeGridSource.rows(2);
       await pumpGrid(tester, source);
 
@@ -712,8 +711,8 @@ void main() {
       await rightClick(tester, cell(0, 0));
       await tester.tap(find.text('将 "id" 设为 NULL'));
       await tester.pumpAndSettle();
-      expect(source.edits, hasLength(1));
-      expect(find.textContaining('主键'), findsOneWidget);
+      expect(source.edits, hasLength(2));
+      expect(source.edits.last, (0, 0, const CellValue.null_()));
     });
 
     testWidgets('删除行要确认；点在选中行上删全部选中行', (tester) async {
