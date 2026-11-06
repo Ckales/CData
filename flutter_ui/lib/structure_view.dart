@@ -171,44 +171,40 @@ class _StructurePanelState extends State<StructurePanel> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          MacPanelBar(
+          if (structure != null) MacPanelBar(
             children: [
-              if (structure != null)
-                Expanded(
-                  child: TabBar(
-                    isScrollable: true,
-                    tabAlignment: TabAlignment.start,
-                    dividerHeight: 0,
-                    padding: EdgeInsets.zero,
-                    labelPadding: const EdgeInsets.symmetric(horizontal: 8),
-                    indicatorSize: TabBarIndicatorSize.tab,
-                    indicator: BoxDecoration(
-                      border: Border(bottom: BorderSide(color: mac.accent, width: 2)),
-                    ),
-                    overlayColor: const WidgetStatePropertyAll(Colors.transparent),
-                    splashFactory: NoSplash.splashFactory,
-                    labelStyle: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
-                    unselectedLabelStyle: const TextStyle(fontSize: 11),
-                    labelColor: mac.accent,
-                    unselectedLabelColor: scheme.onSurfaceVariant,
-                    tabs: [
-                      Tab(height: 31, text: '列 ${structure.columns.length}'),
-                      Tab(height: 31, text: '索引 ${structure.indexes.length}'),
-                      Tab(height: 31, text: '外键 ${structure.foreignKeys.length}'),
-                      // null 是服务器读不了，不是没有，标签上不写 0
-                      Tab(height: 31, text: structure.checks == null ? 'CHECK' : 'CHECK ${structure.checks!.length}'),
-                      const Tab(height: 31, text: '建表语句'),
-                    ],
+              Expanded(
+                child: TabBar(
+                  isScrollable: true,
+                  tabAlignment: TabAlignment.start,
+                  dividerHeight: 0,
+                  padding: EdgeInsets.zero,
+                  labelPadding: const EdgeInsets.symmetric(horizontal: 8),
+                  indicatorSize: TabBarIndicatorSize.tab,
+                  indicator: BoxDecoration(
+                    border: Border(bottom: BorderSide(color: mac.accent, width: 2)),
                   ),
-                )
-              else
-                const Spacer(),
-              if (structure != null)
-                OutlinedButton.icon(
-                  onPressed: () => setState(() => _editing = true),
-                  icon: const Icon(Icons.edit_outlined, size: 14),
-                  label: const Text('编辑'),
+                  overlayColor: const WidgetStatePropertyAll(Colors.transparent),
+                  splashFactory: NoSplash.splashFactory,
+                  labelStyle: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
+                  unselectedLabelStyle: const TextStyle(fontSize: 11),
+                  labelColor: mac.accent,
+                  unselectedLabelColor: scheme.onSurfaceVariant,
+                  tabs: [
+                    Tab(height: 31, text: '列 ${structure.columns.length}'),
+                    Tab(height: 31, text: '索引 ${structure.indexes.length}'),
+                    Tab(height: 31, text: '外键 ${structure.foreignKeys.length}'),
+                    // null 是服务器读不了，不是没有，标签上不写 0
+                    Tab(height: 31, text: structure.checks == null ? 'CHECK' : 'CHECK ${structure.checks!.length}'),
+                    const Tab(height: 31, text: '建表语句'),
+                  ],
                 ),
+              ),
+              OutlinedButton.icon(
+                onPressed: () => setState(() => _editing = true),
+                icon: const Icon(Icons.edit_outlined, size: 14),
+                label: const Text('编辑'),
+              ),
             ],
           ),
           Expanded(child: _body(structure)),
