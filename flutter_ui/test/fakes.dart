@@ -201,6 +201,24 @@ class FakeGridSource implements GridSource {
     return lines.join('\n');
   }
 
+  /// rowsInsertSql 的调用记录：行下标
+  final List<List<int>> insertSqls = [];
+
+  /// 简化版 INSERT：只拼显示文本。真实的引号、NULL、二进制规则由 cdata-core 的测试保证
+  @override
+  Future<String> rowsInsertSql(List<int> rowIndexes) async {
+    final error = editError;
+    if (error != null) throw Exception(error);
+
+    insertSqls.add(rowIndexes);
+    final names = summary.columns.map((column) => '`${column.orgName}`').join(', ');
+    final values = [
+      for (final index in rowIndexes)
+        '  (${rows[index].map((cell) => _display(cell).text).join(', ')})',
+    ];
+    return 'INSERT INTO `orders` ($names) VALUES\n${values.join(',\n')};';
+  }
+
   @override
   Future<List<List<CellValue>>> parseClipboard(String text) async {
     final parsed = <List<CellValue>>[];

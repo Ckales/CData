@@ -317,6 +317,11 @@ pub fn copy_range(
         .map_err(to_message)
 }
 
+/// 把选中的行写成 INSERT 语句，复制用。列名用原始列名，值写成 SQL 字面量
+pub fn rows_insert_sql(session_id: u64, row_indexes: Vec<u64>) -> Result<String> {
+    cdata_core::session::rows_insert_sql(session_id, row_indexes).map_err(to_message)
+}
+
 /// 解析剪贴板里的 TSV。不带引号的 NULL 是 NULL，其余都是文本；不是规整矩形就报错
 pub fn parse_clipboard(text: String) -> Result<Vec<Vec<CellValue>>> {
     cdata_core::clipboard::decode(&text)

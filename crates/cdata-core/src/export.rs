@@ -429,6 +429,48 @@ fn insert_head(
     ))
 }
 
+/// 结果集里选中的行写成一条 INSERT 语句，复制用。
+///
+/// 列名用原始列名（别名写进 INSERT 会找不到列），值的字面量规则和导出 SQL 一致。
+/// 只接受同一张实体表的列，多表 / 表达式结果没有可写的目标，由调用方先拒绝。
+pub(crate) fn rows_insert(
+    table: &str,
+    columns: &[ColumnMeta],
+    rows: &[Vec<CellValue>],
+    row_indexes: &[usize],
+) -> Result<String, String> {
+    if table.is_empty() {
+        return Err("表名是空的".to_string());
+    }
+    if columns.is_empty() {
+        return Err("结果集没有列".to_string());
+    }
+    if row_indexes.is_empty() {
+        return Err("没有选中行".to_string());
+    }
+
+    let mut names = Vec::with_capacity(columns.len());
+    for column in columns {
+        names.push(quote_ident(&column.org_name));
+    }
+
+    let mut values = Vec::with_capacity(row_indexes.len());
+    for &index in row_indexes {
+        let row = rows
+            .get(index)
+            .ok_or_else(|| format!("行下标 {index} 超出结果集（共 {} 行）", rows.len()))?;
+        let literals: Vec<String> = row.iter().map(sql_literal).collect();
+        values.push(format!("  ({})", literals.join(", ")));
+    }
+
+    Ok(format!(
+        "INSERT INTO {} ({}) VALUES\n{};",
+        quote_ident(table),
+        names.join(", "),
+        values.join(",\n")
+    ))
+}
+
 /// 按目标编码写文本。GBK 表示不了的字符报错并带上位置，不替换成 ?
 pub(crate) struct Encoder {
     pub(crate) writer: BufWriter<File>,
@@ -470,7 +512,7 @@ pub(crate) fn csv_quote(text: &str, delimiter: char, null_text: &str) -> String 
 }
 
 /// 值写成 SQL 字面量。文本一律加引号，由 MySQL 按列类型转（DECIMAL 这样不丢精度）
-fn sql_literal(cell: &CellValue) -> String {
+pub(crate) fn sql_literal(cell: &CellValue) -> String {
     match cell {
         CellValue::Null => "NULL".to_string(),
         CellValue::Int(n) => n.to_string(),
@@ -669,6 +711,39 @@ mod tests {
         assert!(err.contains("表名"), "{err}");
         assert!(!path.exists(), "失败时不能留下文件");
         assert!(!temp_path(&path).exists(), "临时文件也要清掉");
+    }
+
+    #[test]
+    fn rows_insert_is_a_runnable_statement_with_original_names() {
+        let (columns, rows) = sample();
+        let sql = rows_insert("orders", &columns, &rows, &[0]).unwrap();
+        assert_eq!(
+            sql,
+            "INSERT INTO `orders` (`id`, `note`, `amount`) VALUES\n  (1, 'a,b \"引号\"', '1.50');"
+        );
+    }
+
+    #[test]
+    fn rows_insert_groups_selected_rows_in_the_given_order() {
+        let (columns, rows) = sample();
+        let sql = rows_insert("orders", &columns, &rows, &[2, 1]).unwrap();
+        assert_eq!(
+            sql,
+            "INSERT INTO `orders` (`id`, `note`, `amount`) VALUES\n  \
+             (3, 'it''s C:\\\\temp', X'00FF'),\n  (18446744073709551615, NULL, '');"
+        );
+    }
+
+    #[test]
+    fn rows_insert_refuses_empty_selection_and_out_of_range_rows() {
+        let (columns, rows) = sample();
+        assert!(rows_insert("orders", &columns, &rows, &[]).unwrap_err().contains("没有选中行"));
+        assert!(
+            rows_insert("orders", &columns, &rows, &[rows.len()])
+                .unwrap_err()
+                .contains("超出结果集")
+        );
+        assert!(rows_insert("", &columns, &rows, &[0]).unwrap_err().contains("表名"));
     }
 
     #[test]

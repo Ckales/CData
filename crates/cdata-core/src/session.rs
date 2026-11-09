@@ -1116,6 +1116,25 @@ pub fn copy_range(
     crate::clipboard::encode(&result.rows[start..end], &columns).map_err(Error::BadInput)
 }
 
+/// 把选中的行写成 INSERT 语句，复制用。
+///
+/// 直接读会话里的整份结果，列名用原始列名，值写成 SQL 字面量。
+/// 结果集全部列必须来自同一张实体表：多表、表达式列没有可写的目标表。
+pub fn rows_insert_sql(session_id: u64, row_indexes: Vec<u64>) -> Result<String> {
+    let guard = store().lock().unwrap();
+    let session = guard
+        .sessions
+        .get(&session_id)
+        .ok_or(Error::NoSuchSession(session_id))?;
+    let result = session.result.as_ref().ok_or(Error::NoResult(session_id))?;
+
+    let (_, table) = crate::edit::single_source_table(&result.columns)
+        .map_err(|reason| Error::BadInput(format!("{reason}，无法生成 INSERT 语句")))?;
+    let indexes: Vec<usize> = row_indexes.into_iter().map(|index| index as usize).collect();
+    crate::export::rows_insert(&table, &result.columns, &result.rows, &indexes)
+        .map_err(Error::BadInput)
+}
+
 /// 从 row_start 行起，把一块值粘贴进 column_indexes 这几列，返回写了多少个单元格。
 ///
 /// 和批量删除一样放一个事务，任何一格没写成就整体回滚。二进制列拒绝粘贴。定位列允许修改，按新键读回。

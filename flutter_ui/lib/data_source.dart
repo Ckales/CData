@@ -5,7 +5,7 @@ import 'src/rust/api/csv_import.dart' as csv_import show suggestMapping;
 import 'src/rust/api/db.dart';
 // 顶层函数和下面 GridSource 的同名方法重名，方法体里直接调会解析成方法自己
 import 'src/rust/api/db.dart' as db
-    show refreshRow, insertRow, deleteRows, copyRange, exportTable, exportSqlDump, parseClipboard, pasteCells, columnChoices, exportRows, fileProgress;
+    show refreshRow, insertRow, deleteRows, copyRange, rowsInsertSql, exportTable, exportSqlDump, parseClipboard, pasteCells, columnChoices, exportRows, fileProgress;
 import 'src/rust/api/layouts.dart';
 import 'src/rust/api/layouts.dart' as layouts show loadLayout, saveLayout;
 import 'src/rust/api/schema.dart';
@@ -61,6 +61,9 @@ abstract class GridSource {
 
   /// 一片单元格编码成 TSV。columns 按显示顺序给，行可以不在当前窗口里
   Future<String> copyRange(int rowStart, int rowCount, List<int> columns);
+
+  /// 若干行写成 INSERT 语句。列名用原始列名，值写成 SQL 字面量
+  Future<String> rowsInsertSql(List<int> rowIndexes);
 
   /// 解析剪贴板文本。不带引号的 NULL 是 NULL，其余都是文本
   Future<List<List<CellValue>>> parseClipboard(String text);
@@ -241,6 +244,11 @@ class RustGridSource implements GridSource {
       rowCount: BigInt.from(rowCount),
       columnIndexes: _u64List(columns),
     );
+  }
+
+  @override
+  Future<String> rowsInsertSql(List<int> rowIndexes) {
+    return db.rowsInsertSql(sessionId: sessionId, rowIndexes: _u64List(rowIndexes));
   }
 
   @override

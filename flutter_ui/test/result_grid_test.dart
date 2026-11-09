@@ -855,8 +855,66 @@ void main() {
     expect(clipboardText, '用户1\t1');
   });
 
-  testWidgets('编辑框里的 ⌘C 归编辑框，网格不接管', (tester) async {
+  testWidgets('点行号选中行，⌘C 复制 INSERT 语句', (tester) async {
     mockClipboard(tester);
+    final source = FakeGridSource.rows(3);
+    await pumpGrid(tester, source);
+
+    await tester.tap(find.byKey(const ValueKey('row-number-1')));
+    await tester.pumpAndSettle();
+    await pressCommand(tester, LogicalKeyboardKey.keyC);
+    await tester.pumpAndSettle();
+
+    expect(source.insertSqls, [
+      [1],
+    ]);
+    expect(source.copies, isEmpty);
+    expect(clipboardText, 'INSERT INTO `orders` (`id`, `name`) VALUES\n  (2, 用户2);');
+    expect(find.text('已复制第 2 行的 INSERT 语句'), findsOneWidget);
+  });
+
+  testWidgets('选中多行时 ⌘C 复制一条多行 INSERT', (tester) async {
+    mockClipboard(tester);
+    final source = FakeGridSource.rows(3);
+    await pumpGrid(tester, source);
+
+    await tester.tap(find.byKey(const ValueKey('row-number-2')));
+    await tester.tap(find.byKey(const ValueKey('row-number-0')));
+    await tester.pumpAndSettle();
+    await pressCommand(tester, LogicalKeyboardKey.keyC);
+    await tester.pumpAndSettle();
+
+    expect(source.insertSqls, [
+      [0, 2],
+    ]);
+    expect(clipboardText, 'INSERT INTO `orders` (`id`, `name`) VALUES\n  (1, 用户1),\n  (3, 用户3);');
+    expect(find.text('已复制 2 行的 INSERT 语句'), findsOneWidget);
+  });
+
+  testWidgets('选中行后再点单元格取消行选中，⌘C 只复制这一格', (tester) async {
+    mockClipboard(tester);
+    final source = FakeGridSource.rows(3);
+    await pumpGrid(tester, source);
+
+    await tester.tap(find.byKey(const ValueKey('row-number-0')));
+    await tester.pumpAndSettle();
+    expect(find.text('删除 1 行'), findsOneWidget);
+
+    await tester.tap(cell(1, 1));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('删除 '), findsNothing, reason: '点单元格后行选中要取消');
+
+    await pressCommand(tester, LogicalKeyboardKey.keyC);
+    await tester.pumpAndSettle();
+
+    expect(source.insertSqls, isEmpty);
+    expect(source.copies.single.$1, 1);
+    expect(source.copies.single.$2, 1);
+    expect(source.copies.single.$3, [1]);
+    expect(clipboardText, '用户2');
+  });
+
+  testWidgets('编辑框里的 ⌘C 归编辑框，网格不接管', (tester) async {    mockClipboard(tester);
     final source = FakeGridSource.rows(2);
     await pumpGrid(tester, source);
 

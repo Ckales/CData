@@ -504,9 +504,15 @@ class _ResultGridState extends State<ResultGrid> {
     }
   }
 
+  /// 点行号选中整行，复制时生成 INSERT 语句。同时清掉单元格选区，
+  /// 两种选中是互斥的，否则复制时不知道该按哪个走
   void _toggleSelected(int rowIndex) {
+    _gridFocus.requestFocus();
     setState(() {
       if (!_selected.remove(rowIndex)) _selected.add(rowIndex);
+      _anchor = null;
+      _corner = null;
+      _notice = null;
     });
   }
 
@@ -646,6 +652,8 @@ class _ResultGridState extends State<ResultGrid> {
     _dragging = event.kind == PointerDeviceKind.mouse;
     setState(() {
       _notice = null;
+      // 选了单元格就取消行选中：复制只复制这一格，不复制 INSERT
+      _selected.clear();
       if (HardwareKeyboard.instance.isShiftPressed && _anchor != null) {
         _corner = (row: row, position: position);
       } else {
@@ -740,6 +748,8 @@ class _ResultGridState extends State<ResultGrid> {
     final cell = (row: row.clamp(0, _totalRows - 1), position: position.clamp(0, _order.length - 1));
     setState(() {
       _notice = null;
+      // 键盘移动选中单元格，和点单元格一样取消行选中
+      _selected.clear();
       if (extend && _anchor != null) {
         _corner = cell;
       } else {
@@ -886,10 +896,31 @@ class _ResultGridState extends State<ResultGrid> {
         key == LogicalKeyboardKey.end;
   }
 
+  /// ⌘C：选中行时复制 INSERT 语句，否则复制单元格选区
   Future<void> _copySelection() async {
+    if (_selected.isNotEmpty) {
+      await _copyInsert();
+      return;
+    }
     final range = _range;
     if (range == null) return;
     await _copyCells(range.top, range.bottom - range.top + 1, _order.sublist(range.left, range.right + 1));
+  }
+
+  /// 复选中的行成 INSERT 语句。列名和字面量都在 Rust 侧生成
+  Future<void> _copyInsert() async {
+    final rows = _selected.toList()..sort();
+    try {
+      final sql = await widget.source.rowsInsertSql(rows);
+      await Clipboard.setData(ClipboardData(text: sql));
+      if (!mounted) return;
+      setState(() {
+        _refusal = null;
+        _notice = rows.length == 1 ? '已复制第 ${rows.first + 1} 行的 INSERT 语句' : '已复制 ${rows.length} 行的 INSERT 语句';
+      });
+    } catch (e) {
+      if (mounted) setState(() => _refusal = '$e');
+    }
   }
 
   /// 复制一片单元格。编码在 Rust 侧做，NULL、二进制、带制表符的文本怎么写都在那里定
@@ -1785,7 +1816,7 @@ class _StatusBar extends StatelessWidget {
         const SizedBox(width: 12),
         Expanded(
           child: Text(
-            message ?? '双击或 Enter 编辑，拖动或 Shift+方向键选区域后可复制粘贴，点行号选中行',
+            message ?? '双击或 Enter 编辑，拖动或 Shift+方向键选区域后可复制粘贴，点行号选中行后可复制 INSERT',
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(

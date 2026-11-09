@@ -153,6 +153,15 @@ Future<String> copyRange({
   columnIndexes: columnIndexes,
 );
 
+/// 把选中的行写成 INSERT 语句，复制用。列名用原始列名，值写成 SQL 字面量
+Future<String> rowsInsertSql({
+  required BigInt sessionId,
+  required Uint64List rowIndexes,
+}) => RustLib.instance.api.crateApiDbRowsInsertSql(
+  sessionId: sessionId,
+  rowIndexes: rowIndexes,
+);
+
 /// 解析剪贴板里的 TSV。不带引号的 NULL 是 NULL，其余都是文本；不是规整矩形就报错
 Future<List<List<CellValue>>> parseClipboard({required String text}) =>
     RustLib.instance.api.crateApiDbParseClipboard(text: text);
