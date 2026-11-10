@@ -7,13 +7,84 @@ import 'package:cdata_flutter/src/rust/api/editor.dart';
 import 'package:cdata_flutter/src/rust/frb_generated.dart';
 import 'package:cdata_flutter/theme.dart';
 import 'package:cdata_flutter/workspace.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'fakes.dart' show column;
+
 void main() {
   setUp(() => RustLib.initMock(api: _SidebarApi()));
   tearDown(RustLib.dispose);
+
+  testWidgets('工作区与侧栏持有焦点时刷新快捷键仍重跑当前表', (tester) async {
+    RustLib.dispose();
+    final api = _SidebarApi()..returnTable = true;
+    RustLib.initMock(api: api);
+    final workspace = _workspace(1);
+    final workspaceKey = GlobalKey<WorkspaceViewState>();
+    workspace.activeTab.database = 'shop';
+    var selectionChanges = 0;
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: appTheme(Brightness.light),
+        home: WorkspaceView(
+          key: workspaceKey,
+          workspace: workspace,
+          all: [workspace],
+          onSwitch: (_, _) {},
+          onCloseTab: (_, _) {},
+          onNewConnection: () {},
+          onDisconnect: () {},
+          onSelectionChanged: () => selectionChanges++,
+          onPreferences: () {},
+          maxRows: () => BigInt.from(100),
+          editorFontSize: 12,
+          confirmHostKey: (_) async => false,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    Finder table(String name) => find.descendant(
+      of: find.byType(TableSidebar),
+      matching: find.text(name),
+    );
+    await tester.tap(table('users'));
+    await tester.pumpAndSettle();
+    workspaceKey.currentState!.selectTab(0);
+    await tester.pumpAndSettle();
+    final before = api.executedSql.length;
+    await tester.sendKeyEvent(LogicalKeyboardKey.f5);
+    await tester.pumpAndSettle();
+    expect(api.executedSql, hasLength(before + 1));
+    // 侧栏搜索框拿着焦点时也刷新当前表。
+    await tester.tap(find.descendant(of: find.byType(TableSidebar), matching: find.byType(TextField)).first);
+    final modifier = defaultTargetPlatform == TargetPlatform.macOS
+        ? LogicalKeyboardKey.meta
+        : LogicalKeyboardKey.control;
+    await tester.sendKeyDownEvent(modifier);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyR);
+    await tester.sendKeyUpEvent(modifier);
+    await tester.pumpAndSettle();
+    expect(api.executedSql, hasLength(before + 2));
+    expect(api.executedSql.last, 'SELECT * FROM users');
+    expect(selectionChanges, 2);
+    // 切换标签后只刷新当前标签，不能重跑后台标签。
+    workspaceKey.currentState!.duplicateTab();
+    await tester.pumpAndSettle();
+    await tester.tap(table('orders'));
+    await tester.pumpAndSettle();
+    workspaceKey.currentState!.selectTab(0);
+    await tester.pumpAndSettle();
+    final beforeSwitchRefresh = api.executedSql.length;
+    await tester.sendKeyEvent(LogicalKeyboardKey.f5);
+    await tester.pumpAndSettle();
+    expect(api.executedSql, hasLength(beforeSwitchRefresh + 1));
+    expect(api.executedSql.last, 'SELECT * FROM users');
+    expect(tester.takeException(), isNull);
+  }, variant: TargetPlatformVariant({TargetPlatform.macOS, TargetPlatform.windows}));
 
   testWidgets('重复点击当前表不再加载，换表和从查询返回仍会加载', (tester) async {
     RustLib.dispose();
@@ -241,6 +312,7 @@ Workspace _workspace(int id) => Workspace(
 );
 
 class _SidebarApi implements RustLibApi {
+  bool returnTable = false;
   final browsedTables = <String>[];
   final executedSql = <String>[];
 
@@ -295,7 +367,7 @@ class _SidebarApi implements RustLibApi {
   }) async {
     executedSql.add(sql);
     return QuerySummary(
-      columns: [],
+      columns: returnTable ? [column('id')] : [],
       totalRows: BigInt.zero,
       truncated: false,
       editability: const Editability.readOnly('test'),

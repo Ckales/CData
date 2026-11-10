@@ -562,6 +562,19 @@ class WorkspaceViewState extends State<WorkspaceView> {
     if (choice == 'disconnect') widget.onDisconnect();
   }
 
+  void _refreshCurrentResult() {
+    final tab = _tab;
+    switch (tab.mode) {
+      case WorkspaceMode.content:
+        tab.contentKey.currentState?.refreshCurrent();
+      case WorkspaceMode.query:
+        tab.queryKey.currentState?.refreshCurrent();
+      case WorkspaceMode.structure:
+      case WorkspaceMode.server:
+        break;
+    }
+  }
+
   Map<ShortcutActivator, VoidCallback> get _shortcuts {
     const digits = [
       LogicalKeyboardKey.digit1,
@@ -577,6 +590,9 @@ class WorkspaceViewState extends State<WorkspaceView> {
     final count = entries.length;
     final current = entries.indexOf((_ws, _ws.active));
     return {
+      const SingleActivator(LogicalKeyboardKey.f5, includeRepeats: false): _refreshCurrentResult,
+      SingleActivator(LogicalKeyboardKey.keyR, meta: _isMac, control: !_isMac, includeRepeats: false):
+          _refreshCurrentResult,
       // 和 Querious 一样：⌘T 开新连接，⇧⌘T 在当前连接上开新标签
       commandKey(LogicalKeyboardKey.keyT): widget.onNewConnection,
       SingleActivator(

@@ -13,6 +13,7 @@ import 'package:cdata_flutter/src/rust/api/db.dart';
 import 'package:cdata_flutter/src/rust/api/editor.dart';
 import 'package:cdata_flutter/src/rust/api/value.dart';
 import 'package:cdata_flutter/theme.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart' show kSecondaryButton;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -181,6 +182,40 @@ Future<GlobalKey<QueryTabState>> pumpTab(
 }
 
 void main() {
+  for (final platform in [TargetPlatform.macOS, TargetPlatform.windows]) {
+    testWidgets('$platform 刷新快捷键重跑当前查询且加载时不重复查询', (tester) async {
+      debugDefaultTargetPlatformOverride = platform;
+      addTearDown(() => debugDefaultTargetPlatformOverride = null);
+      final runner = FakeRunner();
+      final key = await pumpTab(tester, runner, FakeLibrary());
+      await tester.sendKeyEvent(LogicalKeyboardKey.f5);
+      expect(runner.runs, isEmpty);
+      await key.currentState!.runSql('SELECT * FROM t');
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('cell-0-0')));
+      final before = runner.runs.length;
+      final modifier = platform == TargetPlatform.macOS ? LogicalKeyboardKey.meta : LogicalKeyboardKey.control;
+      await tester.sendKeyDownEvent(modifier);
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyR);
+      await tester.sendKeyUpEvent(modifier);
+      await tester.pumpAndSettle();
+      expect(runner.runs, hasLength(before + 1));
+      expect(runner.runs.last.sql, 'SELECT * FROM t');
+
+      final pending = Completer<QuerySummary>();
+      runner.pending = pending;
+      await tester.sendKeyEvent(LogicalKeyboardKey.f5);
+      await tester.pump();
+      expect(runner.runs, hasLength(before + 2));
+      await tester.sendKeyEvent(LogicalKeyboardKey.f5);
+      await tester.pump();
+      expect(runner.runs, hasLength(before + 2));
+      pending.complete(FakeGridSource.rows(2).summary);
+      await tester.pumpAndSettle();
+      debugDefaultTargetPlatformOverride = null;
+    });
+  }
+
   testWidgets('切表等待期间遮住旧数据，连续切表最终加载最后选中的表', (tester) async {
     final runner = FakeRunner();
     final key = await pumpTab(tester, runner, FakeLibrary());
@@ -418,6 +453,11 @@ void main() {
     expect(runner.runs, hasLength(before + 1));
     expect(runner.runs.last.sql, 'SELECT * FROM t');
     expect(describeFilterGroup(runner.runs.last.filter), 'name = 用户2', reason: '刷新保留当前筛选');
+    await tester.tap(find.byKey(const ValueKey('cell-0-0')));
+    await tester.sendKeyEvent(LogicalKeyboardKey.f5);
+    await tester.pumpAndSettle();
+    expect(runner.runs, hasLength(before + 2));
+    expect(describeFilterGroup(runner.runs.last.filter), 'name = 用户2');
   });
 
   testWidgets('查询失败显示错误，历史没记上也要说', (tester) async {

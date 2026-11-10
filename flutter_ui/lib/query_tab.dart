@@ -1,6 +1,8 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'data_source.dart';
 import 'filter_panel.dart';
@@ -543,13 +545,22 @@ class QueryTabState extends State<QueryTab> {
     return widget.showEditor ? '运行一条查询，结果显示在这里' : '';
   }
 
+  /// 重读当前主结果；工作区持有焦点时也复用同一刷新入口。
+  Future<void> refreshCurrent() async {
+    final views = _views;
+    final active = views.isEmpty ? 0 : _activeResult.clamp(0, views.length - 1);
+    if (_busy || _queuedSql > 0 || views.isEmpty || !views[active].isMain) return;
+    await _runView();
+  }
+
   @override
   Widget build(BuildContext context) {
     final views = _views;
     final active = views.isEmpty ? 0 : _activeResult.clamp(0, views.length - 1);
     final showingMain = views.isNotEmpty && views[active].isMain;
     final notice = _scriptNotice;
-    return LayoutBuilder(builder: (context, constraints) {
+
+    final content = LayoutBuilder(builder: (context, constraints) {
       // 编辑区最多占六成，给执行状态和结果保留空间。
       final maxEditorHeight = (constraints.maxHeight * 0.6).clamp(96.0, double.infinity);
       final editorHeight = _editorHeight.clamp(96.0, maxEditorHeight);
@@ -663,6 +674,14 @@ class QueryTabState extends State<QueryTab> {
         ],
       );
     });
+    final isMac = defaultTargetPlatform == TargetPlatform.macOS;
+    return CallbackShortcuts(
+      bindings: {
+        const SingleActivator(LogicalKeyboardKey.f5, includeRepeats: false): refreshCurrent,
+        SingleActivator(LogicalKeyboardKey.keyR, meta: isMac, control: !isMac, includeRepeats: false): refreshCurrent,
+      },
+      child: Focus(autofocus: true, child: content),
+    );
   }
 }
 
