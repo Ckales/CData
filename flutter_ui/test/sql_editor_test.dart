@@ -49,6 +49,54 @@ Future<void> press(WidgetTester tester, LogicalKeyboardKey key) async {
 }
 
 void main() {
+  testWidgets('输入法组词时收起已有补全，回车只交给输入法', (tester) async {
+    final controller = await pumpEditor(tester);
+    await type(tester, 'SELECT * FROM or');
+    expect(find.byKey(const ValueKey('completion-popup')), findsOneWidget);
+
+    tester.testTextInput.updateEditingValue(const TextEditingValue(
+      text: 'SELECT * FROM ord',
+      selection: TextSelection.collapsed(offset: 17),
+      composing: TextRange(start: 14, end: 17),
+    ));
+    await tester.pump();
+    await press(tester, LogicalKeyboardKey.enter);
+    expect(controller.text, 'SELECT * FROM ord');
+    expect(controller.value.composing, const TextRange(start: 14, end: 17));
+    expect(find.byKey(const ValueKey('completion-popup')), findsNothing);
+
+    tester.testTextInput.updateEditingValue(const TextEditingValue(
+      text: 'SELECT * FROM ord',
+      selection: TextSelection.collapsed(offset: 17),
+    ));
+    await tester.pump();
+    expect(controller.text, 'SELECT * FROM ord');
+    expect(find.byKey(const ValueKey('completion-popup')), findsNothing);
+
+    await type(tester, 'SELECT * FROM orde');
+    await press(tester, LogicalKeyboardKey.enter);
+    expect(controller.text, 'SELECT * FROM orders', reason: '继续输入后仍可正常补全');
+  });
+
+  testWidgets('输入法先提交文字再发送回车，也不会接受 SQL 候选', (tester) async {
+    final controller = await pumpEditor(tester);
+    await tester.showKeyboard(find.byType(TextField));
+    tester.testTextInput.updateEditingValue(const TextEditingValue(
+      text: 'SELECT * FROM or d',
+      selection: TextSelection.collapsed(offset: 18),
+      composing: TextRange(start: 14, end: 18),
+    ));
+    await tester.pump();
+    tester.testTextInput.updateEditingValue(const TextEditingValue(
+      text: 'SELECT * FROM ord',
+      selection: TextSelection.collapsed(offset: 17),
+    ));
+    await tester.pump();
+    await press(tester, LogicalKeyboardKey.enter);
+    expect(controller.text, 'SELECT * FROM ord');
+    expect(find.byKey(const ValueKey('completion-popup')), findsNothing);
+  });
+
   testWidgets('点了编辑框外面（比如「运行」按钮），弹窗跟着关掉，不留一个过期的候选盖住别的控件', (tester) async {
     final controller = SqlEditingController(tokenize: (_) => const []);
     addTearDown(controller.dispose);

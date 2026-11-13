@@ -109,11 +109,13 @@ class _SqlEditorFieldState extends State<SqlEditorField> {
   /// 接受候选时改文本会再触发一次监听，不能又弹出来
   bool _applying = false;
   String _lastText = '';
+  bool _wasComposing = false;
 
   @override
   void initState() {
     super.initState();
     _lastText = widget.controller.text;
+    _wasComposing = _isComposing;
     widget.controller.addListener(_onChanged);
   }
 
@@ -125,12 +127,23 @@ class _SqlEditorFieldState extends State<SqlEditorField> {
   }
 
   bool get _open => _completion != null;
+  bool get _isComposing =>
+      widget.controller.value.composing.isValid &&
+      !widget.controller.value.composing.isCollapsed;
 
   void _onChanged() {
     final text = widget.controller.text;
     final textChanged = text != _lastText;
     _lastText = text;
+    final wasComposing = _wasComposing;
+    _wasComposing = _isComposing;
     if (_applying) return;
+
+    // 组词期间由输入法处理候选；提交那次也不弹 SQL 候选，避免同一次回车误接受。
+    if (_isComposing || wasComposing) {
+      _close();
+      return;
+    }
 
     final selection = widget.controller.selection;
     if (!selection.isValid || !selection.isCollapsed) {
@@ -162,6 +175,7 @@ class _SqlEditorFieldState extends State<SqlEditorField> {
   }
 
   void _refresh() {
+    if (_isComposing) return;
     final complete = widget.complete;
     final selection = widget.controller.selection;
     if (complete == null || !selection.isValid || !selection.isCollapsed) return;
@@ -252,6 +266,7 @@ class _SqlEditorFieldState extends State<SqlEditorField> {
 
   KeyEventResult _onKey(FocusNode node, KeyEvent event) {
     if (event is! KeyDownEvent && event is! KeyRepeatEvent) return KeyEventResult.ignored;
+    if (_isComposing) return KeyEventResult.ignored;
     final key = event.logicalKey;
     final keyboard = HardwareKeyboard.instance;
     final withModifier = keyboard.isMetaPressed || keyboard.isControlPressed;
