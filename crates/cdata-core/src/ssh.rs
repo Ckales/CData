@@ -459,7 +459,7 @@ struct Shared {
     secrets: Vec<Option<String>>,
     target_host: String,
     target_port: u16,
-    connect_timeout: Option<Duration>,
+    connect_timeout: Mutex<Option<Duration>>,
     /// 空表示还没连上或者已经作废
     chain: tokio::sync::Mutex<Vec<Session>>,
     /// 转发时建隧道失败的原因。本地端口那头只能看到「连接被关闭」，真正的原因从这里取
@@ -469,7 +469,8 @@ struct Shared {
 impl Shared {
     async fn connect(&self) -> Result<Vec<Session>, Error> {
         let work = connect_chain(&self.hops, &self.secrets);
-        let Some(limit) = self.connect_timeout else {
+        let limit = *self.connect_timeout.lock().unwrap();
+        let Some(limit) = limit else {
             return work.await;
         };
         match tokio::time::timeout(limit, work).await {
@@ -554,7 +555,7 @@ impl Tunnel {
             secrets,
             target_host,
             target_port,
-            connect_timeout,
+            connect_timeout: Mutex::new(connect_timeout),
             chain: tokio::sync::Mutex::new(Vec::new()),
             last_error: Mutex::new(None),
         });
@@ -580,6 +581,10 @@ impl Tunnel {
 
     pub fn local_port(&self) -> u16 {
         self.local_port
+    }
+
+    pub(crate) fn set_connect_timeout(&self, timeout: Option<Duration>) {
+        *self.shared.connect_timeout.lock().unwrap() = timeout;
     }
 
     /// 取出最近一次转发失败的原因

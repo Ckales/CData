@@ -3885,6 +3885,7 @@ const _: fn() = || {
     }
     {
         let Preferences = None::<crate::api::preferences::Preferences>.unwrap();
+        let _: Option<u32> = Preferences.connect_timeout_secs;
         let _: crate::api::preferences::ThemeMode = Preferences.theme;
         let _: u32 = Preferences.editor_font_size;
         let _: u64 = Preferences.max_rows;
@@ -5984,6 +5985,7 @@ impl SseDecode for Option<Vec<crate::api::schema::CheckDef>> {
 impl SseDecode for crate::api::preferences::Preferences {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_connectTimeoutSecs = <Option<u32>>::sse_decode(deserializer);
         let mut var_theme = <crate::api::preferences::ThemeMode>::sse_decode(deserializer);
         let mut var_editorFontSize = <u32>::sse_decode(deserializer);
         let mut var_maxRows = <u64>::sse_decode(deserializer);
@@ -5993,6 +5995,7 @@ impl SseDecode for crate::api::preferences::Preferences {
         let mut var_saveQueryHistory = <bool>::sse_decode(deserializer);
         let mut var_operationLogLimit = <u32>::sse_decode(deserializer);
         return crate::api::preferences::Preferences {
+            connect_timeout_secs: var_connectTimeoutSecs,
             theme: var_theme,
             editor_font_size: var_editorFontSize,
             max_rows: var_maxRows,
@@ -8390,6 +8393,7 @@ impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<crate::api::value::OperationLo
 impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::preferences::Preferences> {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
+            self.0.connect_timeout_secs.into_into_dart().into_dart(),
             self.0.theme.into_into_dart().into_dart(),
             self.0.editor_font_size.into_into_dart().into_dart(),
             self.0.max_rows.into_into_dart().into_dart(),
@@ -10776,6 +10780,7 @@ impl SseEncode for Option<Vec<crate::api::schema::CheckDef>> {
 impl SseEncode for crate::api::preferences::Preferences {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <Option<u32>>::sse_encode(self.connect_timeout_secs, serializer);
         <crate::api::preferences::ThemeMode>::sse_encode(self.theme, serializer);
         <u32>::sse_encode(self.editor_font_size, serializer);
         <u64>::sse_encode(self.max_rows, serializer);

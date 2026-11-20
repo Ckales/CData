@@ -5,6 +5,7 @@ import 'package:flutter/material.dart' hide ThemeMode;
 import 'package:flutter_test/flutter_test.dart';
 
 final _initial = Preferences(
+  connectTimeoutSecs: 180,
   theme: ThemeMode.system,
   editorFontSize: 13,
   maxRows: BigInt.from(100000),
@@ -43,6 +44,37 @@ Future<void> _category(WidgetTester tester, String label) async {
 }
 
 void main() {
+  testWidgets('连接超时在通用偏好中统一调整，切分类保留输入', (tester) async {
+    Preferences? saved;
+    await _open(tester, (preferences) async => saved = preferences, (_) {});
+    final field = find.byKey(const ValueKey('pref-connect-timeout'));
+    expect(tester.widget<TextField>(field).controller!.text, '180');
+    await tester.enterText(field, '300');
+    await _category(tester, '外观');
+    await _category(tester, '通用');
+    expect(tester.widget<TextField>(field).controller!.text, '300');
+    await tester.tap(find.text('保存'));
+    await tester.pumpAndSettle();
+    expect(saved!.connectTimeoutSecs, 300);
+  });
+
+  testWidgets('连接超时留空不限时，无效值不保存', (tester) async {
+    Preferences? saved;
+    await _open(tester, (preferences) async => saved = preferences, (_) {});
+    final field = find.byKey(const ValueKey('pref-connect-timeout'));
+    for (final text in ['abc', '0', '-1', '4294967296']) {
+      await tester.enterText(field, text);
+      await tester.tap(find.text('保存'));
+      await tester.pumpAndSettle();
+      expect(saved, isNull);
+      expect(find.text('偏好设置'), findsOneWidget);
+    }
+    await tester.enterText(field, '');
+    await tester.tap(find.text('保存'));
+    await tester.pumpAndSettle();
+    expect(saved!.connectTimeoutSecs, isNull);
+  });
+
   testWidgets('选深色、改行数后保存，返回的是新值', (tester) async {
     Preferences? saved;
     Preferences? result;

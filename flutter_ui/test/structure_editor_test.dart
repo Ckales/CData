@@ -113,6 +113,55 @@ Future<FakeSchemaSource> openEditor(WidgetTester tester, {VoidCallback? onAltere
 }
 
 void main() {
+  for (final atBottom in [false, true]) {
+    testWidgets('类型选单贴着单元格${atBottom ? '向上' : '向下'}展开', (tester) async {
+      tester.view.physicalSize = const Size(1200, 800);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final source = FakeSchemaSource.simple()..structures['posts'] = postsStructure();
+      await tester.pumpWidget(MaterialApp(
+        theme: appTheme(Brightness.light),
+        home: Scaffold(
+          body: Align(
+            alignment: atBottom ? Alignment.bottomLeft : Alignment.topLeft,
+            child: SizedBox(
+              height: 280,
+              child: StructurePanel(source: source, database: 'shop', table: 'posts'),
+            ),
+          ),
+        ),
+      ));
+      await tester.pumpAndSettle();
+      for (final row in [1, 2]) {
+        final cell = find.byKey(ValueKey('column-type-display-$row'));
+        final cellRect = tester.getRect(cell);
+        await tester.tap(find.byKey(ValueKey('column-type-picker-$row')));
+        await tester.pumpAndSettle();
+        final menu = find.ancestor(
+          of: find.byKey(ValueKey('column-type-filter-$row')),
+          matching: find.byType(Material),
+        ).first;
+        final menuRect = tester.getRect(menu);
+        expect(menuRect.left, closeTo(cellRect.left, 1));
+        if (atBottom) {
+          expect(menuRect.bottom, closeTo(cellRect.top - 2, 1));
+        } else {
+          expect(menuRect.top, closeTo(cellRect.bottom + 2, 1));
+        }
+        expect(menuRect.top, greaterThanOrEqualTo(0));
+        expect(menuRect.bottom, lessThanOrEqualTo(800));
+        // 筛选、点击选项仍必须在菜单的可见位置命中。
+        await tester.enterText(find.byKey(ValueKey('column-type-filter-$row')), 'small');
+        await tester.pump();
+        await tester.tap(find.descendant(of: menu, matching: find.text('smallint')));
+        await tester.pumpAndSettle();
+        expect(find.byKey(ValueKey('column-type-filter-$row')), findsNothing);
+        expect(find.descendant(of: cell, matching: find.text('smallint')), findsOneWidget);
+      }
+    });
+  }
+
   testWidgets('行复制跟随移动和删除，编辑时只复制选中文字', (tester) async {
     String? copied;
     tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
@@ -273,6 +322,15 @@ void main() {
     await tester.tap(find.text('预览 DDL'));
     await settle(tester);
     expect(source.previews.single.columns[1].columnType, 'varchar(100)');
+  });
+
+  testWidgets('单击类型单元格本身就能打开下拉，不用瞄准右侧箭头', (tester) async {
+    await openEditor(tester);
+    await tester.tap(find.byKey(const ValueKey('column-type-display-1')));
+    // 和双击编辑共存：单击要等双击判定超时才触发
+    await tester.pump(const Duration(milliseconds: 350));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('column-type-filter-1')), findsOneWidget);
   });
 
   testWidgets('双击类型后可输入精确长度、精度和修饰符', (tester) async {

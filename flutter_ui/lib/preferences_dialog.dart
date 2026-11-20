@@ -53,6 +53,7 @@ class _PreferencesDialogState extends State<_PreferencesDialog> {
   // 控制器放在对话框这一层：切分类时输入框卸下来，填了没保存的值还在
   late final _fontSize = TextEditingController(text: '${widget.initial.editorFontSize}');
   late final _maxRows = TextEditingController(text: '${widget.initial.maxRows}');
+  late final _connectTimeout = TextEditingController(text: widget.initial.connectTimeoutSecs?.toString() ?? '');
   late final _transcriptHistoryLimit = TextEditingController(text: '${widget.initial.transcriptHistoryLimit}');
   late final _queryHistoryLimit = TextEditingController(text: '${widget.initial.queryHistoryLimit}');
   late final _operationLogLimit = TextEditingController(text: '${widget.initial.operationLogLimit}');
@@ -63,6 +64,7 @@ class _PreferencesDialogState extends State<_PreferencesDialog> {
   void dispose() {
     _fontSize.dispose();
     _maxRows.dispose();
+    _connectTimeout.dispose();
     _transcriptHistoryLimit.dispose();
     _queryHistoryLimit.dispose();
     _operationLogLimit.dispose();
@@ -70,6 +72,12 @@ class _PreferencesDialogState extends State<_PreferencesDialog> {
   }
 
   Future<void> _save() async {
+    final timeoutText = _connectTimeout.text.trim();
+    final connectTimeout = timeoutText.isEmpty ? null : int.tryParse(timeoutText);
+    if (timeoutText.isNotEmpty && (connectTimeout == null || connectTimeout <= 0 || connectTimeout > 0xffffffff)) {
+      setState(() => _error = '连接超时要填有效的正整数秒数，不限时请留空');
+      return;
+    }
     final fontSize = int.tryParse(_fontSize.text.trim());
     if (fontSize == null) {
       setState(() => _error = '编辑器字号要填整数');
@@ -98,6 +106,7 @@ class _PreferencesDialogState extends State<_PreferencesDialog> {
     }
 
     final preferences = prefs.Preferences(
+      connectTimeoutSecs: connectTimeout,
       theme: _theme,
       editorFontSize: fontSize,
       maxRows: maxRows,
@@ -281,6 +290,17 @@ class _PreferencesDialogState extends State<_PreferencesDialog> {
           ]),
         ),
         _note('超过配置条数后覆盖最旧记录'),
+        const SizedBox(height: 12),
+        FormRow(
+          label: '连接超时',
+          labelWidth: _labelWidth,
+          child: Row(children: [
+            SizedBox(width: 90, child: TextField(key: const ValueKey('pref-connect-timeout'), controller: _connectTimeout)),
+            const SizedBox(width: 8),
+            const Text('秒'),
+          ]),
+        ),
+        _note('所有连接统一使用，默认 180 秒；留空不限时。保存后下次连接请求生效'),
         const SizedBox(height: 12),
         FormRow(
           label: '查询行数上限',

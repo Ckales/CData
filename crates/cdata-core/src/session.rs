@@ -223,6 +223,16 @@ fn store() -> &'static Mutex<Store> {
 /// 走 SSH 时当场建隧道，主机密钥和认证的问题在这里就报出来
 pub async fn open_session(config: &ConnectionConfig) -> Result<u64> {
     let pool = open_pool(config).await?;
+    Ok(register_session(config, pool))
+}
+
+/// 桌面应用入口：全部连接统一使用偏好设置中的超时。
+pub async fn open_session_with_preferences(config: &ConnectionConfig) -> Result<u64> {
+    let pool = DbPool::open_with_preferences(config).await?;
+    Ok(register_session(config, pool))
+}
+
+fn register_session(config: &ConnectionConfig, pool: DbPool) -> u64 {
     // 走隧道时 host:port 是从 SSH 服务器看过去的地址，常常就是 127.0.0.1:3306，
     // 不带上隧道出口的话会和本机库的列布局混在一起
     let server = match config.options.ssh.hops.last() {
@@ -245,7 +255,7 @@ pub async fn open_session(config: &ConnectionConfig) -> Result<u64> {
             parent: None,
         },
     );
-    Ok(id)
+    id
 }
 
 /// 按顺序跑一段多语句 SQL，全部在同一条连接上。先清掉这个会话上一轮的子结果

@@ -21,6 +21,7 @@ Preferences defaultPreferences() =>
     RustLib.instance.api.crateApiPreferencesDefaultPreferences();
 
 class Preferences {
+  final int? connectTimeoutSecs;
   final ThemeMode theme;
   final int editorFontSize;
   final BigInt maxRows;
@@ -31,6 +32,7 @@ class Preferences {
   final int operationLogLimit;
 
   const Preferences({
+    this.connectTimeoutSecs,
     required this.theme,
     required this.editorFontSize,
     required this.maxRows,
@@ -43,6 +45,7 @@ class Preferences {
 
   @override
   int get hashCode =>
+      connectTimeoutSecs.hashCode ^
       theme.hashCode ^
       editorFontSize.hashCode ^
       maxRows.hashCode ^
@@ -57,6 +60,7 @@ class Preferences {
       identical(this, other) ||
       other is Preferences &&
           runtimeType == other.runtimeType &&
+          connectTimeoutSecs == other.connectTimeoutSecs &&
           theme == other.theme &&
           editorFontSize == other.editorFontSize &&
           maxRows == other.maxRows &&

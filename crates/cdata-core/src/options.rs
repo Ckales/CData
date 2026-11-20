@@ -99,7 +99,7 @@ impl SslOptions {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct TimeoutOptions {
-    /// 建立连接（含 SSH 隧道、TLS 握手、登录）的时限
+    /// 低层调用的连接时限。桌面应用统一使用 Preferences::connect_timeout_secs，忽略收藏中的旧值。
     pub connect_secs: Option<u32>,
     /// 单条查询的时限。超时后用另一条连接 KILL QUERY 让服务器停掉这条语句
     pub query_secs: Option<u32>,
@@ -110,7 +110,7 @@ impl Default for TimeoutOptions {
         // 不设的话连一个不通的地址要等系统 TCP 超时（macOS 上一分多钟），界面像卡死了。
         // 查询默认不限时：跑几分钟的报表很常见，默认掐掉比卡住更糟
         TimeoutOptions {
-            connect_secs: Some(10),
+            connect_secs: Some(180),
             query_secs: None,
         }
     }
@@ -224,8 +224,28 @@ mod tests {
         let options: ConnectionOptions =
             serde_json::from_str(r#"{"timeouts":{"query_secs":30}}"#).unwrap();
         assert_eq!(options.timeouts.query_secs, Some(30));
-        assert_eq!(options.timeouts.connect_secs, Some(10));
+        assert_eq!(options.timeouts.connect_secs, Some(180));
         assert_eq!(options.ssl.mode, SslMode::Disabled);
+    }
+
+    #[test]
+    fn default_connect_timeout_is_180_seconds_and_saved_choices_are_preserved() {
+        let defaults = ConnectionOptions::default();
+        assert_eq!(defaults.timeouts.connect(), Some(Duration::from_secs(180)));
+        assert_eq!(defaults.timeouts.query(), None);
+
+        for connect_secs in [Some(10), Some(300), None] {
+            let options = ConnectionOptions {
+                timeouts: TimeoutOptions {
+                    connect_secs,
+                    query_secs: Some(60),
+                },
+                ..ConnectionOptions::default()
+            };
+            let saved = serde_json::to_string(&options).unwrap();
+            let restored: ConnectionOptions = serde_json::from_str(&saved).unwrap();
+            assert_eq!(restored, options);
+        }
     }
 
     #[test]

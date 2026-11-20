@@ -9,7 +9,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 const _defaults = ConnectionOptions(
   ssl: SslOptions(mode: SslMode.disabled),
-  timeouts: TimeoutOptions(connectSecs: 10),
+  timeouts: TimeoutOptions(connectSecs: 180),
   ssh: SshOptions(hops: []),
 );
 
@@ -131,9 +131,9 @@ void main() {
     expect(opened.closed, isFalse, reason: '0 秒说不清是立即超时还是不限，拒绝');
 
     await type(tester, 'query-timeout', '30');
-    await type(tester, 'connect-timeout', '');
     await submit(tester);
-    expect(opened.result!.options.timeouts, const TimeoutOptions(connectSecs: null, querySecs: 30));
+    expect(opened.result!.options.timeouts, const TimeoutOptions(connectSecs: 180, querySecs: 30));
+    expect(find.byKey(const ValueKey('connect-timeout')), findsNothing);
   });
 
   testWidgets('SSH：跳板机排在前面，密码和口令按跳对齐，不进 options', (tester) async {
@@ -246,10 +246,10 @@ void main() {
   testWidgets('深色主题下错误提示用主题的 error 色，不写死颜色', (tester) async {
     final dark = appTheme(Brightness.dark);
     await openDialog(tester, _defaults, theme: dark);
-    await type(tester, 'connect-timeout', '-1');
+    await type(tester, 'query-timeout', '-1');
     await submit(tester);
 
-    final error = tester.widget<Text>(find.text('连接超时要填正整数秒数，不限时请留空'));
+    final error = tester.widget<Text>(find.text('查询超时要填正整数秒数，不限时请留空'));
     expect(error.style?.color, dark.colorScheme.error);
   });
 }

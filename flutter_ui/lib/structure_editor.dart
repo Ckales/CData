@@ -319,14 +319,15 @@ class _ColumnTypeCellState extends State<_ColumnTypeCell> {
 
     return OverlayPortal(
       controller: _portal,
-      overlayChildBuilder: (context) => CompositedTransformFollower(
-        link: _link,
-        showWhenUnlinked: false,
-        targetAnchor: _above ? Alignment.topLeft : Alignment.bottomLeft,
-        followerAnchor: _above ? Alignment.bottomLeft : Alignment.topLeft,
-        offset: Offset(0, _above ? -2 : 2),
-        child: Align(
-          alignment: Alignment.topLeft,
+      // 先放松 overlay 的全屏约束，让 follower 的锚点使用菜单自身尺寸。
+      overlayChildBuilder: (context) => Align(
+        alignment: Alignment.topLeft,
+        child: CompositedTransformFollower(
+          link: _link,
+          showWhenUnlinked: false,
+          targetAnchor: _above ? Alignment.topLeft : Alignment.bottomLeft,
+          followerAnchor: _above ? Alignment.bottomLeft : Alignment.topLeft,
+          offset: Offset(0, _above ? -2 : 2),
           child: TapRegion(
             groupId: _tapGroup,
             onTapOutside: (_) => _close(),
@@ -454,17 +455,22 @@ class _ColumnTypeCellState extends State<_ColumnTypeCell> {
                   child: Row(
                     children: [
                       Expanded(
-                        child: GestureDetector(
-                          key: ValueKey('column-type-display-${widget.row}'),
-                          behavior: HitTestBehavior.opaque,
-                          onDoubleTap: widget.enabled ? _startEditing : null,
-                          child: Align(
-                            alignment: Alignment.centerLeft,
-                            child: Text(
-                              widget.controller.text,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(fontSize: 12, fontFamily: 'Menlo', color: scheme.onSurface),
+                        child: MouseRegion(
+                          cursor: widget.enabled ? SystemMouseCursors.click : MouseCursor.defer,
+                          child: GestureDetector(
+                            key: ValueKey('column-type-display-${widget.row}'),
+                            behavior: HitTestBehavior.opaque,
+                            // 整格都可点开类型选单；双击仍用于输入完整类型定义
+                            onTap: widget.enabled ? _open : null,
+                            onDoubleTap: widget.enabled ? _startEditing : null,
+                            child: Align(
+                              alignment: Alignment.centerLeft,
+                              child: Text(
+                                widget.controller.text,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(fontSize: 12, fontFamily: 'Menlo', color: scheme.onSurface),
+                              ),
                             ),
                           ),
                         ),
@@ -475,7 +481,7 @@ class _ColumnTypeCellState extends State<_ColumnTypeCell> {
                           onPressed: _open,
                           icon: Icon(Icons.arrow_drop_down, size: 15, color: scheme.onSurfaceVariant),
                           padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints.tightFor(width: 23, height: 23),
+                          constraints: const BoxConstraints.tightFor(width: 25, height: 25),
                         ),
                     ],
                   ),

@@ -75,7 +75,6 @@ class _ConnectionOptionsDialogState extends State<_ConnectionOptionsDialog> {
   late final _caPath = TextEditingController(text: widget.initial.ssl.caPath ?? '');
   late final _certPath = TextEditingController(text: widget.initial.ssl.certPath ?? '');
   late final _keyPath = TextEditingController(text: widget.initial.ssl.keyPath ?? '');
-  late final _connectSecs = TextEditingController(text: widget.initial.timeouts.connectSecs?.toString() ?? '');
   late final _querySecs = TextEditingController(text: widget.initial.timeouts.querySecs?.toString() ?? '');
 
   late final List<SshHop> _initialHops = widget.initial.ssh.hops;
@@ -93,7 +92,7 @@ class _ConnectionOptionsDialogState extends State<_ConnectionOptionsDialog> {
 
   @override
   void dispose() {
-    for (final controller in [_caPath, _certPath, _keyPath, _connectSecs, _querySecs]) {
+    for (final controller in [_caPath, _certPath, _keyPath, _querySecs]) {
       controller.dispose();
     }
     _target.dispose();
@@ -155,7 +154,7 @@ class _ConnectionOptionsDialogState extends State<_ConnectionOptionsDialog> {
         keyPath: _sslMode == SslMode.disabled ? null : _optionalText(_keyPath),
       );
       final timeouts = TimeoutOptions(
-        connectSecs: _parseSeconds('连接超时', _connectSecs),
+        connectSecs: widget.initial.timeouts.connectSecs,
         querySecs: _parseSeconds('查询超时', _querySecs),
       );
 
@@ -212,7 +211,7 @@ class _ConnectionOptionsDialogState extends State<_ConnectionOptionsDialog> {
                 _row('客户端私钥', _pathField('ssl-key', _keyPath, '可选，和证书一起填')),
               ],
               _section('超时'),
-              _row('连接（秒）', _textField('connect-timeout', _connectSecs, '留空不限')),
+              const Text('连接超时在「偏好设置 → 通用」中统一调整', style: TextStyle(fontSize: 12)),
               _row('查询（秒）', _textField('query-timeout', _querySecs, '留空不限；超时后让服务器停止这条语句')),
               _section('SSH 隧道'),
               _row('启用', _checkbox('ssh-enabled', _useSsh, '经 SSH 隧道连接', (value) => _useSsh = value)),

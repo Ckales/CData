@@ -15,6 +15,7 @@ pub enum _ThemeMode {
 
 #[frb(mirror(Preferences))]
 pub struct _Preferences {
+    pub connect_timeout_secs: Option<u32>,
     pub theme: ThemeMode,
     pub editor_font_size: u32,
     pub max_rows: u64,

@@ -113,6 +113,7 @@ pub struct DbPool {
     pool: Arc<std::sync::Mutex<Arc<Pool>>>,
     pool_options: Opts,
     connect_timeout: Option<Duration>,
+    use_preferences_timeout: bool,
     query_timeout: Option<Duration>,
     tunnel: Option<Arc<Tunnel>>,
     /// 这个池取出过的连接的线程 id。服务器状态页据此认出 CData 自己的连接，不让用户 KILL 掉
@@ -288,6 +289,7 @@ pub async fn open_pool(config: &ConnectionConfig) -> Result<DbPool, OpenError> {
         )))),
         pool_options,
         connect_timeout: timeouts.connect(),
+        use_preferences_timeout: false,
         query_timeout: timeouts.query(),
         tunnel,
         connection_ids: Arc::default(),
@@ -320,11 +322,37 @@ fn resolve_ssh_secrets(config: &ConnectionConfig) -> Result<Vec<Option<String>>,
 }
 
 impl DbPool {
+    /// 应用会话统一使用偏好设置；已有池也在下一次取连接时读取新值。
+    pub(crate) async fn open_with_preferences(config: &ConnectionConfig) -> Result<Self, OpenError> {
+        let preferences = crate::preferences::load()
+            .map_err(|err| OpenError::BadOptions(err.to_string()))?;
+        let mut config = config.clone();
+        config.options.timeouts.connect_secs = preferences.connect_timeout_secs;
+        let mut pool = open_pool(&config).await?;
+        pool.use_preferences_timeout = true;
+        Ok(pool)
+    }
+
+    fn connect_timeout(&self) -> Result<Option<Duration>, mysql_async::Error> {
+        if self.use_preferences_timeout {
+            let preferences = crate::preferences::load().map_err(|err| {
+                mysql_async::Error::Other(Box::new(ConnectFailed(err.to_string())))
+            })?;
+            Ok(preferences.connect_timeout_secs.map(|secs| Duration::from_secs(u64::from(secs))))
+        } else {
+            Ok(self.connect_timeout)
+        }
+    }
+
     /// 取一条连接，在任何业务语句发出前用 PING 确认服务器仍可用。
     /// mysql_async 的套接字检查不能确认远端会话存活；取连接或 PING 失败后换新池再试一次。
     ///
     /// 这一步的失败统一包成 ConnectFailed：语句还没发出去，界面可以明确告诉用户没有执行
     pub async fn get_conn(&self) -> Result<Conn, mysql_async::Error> {
+        let connect_timeout = self.connect_timeout()?;
+        if let Some(tunnel) = &self.tunnel {
+            tunnel.set_connect_timeout(connect_timeout);
+        }
         let checkout = |pool: Arc<Pool>| async move {
             let mut conn = pool.get_conn().await?;
             if let Err(err) = conn.ping().await {
@@ -353,7 +381,7 @@ impl DbPool {
                 }
             }
         };
-        let result = match self.connect_timeout {
+        let result = match connect_timeout {
             Some(limit) => match tokio::time::timeout(limit, attempt).await {
                 Ok(result) => result,
                 Err(_) => {
@@ -793,4 +821,59 @@ pub(crate) fn build_row(row: mysql_async::Row, columns: &[ColumnMeta]) -> Vec<Ce
         cells.push(cell_from_value(value, is_binary));
     }
     cells
+}
+
+#[cfg(test)]
+mod timeout_preferences_tests {
+    use super::*;
+    use crate::preferences::{self, Preferences, PREFS_ENV_LOCK};
+
+    #[tokio::test]
+    async fn application_pools_ignore_saved_timeouts_and_follow_preference_changes() {
+        let _lock = PREFS_ENV_LOCK.lock().unwrap();
+        let dir = std::env::temp_dir().join(format!("cdata-timeout-prefs-{}", std::process::id()));
+        let path = dir.join("preferences.json");
+        let previous = std::env::var_os("CDATA_PREFERENCES_PATH");
+        unsafe { std::env::set_var("CDATA_PREFERENCES_PATH", &path) };
+        let silent = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let mut config = ConnectionConfig {
+            host: "127.0.0.1".into(),
+            port: silent.local_addr().unwrap().port(),
+            user: "nobody".into(),
+            password: String::new(),
+            database: None,
+            options: ConnectionOptions::default(),
+            ssh_secrets: Vec::new(),
+            saved_id: None,
+        };
+        config.options.timeouts.connect_secs = Some(10);
+        let pool = DbPool::open_with_preferences(&config).await.unwrap();
+        assert_eq!(pool.connect_timeout().unwrap(), Some(Duration::from_secs(180)));
+        for seconds in [Some(300), None] {
+            preferences::save(&Preferences {
+                connect_timeout_secs: seconds,
+                ..Preferences::default()
+            }).unwrap();
+            assert_eq!(pool.connect_timeout().unwrap(), seconds.map(|s| Duration::from_secs(u64::from(s))));
+            let reopened = DbPool::open_with_preferences(&config).await.unwrap();
+            assert_eq!(reopened.connect_timeout().unwrap(), pool.connect_timeout().unwrap());
+        }
+        preferences::save(&Preferences {
+            connect_timeout_secs: Some(1),
+            ..Preferences::default()
+        }).unwrap();
+        let result = tokio::time::timeout(Duration::from_secs(5), pool.get_conn()).await.unwrap();
+        let error = match result {
+            Ok(_) => panic!("静默服务器不应连接成功"),
+            Err(error) => error,
+        };
+        assert!(error.to_string().contains("1 秒内没有连上"), "{error}");
+        unsafe {
+            match previous {
+                Some(value) => std::env::set_var("CDATA_PREFERENCES_PATH", value),
+                None => std::env::remove_var("CDATA_PREFERENCES_PATH"),
+            }
+        }
+        std::fs::remove_dir_all(dir).unwrap();
+    }
 }

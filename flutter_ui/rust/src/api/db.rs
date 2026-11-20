@@ -207,7 +207,7 @@ pub(crate) fn to_message(err: cdata_core::session::Error) -> String {
 /// 走 SSH 时当场建隧道，未知主机、密钥不符、认证失败在这里就报出来
 pub async fn open_session(config: ConnectionConfig) -> std::result::Result<u64, OpenSessionError> {
     runtime()
-        .spawn(async move { cdata_core::session::open_session(&config).await })
+        .spawn(async move { cdata_core::session::open_session_with_preferences(&config).await })
         .await
         .map_err(|err| OpenSessionError { message: format!("任务没能跑完：{err}"), host_key: None })?
         .map_err(|err| OpenSessionError {

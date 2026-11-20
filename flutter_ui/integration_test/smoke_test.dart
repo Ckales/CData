@@ -82,6 +82,7 @@ void main() {
 
     final defaults = defaultPreferences();
     final preferences = Preferences(
+      connectTimeoutSecs: defaults.connectTimeoutSecs,
       theme: defaults.theme,
       editorFontSize: defaults.editorFontSize,
       maxRows: defaults.maxRows,

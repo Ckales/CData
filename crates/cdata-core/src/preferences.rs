@@ -33,6 +33,8 @@ pub enum ThemeMode {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Preferences {
+    /// 全部连接统一的连接时限，单位秒；None 表示不限时。
+    pub connect_timeout_secs: Option<u32>,
     pub theme: ThemeMode,
     /// SQL 编辑器字号
     pub editor_font_size: u32,
@@ -48,6 +50,7 @@ pub struct Preferences {
 impl Default for Preferences {
     fn default() -> Self {
         Preferences {
+            connect_timeout_secs: Some(180),
             theme: ThemeMode::System,
             editor_font_size: 13,
             max_rows: DEFAULT_MAX_ROWS,
@@ -63,6 +66,9 @@ impl Default for Preferences {
 impl Preferences {
     /// 不合法就拒绝，不悄悄夹到范围里 —— 用户填 50 万，存下来变成 10 万，他会以为数据全了
     pub fn validate(&self) -> Result<()> {
+        if self.connect_timeout_secs == Some(0) {
+            return Err(Error::Invalid("连接超时要大于 0 秒；不限时请留空".into()));
+        }
         if self.max_rows == 0 || self.max_rows > MAX_ROWS_LIMIT {
             return Err(Error::Invalid(format!(
                 "行数上限要在 1 到 {MAX_ROWS_LIMIT} 之间，现在是 {}",
@@ -127,6 +133,23 @@ mod tests {
     use super::*;
 
     #[test]
+    fn connection_timeout_accepts_custom_seconds_or_unlimited() {
+        for seconds in [Some(180), Some(300), None] {
+            let preferences = Preferences {
+                connect_timeout_secs: seconds,
+                ..Preferences::default()
+            };
+            assert!(preferences.validate().is_ok());
+            let json = serde_json::to_string(&preferences).unwrap();
+            assert_eq!(serde_json::from_str::<Preferences>(&json).unwrap(), preferences);
+        }
+        assert!(Preferences {
+            connect_timeout_secs: Some(0),
+            ..Preferences::default()
+        }.validate().is_err());
+    }
+
+    #[test]
     fn rejects_out_of_range_values() {
         let too_many = Preferences {
             max_rows: MAX_ROWS_LIMIT + 1,
@@ -182,6 +205,7 @@ mod tests {
     fn missing_fields_take_defaults() {
         let preferences: Preferences = serde_json::from_str(r#"{"theme":"Dark"}"#).unwrap();
         assert_eq!(preferences.theme, ThemeMode::Dark);
+        assert_eq!(preferences.connect_timeout_secs, Some(180));
         assert_eq!(preferences.max_rows, 1_000);
         assert_eq!(Preferences::default().max_rows, DEFAULT_MAX_ROWS);
         assert_eq!(preferences.transcript_history_limit, 100);
@@ -204,6 +228,7 @@ mod tests {
         assert_eq!(load().unwrap(), Preferences::default());
 
         let changed = Preferences {
+            connect_timeout_secs: Some(300),
             theme: ThemeMode::Dark,
             editor_font_size: 15,
             max_rows: 5000,
