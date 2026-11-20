@@ -1358,10 +1358,8 @@ pub fn plan_alter(
         return Err("没有任何改动".to_string());
     }
 
-    let mut notes = vec!["MySQL 的 DDL 会隐式提交当前事务，执行后不能回滚。大表上改列或调整顺序会重建整张表，可能要很久。".to_string()];
-    if statements.len() == 1 {
-        notes.push("合成 1 条 ALTER TABLE 执行：失败时整条都不生效。".to_string());
-    } else {
+    let mut notes = Vec::new();
+    if readded_same_name {
         notes.push(format!(
             "分成 2 条执行：MySQL 不允许在同一条 ALTER 里删掉又加回同名外键，所以第 1 条先删外键 {}，第 2 条做其余改动。\
              如果第 2 条失败，第 1 条已经生效：这些外键已被删除，需要手动加回。",
@@ -1651,10 +1649,12 @@ mod tests {
         draft.indexes[1].parts[1].column = Some("amount".to_string());
         draft.foreign_keys[0].columns[0] = "amount".to_string();
 
+        let (plan, _) = plan(&original, &draft).unwrap();
         assert_eq!(
-            statement(&original, &draft),
-            "ALTER TABLE `shop`.`t`\n  RENAME COLUMN `price` TO `amount`"
+            plan.statements,
+            ["ALTER TABLE `shop`.`t`\n  RENAME COLUMN `price` TO `amount`"]
         );
+        assert!(plan.notes.is_empty(), "{:?}", plan.notes);
     }
 
     #[test]

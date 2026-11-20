@@ -209,7 +209,7 @@ class _InlineTextCellState extends State<_InlineTextCell> {
           enabled: widget.enabled,
           autofocus: true,
           style: const TextStyle(fontSize: 12, fontFamily: 'Menlo'),
-          decoration: const InputDecoration(contentPadding: EdgeInsets.symmetric(horizontal: 5, vertical: 3)),
+          decoration: const InputDecoration(contentPadding: EdgeInsets.symmetric(horizontal: 5, vertical: 8)),
           onChanged: widget.onChanged,
           onSubmitted: (_) => _stop(),
           onTapOutside: (_) => _stop(),
@@ -438,7 +438,7 @@ class _ColumnTypeCellState extends State<_ColumnTypeCell> {
                   autofocus: true,
                   style: const TextStyle(fontSize: 12, fontFamily: 'Menlo'),
                   decoration: InputDecoration(
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 5, vertical: 3),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 5, vertical: 8),
                     suffixIcon: IconButton(
                       key: ValueKey('column-type-picker-${widget.row}'),
                       onPressed: _open,
@@ -1805,6 +1805,7 @@ class _PreviewDialogState extends State<_PreviewDialog> {
                   children: [
                     if (dangerous)
                       Container(
+                        margin: const EdgeInsets.only(bottom: 8),
                         padding: const EdgeInsets.all(10),
                         decoration: BoxDecoration(color: scheme.errorContainer, borderRadius: BorderRadius.circular(5)),
                         child: Column(
@@ -1829,13 +1830,11 @@ class _PreviewDialogState extends State<_PreviewDialog> {
                           ],
                         ),
                       ),
-                    const SizedBox(height: 8),
                     for (final note in plan.notes)
                       Padding(
                         padding: const EdgeInsets.only(bottom: 4),
                         child: Text('· $note', style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant)),
                       ),
-                    const SizedBox(height: 8),
                     for (var i = 0; i < plan.statements.length; i++)
                       Container(
                         margin: const EdgeInsets.only(bottom: 8),

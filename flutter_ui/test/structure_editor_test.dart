@@ -178,7 +178,11 @@ void main() {
     }
     await doubleTapCell(tester, find.byKey(const ValueKey('column-name-display-1')));
     await settle(tester);
-    final input = tester.widget<TextField>(find.byKey(const ValueKey('column-name-1')));
+    final inputFinder = find.byKey(const ValueKey('column-name-1'));
+    final inputHeight = tester.getSize(inputFinder).height;
+    final rowHeight = tester.getSize(find.byKey(const ValueKey('column-row-1'))).height;
+    expect(inputHeight, inInclusiveRange(rowHeight - 4, rowHeight));
+    final input = tester.widget<TextField>(inputFinder);
     input.controller!.selection = const TextSelection(baseOffset: 1, extentOffset: 4);
     await tester.pump();
     await copy();
@@ -233,7 +237,7 @@ void main() {
     source.plan = const AlterPlan(
       statements: ['ALTER TABLE `shop`.`posts`\n  CHANGE COLUMN `title` `headline` varchar(100) NOT NULL DEFAULT \'\''],
       dangers: ['删除列 body：这一列的数据会永久丢失'],
-      notes: ['MySQL 的 DDL 会隐式提交当前事务，执行后不能回滚。'],
+      notes: ['改 ROW_FORMAT 会重建整张表，大表会很久。'],
     );
     await tester.tap(find.text('预览 DDL'));
     await settle(tester);
@@ -250,7 +254,7 @@ void main() {
     expect(find.text('确认要执行的 DDL'), findsOneWidget);
     expect(find.textContaining('CHANGE COLUMN `title` `headline`'), findsOneWidget);
     expect(find.text('删除列 body：这一列的数据会永久丢失'), findsOneWidget);
-    expect(find.textContaining('隐式提交'), findsOneWidget);
+    expect(find.textContaining('改 ROW_FORMAT'), findsOneWidget);
 
     await tester.tap(find.text('我已了解风险，执行'));
     await settle(tester);
@@ -336,7 +340,10 @@ void main() {
   testWidgets('双击类型后可输入精确长度、精度和修饰符', (tester) async {
     final source = await openEditor(tester);
     await doubleTapCell(tester, find.byKey(const ValueKey('column-type-display-1')));
-    await tester.enterText(find.byKey(const ValueKey('column-type-1')), 'decimal(12,2) unsigned');
+    final input = find.byKey(const ValueKey('column-type-1'));
+    final rowHeight = tester.getSize(find.byKey(const ValueKey('column-row-1'))).height;
+    expect(tester.getSize(input).height, inInclusiveRange(rowHeight - 4, rowHeight));
+    await tester.enterText(input, 'decimal(12,2) unsigned');
     await tester.tap(find.text('预览 DDL'));
     await settle(tester);
     expect(source.previews.single.columns[1].columnType, 'decimal(12,2) unsigned');
