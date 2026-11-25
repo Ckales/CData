@@ -76,11 +76,13 @@ Future<SqlImportSummary> importSqlFile({
   required String path,
   required ExportEncoding encoding,
   required String database,
+  required SqlImportTask task,
 }) => RustLib.instance.api.crateApiEditorImportSqlFile(
   sessionId: sessionId,
   path: path,
   encoding: encoding,
   database: database,
+  task: task,
 );
 
 /// 执行计划，结果放进一个子会话
@@ -97,6 +99,14 @@ Future<StatementOutcome> explain({
 /// 新一轮运行前关掉上一轮的子结果
 Future<void> dropChildResults({required BigInt sessionId}) =>
     RustLib.instance.api.crateApiEditorDropChildResults(sessionId: sessionId);
+
+// Rust type: RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<SqlImportTask>>
+abstract class SqlImportTask implements RustOpaqueInterface {
+  void cancel();
+
+  factory SqlImportTask() =>
+      RustLib.instance.api.crateApiEditorSqlImportTaskNew();
+}
 
 class Completion {
   final int replaceStart;
@@ -209,6 +219,22 @@ class ScriptSummary {
           failure == other.failure;
 }
 
+class SqlImportCancellation {
+  final bool confirmedStopped;
+
+  const SqlImportCancellation({required this.confirmedStopped});
+
+  @override
+  int get hashCode => confirmedStopped.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is SqlImportCancellation &&
+          runtimeType == other.runtimeType &&
+          confirmedStopped == other.confirmedStopped;
+}
+
 class SqlImportFailure {
   final BigInt statement;
   final BigInt line;
@@ -237,16 +263,21 @@ class SqlImportSummary {
   final BigInt executed;
   final BigInt affectedRows;
   final SqlImportFailure? failure;
+  final SqlImportCancellation? cancellation;
 
   const SqlImportSummary({
     required this.executed,
     required this.affectedRows,
     this.failure,
+    this.cancellation,
   });
 
   @override
   int get hashCode =>
-      executed.hashCode ^ affectedRows.hashCode ^ failure.hashCode;
+      executed.hashCode ^
+      affectedRows.hashCode ^
+      failure.hashCode ^
+      cancellation.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -255,7 +286,8 @@ class SqlImportSummary {
           runtimeType == other.runtimeType &&
           executed == other.executed &&
           affectedRows == other.affectedRows &&
-          failure == other.failure;
+          failure == other.failure &&
+          cancellation == other.cancellation;
 }
 
 class SqlToken {

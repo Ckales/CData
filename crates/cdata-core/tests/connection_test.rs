@@ -13,6 +13,155 @@ use cdata_core::session::{self, Error};
 use cdata_core::ssh::HostKeyIssueKind;
 use cdata_core::CellValue;
 
+// 用真实的行锁验证中断同一批语句，并由 MySQL 回滚导入事务。
+#[tokio::test(flavor = "multi_thread")]
+async fn cancelling_blocked_sql_import_stops_and_rolls_back_its_transaction() {
+    let Some(config) = config_from_env() else {
+        eprintln!("跳过：未配置 CDATA_TEST_* 环境变量");
+        return;
+    };
+
+    use cdata_core::db::{open_pool, run_sql_import_cancellable};
+    use cdata_core::sql_import::{ImportStatement, SqlImportCancel};
+    use mysql_async::prelude::Queryable;
+    use std::sync::Arc;
+
+    let pool = open_pool(&config).await.unwrap();
+    let suffix = format!(
+        "{}_{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    );
+    let table = format!("cdata_cancel_import_{suffix}");
+    let blocked_marker = format!("cdata_cancel_blocked_{suffix}");
+    let mut setup = pool.get_conn().await.unwrap();
+    setup
+        .query_drop(format!(
+            "CREATE TABLE `{table}` (id INT PRIMARY KEY, value VARCHAR(128) NOT NULL) ENGINE=InnoDB"
+        ))
+        .await
+        .unwrap();
+    setup
+        .query_drop(format!(
+            "INSERT INTO `{table}` VALUES (1, 'committed baseline')"
+        ))
+        .await
+        .unwrap();
+    drop(setup);
+
+    // Hold a row lock so the import reaches MySQL and blocks inside its own transaction.
+    let mut locker = pool.get_conn().await.unwrap();
+    locker.query_drop("START TRANSACTION").await.unwrap();
+    locker
+        .query_drop(format!(
+            "UPDATE `{table}` SET value = 'locker' WHERE id = 1"
+        ))
+        .await
+        .unwrap();
+
+    let statements = vec![
+        ImportStatement {
+            sql: format!("INSERT INTO `{table}` VALUES (4, 'committed by import')"),
+            line: 1,
+        },
+        ImportStatement {
+            sql: "START TRANSACTION".into(),
+            line: 2,
+        },
+        ImportStatement {
+            sql: format!("INSERT INTO `{table}` VALUES (2, 'must roll back')"),
+            line: 3,
+        },
+        ImportStatement {
+            sql: format!("UPDATE `{table}` SET value = '{blocked_marker}' WHERE id = 1"),
+            line: 4,
+        },
+        ImportStatement {
+            sql: format!("INSERT INTO `{table}` VALUES (3, 'must not execute')"),
+            line: 5,
+        },
+        ImportStatement {
+            sql: "COMMIT".into(),
+            line: 6,
+        },
+    ];
+    let cancel = Arc::new(SqlImportCancel::default());
+    let import_pool = pool.clone();
+    let import_cancel = cancel.clone();
+    let import = tokio::spawn(async move {
+        run_sql_import_cancellable(&import_pool, &statements, "", &|_, _| {}, &import_cancel).await
+    });
+
+    // Wait until the server reports the exact UPDATE as active before requesting cancellation.
+    let mut observer = pool.get_conn().await.unwrap();
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+    let mut is_blocked = false;
+    while tokio::time::Instant::now() < deadline {
+        let active: u64 = observer
+            .query_first(format!(
+                "SELECT COUNT(*) FROM information_schema.PROCESSLIST \
+                 WHERE ID <> CONNECTION_ID() AND INFO LIKE '%{blocked_marker}%'"
+            ))
+            .await
+            .unwrap()
+            .expect("PROCESSLIST count should return one row");
+        if active > 0 {
+            is_blocked = true;
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(25)).await;
+    }
+
+    if !is_blocked {
+        cancel.cancel();
+        let _ = tokio::time::timeout(Duration::from_secs(5), import).await;
+        let _ = locker.query_drop("ROLLBACK").await;
+        let _ = observer.disconnect().await;
+        let _ = pool.disconnect().await;
+        panic!("import UPDATE did not become visible as blocked in PROCESSLIST");
+    }
+
+    cancel.cancel();
+    let summary = tokio::time::timeout(Duration::from_secs(10), import)
+        .await
+        .expect("cancelled import did not return")
+        .expect("import task panicked")
+        .unwrap();
+    let cancellation = summary
+        .cancellation
+        .as_ref()
+        .expect("summary should report cancellation");
+    assert!(
+        cancellation.confirmed_stopped,
+        "server did not confirm stopping the blocked statement"
+    );
+
+    // Releasing the competing lock must not commit or otherwise alter the import's transaction.
+    locker.query_drop("ROLLBACK").await.unwrap();
+    drop(locker);
+    let rows: Vec<(u64, String)> = tokio::time::timeout(
+        Duration::from_secs(5),
+        observer.query(format!("SELECT id, value FROM `{table}` ORDER BY id FOR UPDATE")),
+    )
+    .await
+    .expect("cancelled import still holds row locks")
+    .unwrap();
+    assert_eq!(
+        rows,
+        vec![(1, "committed baseline".into()), (4, "committed by import".into())]
+    );
+
+    observer
+        .query_drop(format!("DROP TABLE `{table}`"))
+        .await
+        .unwrap();
+    observer.disconnect().await.ok();
+    pool.disconnect().await.ok();
+}
+
 fn config_from_env() -> Option<ConnectionConfig> {
     Some(ConnectionConfig {
         host: std::env::var("CDATA_TEST_HOST").ok()?,

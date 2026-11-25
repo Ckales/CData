@@ -7,9 +7,11 @@ use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
 
-use cdata_core::db::{open_pool, run_query, run_sql_import, ConnectionConfig};
+use cdata_core::db::{
+    open_pool, run_query, run_sql_import, run_sql_import_cancellable, ConnectionConfig,
+};
 use cdata_core::options::ConnectionOptions;
-use cdata_core::sql_import::ImportStatement;
+use cdata_core::sql_import::{ImportStatement, SqlImportCancel};
 use mysql_async::prelude::Queryable;
 
 fn packet(stream: &mut TcpStream) -> Vec<u8> {
@@ -537,6 +539,45 @@ async fn import_recovers_when_initial_checkout_disconnects() {
         imported,
         statements.iter().map(|s| s.sql.clone()).collect::<Vec<_>>()
     );
+}
+
+#[tokio::test]
+async fn cancelling_import_closes_local_connection_when_control_connection_fails() {
+    let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let (started, waiting) = tokio::sync::oneshot::channel();
+    let server = thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        stream.set_read_timeout(Some(Duration::from_secs(8))).unwrap();
+        handshake(&mut stream, 1);
+        loop {
+            let (command, payload) = next_command(&mut stream);
+            match command {
+                0x0e => ok_packet(&mut stream, 1),
+                0x03 if payload == b"SELECT SLEEP(60)" => break,
+                0x03 => query_reply(&mut stream, &payload),
+                other => panic!("unexpected command {other:#x}"),
+            }
+        }
+        drop(listener); // The import connection survives, but opening a control connection fails.
+        started.send(()).unwrap();
+        assert_eq!(stream.read(&mut [0u8; 1]).unwrap(), 0);
+    });
+
+    let pool = open_pool(&config(port, 2)).await.unwrap();
+    let statements = [ImportStatement { sql: "SELECT SLEEP(60)".into(), line: 1 }];
+    let cancel = SqlImportCancel::default();
+    let (summary, ()) = tokio::join!(
+        run_sql_import_cancellable(&pool, &statements, "", &|_, _| {}, &cancel),
+        async {
+            waiting.await.unwrap();
+            cancel.cancel();
+        },
+    );
+    let cancellation = summary.unwrap().cancellation.unwrap();
+    assert!(!cancellation.confirmed_stopped);
+    pool.disconnect().await.unwrap();
+    server.join().unwrap();
 }
 
 #[tokio::test]

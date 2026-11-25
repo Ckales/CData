@@ -34,6 +34,28 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
     required super.portManager,
   });
 
+  CrossPlatformFinalizerArg
+  get rust_arc_decrement_strong_count_SqlImportTaskPtr => wire
+      .rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerSqlImportTask;
+
+  @protected
+  SqlImportTask
+  dco_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerSqlImportTask(
+    dynamic raw,
+  );
+
+  @protected
+  SqlImportTask
+  dco_decode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerSqlImportTask(
+    dynamic raw,
+  );
+
+  @protected
+  SqlImportTask
+  dco_decode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerSqlImportTask(
+    dynamic raw,
+  );
+
   @protected
   String dco_decode_String(dynamic raw);
 
@@ -102,6 +124,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   SqlDumpOptions dco_decode_box_autoadd_sql_dump_options(dynamic raw);
+
+  @protected
+  SqlImportCancellation dco_decode_box_autoadd_sql_import_cancellation(
+    dynamic raw,
+  );
 
   @protected
   SqlImportFailure dco_decode_box_autoadd_sql_import_failure(dynamic raw);
@@ -470,6 +497,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   QuerySummary? dco_decode_opt_box_autoadd_query_summary(dynamic raw);
 
   @protected
+  SqlImportCancellation? dco_decode_opt_box_autoadd_sql_import_cancellation(
+    dynamic raw,
+  );
+
+  @protected
   SqlImportFailure? dco_decode_opt_box_autoadd_sql_import_failure(dynamic raw);
 
   @protected
@@ -522,6 +554,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   SqlDumpOptions dco_decode_sql_dump_options(dynamic raw);
+
+  @protected
+  SqlImportCancellation dco_decode_sql_import_cancellation(dynamic raw);
 
   @protected
   SqlImportFailure dco_decode_sql_import_failure(dynamic raw);
@@ -623,6 +658,24 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   VariableScope dco_decode_variable_scope(dynamic raw);
 
   @protected
+  SqlImportTask
+  sse_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerSqlImportTask(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  SqlImportTask
+  sse_decode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerSqlImportTask(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  SqlImportTask
+  sse_decode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerSqlImportTask(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   String sse_decode_String(SseDeserializer deserializer);
 
   @protected
@@ -710,6 +763,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   SqlDumpOptions sse_decode_box_autoadd_sql_dump_options(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  SqlImportCancellation sse_decode_box_autoadd_sql_import_cancellation(
     SseDeserializer deserializer,
   );
 
@@ -1134,6 +1192,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  SqlImportCancellation? sse_decode_opt_box_autoadd_sql_import_cancellation(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   SqlImportFailure? sse_decode_opt_box_autoadd_sql_import_failure(
     SseDeserializer deserializer,
   );
@@ -1192,6 +1255,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   SqlDumpOptions sse_decode_sql_dump_options(SseDeserializer deserializer);
+
+  @protected
+  SqlImportCancellation sse_decode_sql_import_cancellation(
+    SseDeserializer deserializer,
+  );
 
   @protected
   SqlImportFailure sse_decode_sql_import_failure(SseDeserializer deserializer);
@@ -1293,6 +1361,27 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   VariableScope sse_decode_variable_scope(SseDeserializer deserializer);
+
+  @protected
+  void
+  sse_encode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerSqlImportTask(
+    SqlImportTask self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void
+  sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerSqlImportTask(
+    SqlImportTask self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void
+  sse_encode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerSqlImportTask(
+    SqlImportTask self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_String(String self, SseSerializer serializer);
@@ -1411,6 +1500,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_box_autoadd_sql_dump_options(
     SqlDumpOptions self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_sql_import_cancellation(
+    SqlImportCancellation self,
     SseSerializer serializer,
   );
 
@@ -1961,6 +2056,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_opt_box_autoadd_sql_import_cancellation(
+    SqlImportCancellation? self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_opt_box_autoadd_sql_import_failure(
     SqlImportFailure? self,
     SseSerializer serializer,
@@ -2032,6 +2133,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_sql_dump_options(
     SqlDumpOptions self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_sql_import_cancellation(
+    SqlImportCancellation self,
     SseSerializer serializer,
   );
 
@@ -2163,6 +2270,22 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
 class RustLibWire implements BaseWire {
   RustLibWire.fromExternalLibrary(ExternalLibrary lib);
+
+  void
+  rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerSqlImportTask(
+    int ptr,
+  ) => wasmModule
+      .rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerSqlImportTask(
+        ptr,
+      );
+
+  void
+  rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerSqlImportTask(
+    int ptr,
+  ) => wasmModule
+      .rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerSqlImportTask(
+        ptr,
+      );
 }
 
 @JS('wasm_bindgen')
@@ -2170,4 +2293,14 @@ external RustLibWasmModule get wasmModule;
 
 @JS()
 @anonymous
-extension type RustLibWasmModule._(JSObject _) implements JSObject {}
+extension type RustLibWasmModule._(JSObject _) implements JSObject {
+  external void
+  rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerSqlImportTask(
+    int ptr,
+  );
+
+  external void
+  rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerSqlImportTask(
+    int ptr,
+  );
+}

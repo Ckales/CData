@@ -12,7 +12,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::options::{ConnectionOptions, SshAuth, SslMode, SslOptions};
 use crate::sql::quote_ident;
-use crate::sql_import::{pack_import_batches, ImportStatement, SqlImportFailure, SqlImportSummary};
+use crate::sql_import::{
+    pack_import_batches, ImportStatement, SqlImportCancel, SqlImportCancellation, SqlImportFailure,
+    SqlImportSummary,
+};
 use crate::ssh::Tunnel;
 use crate::value::{cell_from_value, CellValue};
 
@@ -508,21 +511,97 @@ pub async fn run_sql_import(
     database: &str,
     on_statement: &(dyn Fn(u64, u64) + Send + Sync),
 ) -> Result<SqlImportSummary, mysql_async::Error> {
-    let mut conn = pool.get_conn().await?;
-    if !database.is_empty() {
-        conn.query_drop(format!("USE {}", quote_ident(database)))
-            .await?;
-    }
+    run_sql_import_cancellable(
+        pool,
+        statements,
+        database,
+        on_statement,
+        &SqlImportCancel::default(),
+    )
+    .await
+}
+
+pub async fn run_sql_import_cancellable(
+    pool: &DbPool,
+    statements: &[ImportStatement],
+    database: &str,
+    on_statement: &(dyn Fn(u64, u64) + Send + Sync),
+    cancel: &SqlImportCancel,
+) -> Result<SqlImportSummary, mysql_async::Error> {
+    let mut conn = tokio::select! {
+        biased;
+        _ = cancel.cancelled() => return Ok(SqlImportSummary::cancelled_before_execution()),
+        conn = pool.get_conn() => conn?,
+    };
     let mut summary = SqlImportSummary {
         executed: 0,
         affected_rows: 0,
         failure: None,
+        cancellation: None,
     };
+
+    let result = tokio::select! {
+        biased;
+        _ = cancel.cancelled() => ImportConnection::Cancelled,
+        result = execute_import(pool, &mut conn, statements, database, on_statement, &mut summary, cancel) => result?,
+    };
+    match result {
+        ImportConnection::Reusable => return Ok(summary),
+        ImportConnection::Discard => {}
+        ImportConnection::Cancelled => {
+            let kill = async {
+                // Use a separate connection so a busy pool cannot block cancellation.
+                let opts = OptsBuilder::from_opts(pool.pool_options.clone()).db_name(None::<String>);
+                let mut control = Conn::new(opts).await?;
+                control.query_drop(crate::server::kill_sql(
+                    u64::from(conn.id()),
+                    crate::server::KillMode::Connection,
+                ))
+                .await
+            };
+            let confirmed_stopped = matches!(
+                tokio::time::timeout(KILL_GRACE, kill).await,
+                Ok(Ok(()))
+            );
+            summary.cancellation = Some(SqlImportCancellation { confirmed_stopped });
+        }
+    }
+    // Do not return a partially read batch or its open transaction to the pool.
+    let _ = tokio::time::timeout(Duration::from_secs(1), conn.disconnect()).await;
+    Ok(summary)
+}
+
+enum ImportConnection {
+    Reusable,
+    Discard,
+    Cancelled,
+}
+
+async fn execute_import(
+    pool: &DbPool,
+    conn: &mut Conn,
+    statements: &[ImportStatement],
+    database: &str,
+    on_statement: &(dyn Fn(u64, u64) + Send + Sync),
+    summary: &mut SqlImportSummary,
+    cancel: &SqlImportCancel,
+) -> Result<ImportConnection, mysql_async::Error> {
+    if !database.is_empty() {
+        conn.query_drop(format!("USE {}", quote_ident(database)))
+            .await?;
+    }
     let total = statements.len() as u64;
     on_statement(0, total);
     for batch in pack_import_batches(statements) {
-        let (result, usable) =
-            run_import_batch(pool, &mut conn, &batch.sql, batch.len as u64).await;
+        if cancel.is_requested() {
+            return Ok(ImportConnection::Cancelled);
+        }
+        let (result, usable) = run_import_batch(pool, conn, &batch.sql, batch.len as u64).await;
+        let connection = if usable {
+            ImportConnection::Reusable
+        } else {
+            ImportConnection::Discard
+        };
         match result {
             Ok((executed, affected)) => {
                 summary.executed += executed;
@@ -535,10 +614,7 @@ pub async fn run_sql_import(
                         line: statements[index].line,
                         message: "服务器没有返回这条语句的结果".to_string(),
                     });
-                    if !usable {
-                        let _ = conn.disconnect().await;
-                    }
-                    return Ok(summary);
+                    return Ok(connection);
                 }
             }
             Err((executed, affected, err)) => {
@@ -557,14 +633,11 @@ pub async fn run_sql_import(
                     line: statements[index].line,
                     message,
                 });
-                if !usable {
-                    let _ = conn.disconnect().await;
-                }
-                return Ok(summary);
+                return Ok(connection);
             }
         }
     }
-    Ok(summary)
+    Ok(ImportConnection::Reusable)
 }
 
 /// 一批语句的结果。第二项为 false 表示连接状态不明，调用方必须丢掉它。

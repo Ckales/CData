@@ -27,6 +27,7 @@
 
 // Section: imports
 
+use crate::api::editor::*;
 use flutter_rust_bridge::for_generated::byteorder::{NativeEndian, ReadBytesExt, WriteBytesExt};
 use flutter_rust_bridge::for_generated::{transform_result_dco, Lifetimeable, Lockable};
 use flutter_rust_bridge::{Handler, IntoIntoDart};
@@ -39,7 +40,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.13.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -1707697565;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -109234466;
 
 // Section: executor
 
@@ -47,6 +48,83 @@ flutter_rust_bridge::frb_generated_default_handler!();
 
 // Section: wire_funcs
 
+fn wire__crate__api__editor__SqlImportTask_cancel_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "SqlImportTask_cancel",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_that = <RustOpaqueMoi<
+                flutter_rust_bridge::for_generated::RustAutoOpaqueInner<SqlImportTask>,
+            >>::sse_decode(&mut deserializer);
+            deserializer.end();
+            transform_result_sse::<_, ()>((move || {
+                let mut api_that_guard = None;
+                let decode_indices_ =
+                    flutter_rust_bridge::for_generated::lockable_compute_decode_order(vec![
+                        flutter_rust_bridge::for_generated::LockableOrderInfo::new(
+                            &api_that, 0, false,
+                        ),
+                    ]);
+                for i in decode_indices_ {
+                    match i {
+                        0 => api_that_guard = Some(api_that.lockable_decode_sync_ref()),
+                        _ => unreachable!(),
+                    }
+                }
+                let api_that_guard = api_that_guard.unwrap();
+                let output_ok = Ok::<_, ()>({
+                    crate::api::editor::SqlImportTask::cancel(&*api_that_guard);
+                })?;
+                std::result::Result::Ok(output_ok)
+            })())
+        },
+    )
+}
+fn wire__crate__api__editor__SqlImportTask_new_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "SqlImportTask_new",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            deserializer.end();
+            transform_result_sse::<_, ()>((move || {
+                let output_ok = Ok::<_, ()>(crate::api::editor::SqlImportTask::new())?;
+                std::result::Result::Ok(output_ok)
+            })())
+        },
+    )
+}
 fn wire__crate__api__users__account_grants_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
@@ -1568,15 +1646,36 @@ fn wire__crate__api__editor__import_sql_file_impl(
             let api_path = <String>::sse_decode(&mut deserializer);
             let api_encoding = <crate::api::db::ExportEncoding>::sse_decode(&mut deserializer);
             let api_database = <String>::sse_decode(&mut deserializer);
+            let api_task = <RustOpaqueMoi<
+                flutter_rust_bridge::for_generated::RustAutoOpaqueInner<SqlImportTask>,
+            >>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| async move {
                 transform_result_sse::<_, String>(
                     (move || async move {
+                        let mut api_task_guard = None;
+                        let decode_indices_ =
+                            flutter_rust_bridge::for_generated::lockable_compute_decode_order(
+                                vec![flutter_rust_bridge::for_generated::LockableOrderInfo::new(
+                                    &api_task, 0, false,
+                                )],
+                            );
+                        for i in decode_indices_ {
+                            match i {
+                                0 => {
+                                    api_task_guard =
+                                        Some(api_task.lockable_decode_async_ref().await)
+                                }
+                                _ => unreachable!(),
+                            }
+                        }
+                        let api_task_guard = api_task_guard.unwrap();
                         let output_ok = crate::api::editor::import_sql_file(
                             api_session_id,
                             api_path,
                             api_encoding,
                             api_database,
+                            &*api_task_guard,
                         )
                         .await?;
                         std::result::Result::Ok(output_ok)
@@ -3983,6 +4082,10 @@ const _: fn() = || {
         let _: bool = SqlDumpOptions.include_data;
     }
     {
+        let SqlImportCancellation = None::<crate::api::editor::SqlImportCancellation>.unwrap();
+        let _: bool = SqlImportCancellation.confirmed_stopped;
+    }
+    {
         let SqlImportFailure = None::<crate::api::editor::SqlImportFailure>.unwrap();
         let _: u64 = SqlImportFailure.statement;
         let _: u64 = SqlImportFailure.line;
@@ -3993,6 +4096,7 @@ const _: fn() = || {
         let _: u64 = SqlImportSummary.executed;
         let _: u64 = SqlImportSummary.affected_rows;
         let _: Option<crate::api::editor::SqlImportFailure> = SqlImportSummary.failure;
+        let _: Option<crate::api::editor::SqlImportCancellation> = SqlImportSummary.cancellation;
     }
     {
         let SqlToken = None::<crate::api::editor::SqlToken>.unwrap();
@@ -4192,7 +4296,33 @@ const _: fn() = || {
     }
 };
 
+// Section: related_funcs
+
+flutter_rust_bridge::frb_generated_moi_arc_impl_value!(
+    flutter_rust_bridge::for_generated::RustAutoOpaqueInner<SqlImportTask>
+);
+
 // Section: dart2rust
+
+impl SseDecode for SqlImportTask {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut inner = <RustOpaqueMoi<
+            flutter_rust_bridge::for_generated::RustAutoOpaqueInner<SqlImportTask>,
+        >>::sse_decode(deserializer);
+        return flutter_rust_bridge::for_generated::rust_auto_opaque_decode_owned(inner);
+    }
+}
+
+impl SseDecode
+    for RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<SqlImportTask>>
+{
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut inner = <usize>::sse_decode(deserializer);
+        return decode_rust_opaque_moi(inner);
+    }
+}
 
 impl SseDecode for String {
     // Codec=Sse (Serialization based), see doc to use other codecs
@@ -5908,6 +6038,19 @@ impl SseDecode for Option<crate::api::db::QuerySummary> {
     }
 }
 
+impl SseDecode for Option<crate::api::editor::SqlImportCancellation> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        if (<bool>::sse_decode(deserializer)) {
+            return Some(<crate::api::editor::SqlImportCancellation>::sse_decode(
+                deserializer,
+            ));
+        } else {
+            return None;
+        }
+    }
+}
+
 impl SseDecode for Option<crate::api::editor::SqlImportFailure> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -6206,6 +6349,16 @@ impl SseDecode for crate::api::db::SqlDumpOptions {
     }
 }
 
+impl SseDecode for crate::api::editor::SqlImportCancellation {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_confirmedStopped = <bool>::sse_decode(deserializer);
+        return crate::api::editor::SqlImportCancellation {
+            confirmed_stopped: var_confirmedStopped,
+        };
+    }
+}
+
 impl SseDecode for crate::api::editor::SqlImportFailure {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -6227,10 +6380,13 @@ impl SseDecode for crate::api::editor::SqlImportSummary {
         let mut var_affectedRows = <u64>::sse_decode(deserializer);
         let mut var_failure =
             <Option<crate::api::editor::SqlImportFailure>>::sse_decode(deserializer);
+        let mut var_cancellation =
+            <Option<crate::api::editor::SqlImportCancellation>>::sse_decode(deserializer);
         return crate::api::editor::SqlImportSummary {
             executed: var_executed,
             affected_rows: var_affectedRows,
             failure: var_failure,
+            cancellation: var_cancellation,
         };
     }
 }
@@ -6771,126 +6927,126 @@ fn pde_ffi_dispatcher_primary_impl(
 ) {
     // Codec=Pde (Serialization + dispatch), see doc to use other codecs
     match func_id {
-        1 => wire__crate__api__users__account_grants_impl(port, ptr, rust_vec_len, data_len),
-        2 => wire__crate__api__editor__add_history_impl(port, ptr, rust_vec_len, data_len),
-        3 => wire__crate__api__editor__add_query_history_impl(port, ptr, rust_vec_len, data_len),
-        4 => wire__crate__api__schema__apply_alter_impl(port, ptr, rust_vec_len, data_len),
-        5 => {
+        3 => wire__crate__api__users__account_grants_impl(port, ptr, rust_vec_len, data_len),
+        4 => wire__crate__api__editor__add_history_impl(port, ptr, rust_vec_len, data_len),
+        5 => wire__crate__api__editor__add_query_history_impl(port, ptr, rust_vec_len, data_len),
+        6 => wire__crate__api__schema__apply_alter_impl(port, ptr, rust_vec_len, data_len),
+        7 => {
             wire__crate__api__schema__apply_create_database_impl(port, ptr, rust_vec_len, data_len)
         }
-        6 => wire__crate__api__db__apply_edit_impl(port, ptr, rust_vec_len, data_len),
-        7 => wire__crate__api__server__apply_set_global_impl(port, ptr, rust_vec_len, data_len),
-        8 => wire__crate__api__schema__apply_table_action_impl(port, ptr, rust_vec_len, data_len),
-        9 => wire__crate__api__users__apply_user_change_impl(port, ptr, rust_vec_len, data_len),
-        10 => wire__crate__api__schema__browse_sql_impl(port, ptr, rust_vec_len, data_len),
-        11 => wire__crate__api__csv_import__cancel_import_impl(port, ptr, rust_vec_len, data_len),
-        13 => wire__crate__api__csv_import__close_import_impl(port, ptr, rust_vec_len, data_len),
-        14 => wire__crate__api__db__close_session_impl(port, ptr, rust_vec_len, data_len),
-        15 => wire__crate__api__db__column_choices_impl(port, ptr, rust_vec_len, data_len),
-        17 => wire__crate__api__db__copy_range_impl(port, ptr, rust_vec_len, data_len),
-        18 => wire__crate__api__schema__count_rows_impl(port, ptr, rust_vec_len, data_len),
-        19 => wire__crate__api__schema__create_table_impl(port, ptr, rust_vec_len, data_len),
-        20 => wire__crate__api__schema__database_options_impl(port, ptr, rust_vec_len, data_len),
-        23 => {
+        8 => wire__crate__api__db__apply_edit_impl(port, ptr, rust_vec_len, data_len),
+        9 => wire__crate__api__server__apply_set_global_impl(port, ptr, rust_vec_len, data_len),
+        10 => wire__crate__api__schema__apply_table_action_impl(port, ptr, rust_vec_len, data_len),
+        11 => wire__crate__api__users__apply_user_change_impl(port, ptr, rust_vec_len, data_len),
+        12 => wire__crate__api__schema__browse_sql_impl(port, ptr, rust_vec_len, data_len),
+        13 => wire__crate__api__csv_import__cancel_import_impl(port, ptr, rust_vec_len, data_len),
+        15 => wire__crate__api__csv_import__close_import_impl(port, ptr, rust_vec_len, data_len),
+        16 => wire__crate__api__db__close_session_impl(port, ptr, rust_vec_len, data_len),
+        17 => wire__crate__api__db__column_choices_impl(port, ptr, rust_vec_len, data_len),
+        19 => wire__crate__api__db__copy_range_impl(port, ptr, rust_vec_len, data_len),
+        20 => wire__crate__api__schema__count_rows_impl(port, ptr, rust_vec_len, data_len),
+        21 => wire__crate__api__schema__create_table_impl(port, ptr, rust_vec_len, data_len),
+        22 => wire__crate__api__schema__database_options_impl(port, ptr, rust_vec_len, data_len),
+        25 => {
             wire__crate__api__connections__delete_connection_impl(port, ptr, rust_vec_len, data_len)
         }
-        24 => wire__crate__api__editor__delete_favorite_impl(port, ptr, rust_vec_len, data_len),
-        25 => wire__crate__api__db__delete_rows_impl(port, ptr, rust_vec_len, data_len),
-        26 => wire__crate__api__value__display_text_impl(port, ptr, rust_vec_len, data_len),
-        27 => wire__crate__api__editor__drop_child_results_impl(port, ptr, rust_vec_len, data_len),
-        28 => wire__crate__api__db__execute_impl(port, ptr, rust_vec_len, data_len),
-        29 => wire__crate__api__db__execute_filtered_view_impl(port, ptr, rust_vec_len, data_len),
-        30 => wire__crate__api__editor__execute_script_impl(port, ptr, rust_vec_len, data_len),
-        31 => wire__crate__api__editor__explain_impl(port, ptr, rust_vec_len, data_len),
-        32 => wire__crate__api__db__export_rows_impl(port, ptr, rust_vec_len, data_len),
-        33 => wire__crate__api__db__export_sql_dump_impl(port, ptr, rust_vec_len, data_len),
-        34 => wire__crate__api__db__export_table_impl(port, ptr, rust_vec_len, data_len),
-        35 => wire__crate__api__db__fetch_window_impl(port, ptr, rust_vec_len, data_len),
-        36 => wire__crate__api__db__fetch_window_text_impl(port, ptr, rust_vec_len, data_len),
-        37 => wire__crate__api__db__file_progress_impl(port, ptr, rust_vec_len, data_len),
-        38 => wire__crate__api__value__format_json_impl(port, ptr, rust_vec_len, data_len),
-        39 => wire__crate__api__value__hex_dump_impl(port, ptr, rust_vec_len, data_len),
-        40 => wire__crate__api__editor__import_sql_file_impl(port, ptr, rust_vec_len, data_len),
-        41 => wire__crate__api__csv_import__import_status_impl(port, ptr, rust_vec_len, data_len),
-        42 => wire__crate__api__init_app_impl(port, ptr, rust_vec_len, data_len),
-        43 => wire__crate__api__db__insert_row_impl(port, ptr, rust_vec_len, data_len),
-        44 => wire__crate__api__schema__insert_template_impl(port, ptr, rust_vec_len, data_len),
-        45 => wire__crate__api__server__kill_process_impl(port, ptr, rust_vec_len, data_len),
-        46 => {
+        26 => wire__crate__api__editor__delete_favorite_impl(port, ptr, rust_vec_len, data_len),
+        27 => wire__crate__api__db__delete_rows_impl(port, ptr, rust_vec_len, data_len),
+        28 => wire__crate__api__value__display_text_impl(port, ptr, rust_vec_len, data_len),
+        29 => wire__crate__api__editor__drop_child_results_impl(port, ptr, rust_vec_len, data_len),
+        30 => wire__crate__api__db__execute_impl(port, ptr, rust_vec_len, data_len),
+        31 => wire__crate__api__db__execute_filtered_view_impl(port, ptr, rust_vec_len, data_len),
+        32 => wire__crate__api__editor__execute_script_impl(port, ptr, rust_vec_len, data_len),
+        33 => wire__crate__api__editor__explain_impl(port, ptr, rust_vec_len, data_len),
+        34 => wire__crate__api__db__export_rows_impl(port, ptr, rust_vec_len, data_len),
+        35 => wire__crate__api__db__export_sql_dump_impl(port, ptr, rust_vec_len, data_len),
+        36 => wire__crate__api__db__export_table_impl(port, ptr, rust_vec_len, data_len),
+        37 => wire__crate__api__db__fetch_window_impl(port, ptr, rust_vec_len, data_len),
+        38 => wire__crate__api__db__fetch_window_text_impl(port, ptr, rust_vec_len, data_len),
+        39 => wire__crate__api__db__file_progress_impl(port, ptr, rust_vec_len, data_len),
+        40 => wire__crate__api__value__format_json_impl(port, ptr, rust_vec_len, data_len),
+        41 => wire__crate__api__value__hex_dump_impl(port, ptr, rust_vec_len, data_len),
+        42 => wire__crate__api__editor__import_sql_file_impl(port, ptr, rust_vec_len, data_len),
+        43 => wire__crate__api__csv_import__import_status_impl(port, ptr, rust_vec_len, data_len),
+        44 => wire__crate__api__init_app_impl(port, ptr, rust_vec_len, data_len),
+        45 => wire__crate__api__db__insert_row_impl(port, ptr, rust_vec_len, data_len),
+        46 => wire__crate__api__schema__insert_template_impl(port, ptr, rust_vec_len, data_len),
+        47 => wire__crate__api__server__kill_process_impl(port, ptr, rust_vec_len, data_len),
+        48 => {
             wire__crate__api__connections__list_connections_impl(port, ptr, rust_vec_len, data_len)
         }
-        47 => wire__crate__api__schema__list_databases_impl(port, ptr, rust_vec_len, data_len),
-        48 => wire__crate__api__editor__list_favorites_impl(port, ptr, rust_vec_len, data_len),
-        49 => wire__crate__api__editor__list_history_impl(port, ptr, rust_vec_len, data_len),
-        50 => wire__crate__api__operation_log__list_operation_logs_impl(
+        49 => wire__crate__api__schema__list_databases_impl(port, ptr, rust_vec_len, data_len),
+        50 => wire__crate__api__editor__list_favorites_impl(port, ptr, rust_vec_len, data_len),
+        51 => wire__crate__api__editor__list_history_impl(port, ptr, rust_vec_len, data_len),
+        52 => wire__crate__api__operation_log__list_operation_logs_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        51 => wire__crate__api__editor__list_query_history_impl(port, ptr, rust_vec_len, data_len),
-        52 => wire__crate__api__schema__list_tables_impl(port, ptr, rust_vec_len, data_len),
-        53 => wire__crate__api__editor__load_catalog_impl(port, ptr, rust_vec_len, data_len),
-        54 => wire__crate__api__layouts__load_layout_impl(port, ptr, rust_vec_len, data_len),
-        55 => wire__crate__api__connections__load_password_impl(port, ptr, rust_vec_len, data_len),
-        56 => {
+        53 => wire__crate__api__editor__list_query_history_impl(port, ptr, rust_vec_len, data_len),
+        54 => wire__crate__api__schema__list_tables_impl(port, ptr, rust_vec_len, data_len),
+        55 => wire__crate__api__editor__load_catalog_impl(port, ptr, rust_vec_len, data_len),
+        56 => wire__crate__api__layouts__load_layout_impl(port, ptr, rust_vec_len, data_len),
+        57 => wire__crate__api__connections__load_password_impl(port, ptr, rust_vec_len, data_len),
+        58 => {
             wire__crate__api__preferences__load_preferences_impl(port, ptr, rust_vec_len, data_len)
         }
-        57 => wire__crate__api__users__load_user_admin_impl(port, ptr, rust_vec_len, data_len),
-        59 => {
+        59 => wire__crate__api__users__load_user_admin_impl(port, ptr, rust_vec_len, data_len),
+        61 => {
             wire__crate__api__connections__open_connections_impl(port, ptr, rust_vec_len, data_len)
         }
-        60 => wire__crate__api__db__open_session_impl(port, ptr, rust_vec_len, data_len),
-        61 => wire__crate__api__db__parse_clipboard_impl(port, ptr, rust_vec_len, data_len),
-        62 => wire__crate__api__db__paste_cells_impl(port, ptr, rust_vec_len, data_len),
-        63 => wire__crate__api__csv_import__prepare_import_impl(port, ptr, rust_vec_len, data_len),
-        64 => wire__crate__api__schema__preview_alter_impl(port, ptr, rust_vec_len, data_len),
-        65 => wire__crate__api__schema__preview_create_database_impl(
+        62 => wire__crate__api__db__open_session_impl(port, ptr, rust_vec_len, data_len),
+        63 => wire__crate__api__db__parse_clipboard_impl(port, ptr, rust_vec_len, data_len),
+        64 => wire__crate__api__db__paste_cells_impl(port, ptr, rust_vec_len, data_len),
+        65 => wire__crate__api__csv_import__prepare_import_impl(port, ptr, rust_vec_len, data_len),
+        66 => wire__crate__api__schema__preview_alter_impl(port, ptr, rust_vec_len, data_len),
+        67 => wire__crate__api__schema__preview_create_database_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        66 => {
+        68 => {
             wire__crate__api__schema__preview_create_table_impl(port, ptr, rust_vec_len, data_len)
         }
-        67 => wire__crate__api__csv_import__preview_csv_impl(port, ptr, rust_vec_len, data_len),
-        68 => wire__crate__api__server__preview_set_global_impl(port, ptr, rust_vec_len, data_len),
-        69 => {
+        69 => wire__crate__api__csv_import__preview_csv_impl(port, ptr, rust_vec_len, data_len),
+        70 => wire__crate__api__server__preview_set_global_impl(port, ptr, rust_vec_len, data_len),
+        71 => {
             wire__crate__api__schema__preview_table_action_impl(port, ptr, rust_vec_len, data_len)
         }
-        70 => wire__crate__api__users__preview_user_change_impl(port, ptr, rust_vec_len, data_len),
-        71 => wire__crate__api__db__refresh_row_impl(port, ptr, rust_vec_len, data_len),
-        72 => wire__crate__api__db__rows_insert_sql_impl(port, ptr, rust_vec_len, data_len),
-        73 => wire__crate__api__schema__run_maintenance_impl(port, ptr, rust_vec_len, data_len),
-        74 => {
+        72 => wire__crate__api__users__preview_user_change_impl(port, ptr, rust_vec_len, data_len),
+        73 => wire__crate__api__db__refresh_row_impl(port, ptr, rust_vec_len, data_len),
+        74 => wire__crate__api__db__rows_insert_sql_impl(port, ptr, rust_vec_len, data_len),
+        75 => wire__crate__api__schema__run_maintenance_impl(port, ptr, rust_vec_len, data_len),
+        76 => {
             wire__crate__api__connections__save_connection_impl(port, ptr, rust_vec_len, data_len)
         }
-        75 => wire__crate__api__editor__save_favorite_impl(port, ptr, rust_vec_len, data_len),
-        76 => {
+        77 => wire__crate__api__editor__save_favorite_impl(port, ptr, rust_vec_len, data_len),
+        78 => {
             wire__crate__api__csv_import__save_import_errors_impl(port, ptr, rust_vec_len, data_len)
         }
-        77 => wire__crate__api__layouts__save_layout_impl(port, ptr, rust_vec_len, data_len),
-        78 => wire__crate__api__connections__save_open_connections_impl(
+        79 => wire__crate__api__layouts__save_layout_impl(port, ptr, rust_vec_len, data_len),
+        80 => wire__crate__api__connections__save_open_connections_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        79 => {
+        81 => {
             wire__crate__api__preferences__save_preferences_impl(port, ptr, rust_vec_len, data_len)
         }
-        80 => {
+        82 => {
             wire__crate__api__connections__save_ssh_secret_impl(port, ptr, rust_vec_len, data_len)
         }
-        81 => wire__crate__api__server__server_processes_impl(port, ptr, rust_vec_len, data_len),
-        82 => wire__crate__api__server__server_status_impl(port, ptr, rust_vec_len, data_len),
-        83 => wire__crate__api__server__server_variables_impl(port, ptr, rust_vec_len, data_len),
-        84 => wire__crate__api__server__slow_log_config_impl(port, ptr, rust_vec_len, data_len),
-        85 => wire__crate__api__server__slow_log_entries_impl(port, ptr, rust_vec_len, data_len),
-        87 => wire__crate__api__csv_import__start_import_impl(port, ptr, rust_vec_len, data_len),
-        90 => wire__crate__api__schema__table_structure_impl(port, ptr, rust_vec_len, data_len),
-        92 => wire__crate__api__options__trust_host_key_impl(port, ptr, rust_vec_len, data_len),
+        83 => wire__crate__api__server__server_processes_impl(port, ptr, rust_vec_len, data_len),
+        84 => wire__crate__api__server__server_status_impl(port, ptr, rust_vec_len, data_len),
+        85 => wire__crate__api__server__server_variables_impl(port, ptr, rust_vec_len, data_len),
+        86 => wire__crate__api__server__slow_log_config_impl(port, ptr, rust_vec_len, data_len),
+        87 => wire__crate__api__server__slow_log_entries_impl(port, ptr, rust_vec_len, data_len),
+        89 => wire__crate__api__csv_import__start_import_impl(port, ptr, rust_vec_len, data_len),
+        92 => wire__crate__api__schema__table_structure_impl(port, ptr, rust_vec_len, data_len),
+        94 => wire__crate__api__options__trust_host_key_impl(port, ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -6903,22 +7059,39 @@ fn pde_ffi_dispatcher_sync_impl(
 ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
     // Codec=Pde (Serialization + dispatch), see doc to use other codecs
     match func_id {
-        12 => wire__crate__api__value__check_time_text_impl(ptr, rust_vec_len, data_len),
-        16 => wire__crate__api__editor__complete_sql_impl(ptr, rust_vec_len, data_len),
-        21 => {
+        1 => wire__crate__api__editor__SqlImportTask_cancel_impl(ptr, rust_vec_len, data_len),
+        2 => wire__crate__api__editor__SqlImportTask_new_impl(ptr, rust_vec_len, data_len),
+        14 => wire__crate__api__value__check_time_text_impl(ptr, rust_vec_len, data_len),
+        18 => wire__crate__api__editor__complete_sql_impl(ptr, rust_vec_len, data_len),
+        23 => {
             wire__crate__api__options__default_connection_options_impl(ptr, rust_vec_len, data_len)
         }
-        22 => wire__crate__api__preferences__default_preferences_impl(ptr, rust_vec_len, data_len),
-        58 => wire__crate__api__schema__new_table_draft_impl(ptr, rust_vec_len, data_len),
-        86 => wire__crate__api__editor__split_statements_impl(ptr, rust_vec_len, data_len),
-        88 => wire__crate__api__csv_import__suggest_mapping_impl(ptr, rust_vec_len, data_len),
-        89 => wire__crate__api__schema__table_draft_impl(ptr, rust_vec_len, data_len),
-        91 => wire__crate__api__editor__tokenize_sql_impl(ptr, rust_vec_len, data_len),
+        24 => wire__crate__api__preferences__default_preferences_impl(ptr, rust_vec_len, data_len),
+        60 => wire__crate__api__schema__new_table_draft_impl(ptr, rust_vec_len, data_len),
+        88 => wire__crate__api__editor__split_statements_impl(ptr, rust_vec_len, data_len),
+        90 => wire__crate__api__csv_import__suggest_mapping_impl(ptr, rust_vec_len, data_len),
+        91 => wire__crate__api__schema__table_draft_impl(ptr, rust_vec_len, data_len),
+        93 => wire__crate__api__editor__tokenize_sql_impl(ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
 
 // Section: rust2dart
+
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for FrbWrapper<SqlImportTask> {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        flutter_rust_bridge::for_generated::rust_auto_opaque_encode::<_, MoiArc<_>>(self.0)
+            .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for FrbWrapper<SqlImportTask> {}
+
+impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<SqlImportTask>> for SqlImportTask {
+    fn into_into_dart(self) -> FrbWrapper<SqlImportTask> {
+        self.into()
+    }
+}
 
 // Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::users::Account> {
@@ -8681,6 +8854,23 @@ impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<crate::api::db::SqlDumpOptions
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::editor::SqlImportCancellation> {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [self.0.confirmed_stopped.into_into_dart().into_dart()].into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for FrbWrapper<crate::api::editor::SqlImportCancellation>
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<crate::api::editor::SqlImportCancellation>>
+    for crate::api::editor::SqlImportCancellation
+{
+    fn into_into_dart(self) -> FrbWrapper<crate::api::editor::SqlImportCancellation> {
+        self.into()
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::editor::SqlImportFailure> {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
@@ -8709,6 +8899,7 @@ impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::editor::SqlImportS
             self.0.executed.into_into_dart().into_dart(),
             self.0.affected_rows.into_into_dart().into_dart(),
             self.0.failure.into_into_dart().into_dart(),
+            self.0.cancellation.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -9367,6 +9558,24 @@ impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<crate::api::server::VariableSc
 {
     fn into_into_dart(self) -> FrbWrapper<crate::api::server::VariableScope> {
         self.into()
+    }
+}
+
+impl SseEncode for SqlImportTask {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<SqlImportTask>>>::sse_encode(flutter_rust_bridge::for_generated::rust_auto_opaque_encode::<_, MoiArc<_>>(self), serializer);
+    }
+}
+
+impl SseEncode
+    for RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<SqlImportTask>>
+{
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        let (ptr, size) = self.sse_encode_raw();
+        <usize>::sse_encode(ptr, serializer);
+        <i32>::sse_encode(size, serializer);
     }
 }
 
@@ -10717,6 +10926,16 @@ impl SseEncode for Option<crate::api::db::QuerySummary> {
     }
 }
 
+impl SseEncode for Option<crate::api::editor::SqlImportCancellation> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <bool>::sse_encode(self.is_some(), serializer);
+        if let Some(value) = self {
+            <crate::api::editor::SqlImportCancellation>::sse_encode(value, serializer);
+        }
+    }
+}
+
 impl SseEncode for Option<crate::api::editor::SqlImportFailure> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -10912,6 +11131,13 @@ impl SseEncode for crate::api::db::SqlDumpOptions {
     }
 }
 
+impl SseEncode for crate::api::editor::SqlImportCancellation {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <bool>::sse_encode(self.confirmed_stopped, serializer);
+    }
+}
+
 impl SseEncode for crate::api::editor::SqlImportFailure {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -10927,6 +11153,10 @@ impl SseEncode for crate::api::editor::SqlImportSummary {
         <u64>::sse_encode(self.executed, serializer);
         <u64>::sse_encode(self.affected_rows, serializer);
         <Option<crate::api::editor::SqlImportFailure>>::sse_encode(self.failure, serializer);
+        <Option<crate::api::editor::SqlImportCancellation>>::sse_encode(
+            self.cancellation,
+            serializer,
+        );
     }
 }
 
@@ -11350,6 +11580,7 @@ mod io {
     // Section: imports
 
     use super::*;
+    use crate::api::editor::*;
     use flutter_rust_bridge::for_generated::byteorder::{
         NativeEndian, ReadBytesExt, WriteBytesExt,
     };
@@ -11359,6 +11590,20 @@ mod io {
     // Section: boilerplate
 
     flutter_rust_bridge::frb_generated_boilerplate_io!();
+
+    #[unsafe(no_mangle)]
+    pub extern "C" fn frbgen_cdata_flutter_rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerSqlImportTask(
+        ptr: *const std::ffi::c_void,
+    ) {
+        MoiArc::<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<SqlImportTask>>::increment_strong_count(ptr as _);
+    }
+
+    #[unsafe(no_mangle)]
+    pub extern "C" fn frbgen_cdata_flutter_rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerSqlImportTask(
+        ptr: *const std::ffi::c_void,
+    ) {
+        MoiArc::<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<SqlImportTask>>::decrement_strong_count(ptr as _);
+    }
 }
 #[cfg(not(target_family = "wasm"))]
 pub use io::*;
@@ -11372,6 +11617,7 @@ mod web {
     // Section: imports
 
     use super::*;
+    use crate::api::editor::*;
     use flutter_rust_bridge::for_generated::byteorder::{
         NativeEndian, ReadBytesExt, WriteBytesExt,
     };
@@ -11383,6 +11629,20 @@ mod web {
     // Section: boilerplate
 
     flutter_rust_bridge::frb_generated_boilerplate_web!();
+
+    #[wasm_bindgen]
+    pub fn rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerSqlImportTask(
+        ptr: *const std::ffi::c_void,
+    ) {
+        MoiArc::<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<SqlImportTask>>::increment_strong_count(ptr as _);
+    }
+
+    #[wasm_bindgen]
+    pub fn rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerSqlImportTask(
+        ptr: *const std::ffi::c_void,
+    ) {
+        MoiArc::<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<SqlImportTask>>::decrement_strong_count(ptr as _);
+    }
 }
 #[cfg(target_family = "wasm")]
 pub use web::*;

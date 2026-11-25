@@ -5,7 +5,8 @@ import 'package:flutter/material.dart';
 
 import 'mac_widgets.dart';
 import 'src/rust/api/db.dart' show ExportEncoding, FileProgress, fileProgress;
-import 'src/rust/api/editor.dart' show SqlImportSummary, importSqlFile;
+import 'src/rust/api/editor.dart'
+    show SqlImportSummary, SqlImportTask, importSqlFile;
 
 /// 返回是否开始过执行，调用方据此刷新库表与当前结果。
 Future<bool> showSqlImportDialog(
@@ -60,7 +61,9 @@ class _SqlImportDialogState extends State<_SqlImportDialog> {
   SqlImportSummary? _summary;
   String? _error;
   bool _running = false;
+  bool _cancelling = false;
   bool _attempted = false;
+  SqlImportTask? _task;
   FileProgress? _progress;
   Timer? _poll;
 
@@ -72,6 +75,7 @@ class _SqlImportDialogState extends State<_SqlImportDialog> {
 
   @override
   void dispose() {
+    _task?.cancel();
     _poll?.cancel();
     super.dispose();
   }
@@ -97,11 +101,13 @@ class _SqlImportDialogState extends State<_SqlImportDialog> {
     _poll = Timer.periodic(const Duration(milliseconds: 300), (_) => _tick());
     _tick();
     try {
+      final task = _task = SqlImportTask();
       final summary = await importSqlFile(
         sessionId: widget.sessionId,
         path: path,
         encoding: _encoding,
         database: widget.database,
+        task: task,
       );
       if (!mounted) return;
       setState(() {
@@ -111,9 +117,22 @@ class _SqlImportDialogState extends State<_SqlImportDialog> {
     } catch (e) {
       if (mounted) setState(() => _error = '$e');
     } finally {
+      _task?.dispose();
+      _task = null;
       _poll?.cancel();
-      if (mounted) setState(() => _running = false);
+      if (mounted) {
+        setState(() {
+          _running = false;
+          _cancelling = false;
+        });
+      }
     }
+  }
+
+  void _cancelImport() {
+    if (_cancelling || _task == null) return;
+    _task!.cancel();
+    setState(() => _cancelling = true);
   }
 
   void _tick() {
@@ -139,11 +158,15 @@ class _SqlImportDialogState extends State<_SqlImportDialog> {
     final colors = Theme.of(context).colorScheme;
     final summary = _summary;
     final failure = summary?.failure;
+    final cancellation = summary?.cancellation;
     final screen = MediaQuery.sizeOf(context);
     final width = (screen.width - 56).clamp(0.0, 580.0).toDouble();
     final maxHeight = (screen.height - 56).clamp(0.0, 520.0).toDouble();
-    return PopScope(
+    return PopScope<bool>(
       canPop: !_running,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop && _running) _cancelImport();
+      },
       child: Dialog(
         insetPadding: const EdgeInsets.all(28),
         clipBehavior: Clip.antiAlias,
@@ -231,11 +254,13 @@ class _SqlImportDialogState extends State<_SqlImportDialog> {
                           const SizedBox(height: 10),
                           _section(
                             icon: Icons.sync,
-                            title: '正在执行',
+                            title: _cancelling ? '正在取消导入…' : '正在执行',
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.stretch,
                               children: [
-                                LinearProgressIndicator(value: _barValue(_progress)),
+                                LinearProgressIndicator(
+                                  value: _barValue(_progress),
+                                ),
                                 const SizedBox(height: 6),
                                 Text(_progressLabel(_progress)),
                               ],
@@ -245,15 +270,23 @@ class _SqlImportDialogState extends State<_SqlImportDialog> {
                         if (summary != null) ...[
                           const SizedBox(height: 10),
                           _section(
-                            icon: failure == null
+                            icon: cancellation != null
+                                ? Icons.stop_circle_outlined
+                                : failure == null
                                 ? Icons.check_circle_outline
                                 : Icons.error_outline,
-                            title: failure == null ? '导入完成' : '执行结果',
+                            title: cancellation != null
+                                ? cancellation.confirmedStopped
+                                      ? '导入已取消'
+                                      : '无法确认服务器已停止导入'
+                                : failure == null
+                                ? '导入完成'
+                                : '执行结果',
                             child: Row(
                               children: [
                                 Expanded(
                                   child: _resultMetric(
-                                    '已执行语句',
+                                    cancellation == null ? '已执行语句' : '已确认执行语句',
                                     summary.executed.toString(),
                                   ),
                                 ),
@@ -267,6 +300,14 @@ class _SqlImportDialogState extends State<_SqlImportDialog> {
                               ],
                             ),
                           ),
+                          if (cancellation != null) ...[
+                            const SizedBox(height: 10),
+                            Text(
+                              cancellation.confirmedStopped
+                                  ? '已提交的改动会保留，断开连接会回滚未提交的事务。'
+                                  : '本地已停止继续发送语句，当前批次和事务状态需在数据库中确认。',
+                            ),
+                          ],
                           if (failure != null) ...[
                             const SizedBox(height: 10),
                             _messageCard(
@@ -420,9 +461,13 @@ class _SqlImportDialogState extends State<_SqlImportDialog> {
           const SizedBox(width: 12),
           TextButton(
             onPressed: _running
-                ? null
+                ? (_cancelling ? null : _cancelImport)
                 : () => Navigator.of(context).pop(_attempted),
-            child: Text(_summary == null ? '取消' : '关闭'),
+            child: Text(
+              _running
+                  ? (_cancelling ? '正在取消…' : '取消导入')
+                  : (_summary == null ? '取消' : '关闭'),
+            ),
           ),
           if (_summary == null) ...[
             const SizedBox(width: 6),

@@ -6,7 +6,7 @@ pub use cdata_core::complete::{Completion, CompletionItem, CompletionKind};
 pub use cdata_core::history::{Favorite, HistoryEntry};
 pub use cdata_core::lexer::{SqlToken, SqlTokenKind};
 pub use cdata_core::session::{ScriptSummary, StatementFailure, StatementOutcome};
-pub use cdata_core::sql_import::{SqlImportFailure, SqlImportSummary};
+pub use cdata_core::sql_import::{SqlImportCancellation, SqlImportFailure, SqlImportSummary};
 use cdata_core::export::ExportEncoding;
 
 use crate::api::db::QuerySummary;
@@ -149,6 +149,27 @@ pub struct _SqlImportSummary {
     pub executed: u64,
     pub affected_rows: u64,
     pub failure: Option<SqlImportFailure>,
+    pub cancellation: Option<SqlImportCancellation>,
+}
+
+#[frb(mirror(SqlImportCancellation))]
+pub struct _SqlImportCancellation {
+    pub confirmed_stopped: bool,
+}
+
+#[frb(opaque)]
+pub struct SqlImportTask(std::sync::Arc<cdata_core::sql_import::SqlImportCancel>);
+
+impl SqlImportTask {
+    #[frb(sync)]
+    pub fn new() -> Self {
+        Self(Default::default())
+    }
+
+    #[frb(sync)]
+    pub fn cancel(&self) {
+        self.0.cancel();
+    }
 }
 
 /// 编辑器里有几条语句。界面据此决定走单条（能筛选排序）还是多条脚本
@@ -163,8 +184,18 @@ pub async fn execute_script(session_id: u64, sql: String, max_rows: u64) -> Resu
 }
 
 /// SQL 文件由 core 解码、切分，再在独占连接上按顺序执行。
-pub async fn import_sql_file(session_id: u64, path: String, encoding: ExportEncoding, database: String) -> Result<SqlImportSummary> {
-    on_runtime(async move { cdata_core::session::import_sql_file(session_id, &path, encoding, &database).await }).await
+pub async fn import_sql_file(
+    session_id: u64,
+    path: String,
+    encoding: ExportEncoding,
+    database: String,
+    task: &SqlImportTask,
+) -> Result<SqlImportSummary> {
+    let cancel = task.0.clone();
+    on_runtime(async move {
+        cdata_core::session::import_sql_file_cancellable(session_id, &path, encoding, &database, &cancel).await
+    })
+    .await
 }
 
 /// 执行计划，结果放进一个子会话

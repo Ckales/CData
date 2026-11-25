@@ -336,15 +336,46 @@ pub async fn import_sql_file(
     encoding: crate::export::ExportEncoding,
     database: &str,
 ) -> Result<crate::sql_import::SqlImportSummary> {
+    import_sql_file_cancellable(
+        session_id,
+        path,
+        encoding,
+        database,
+        &crate::sql_import::SqlImportCancel::default(),
+    )
+    .await
+}
+
+pub async fn import_sql_file_cancellable(
+    session_id: u64,
+    path: &str,
+    encoding: crate::export::ExportEncoding,
+    database: &str,
+    cancel: &crate::sql_import::SqlImportCancel,
+) -> Result<crate::sql_import::SqlImportSummary> {
     crate::progress::reset_file_progress(session_id);
-    let statements = crate::sql_import::read_statements(path, encoding).map_err(Error::BadInput)?;
+    let path = path.to_owned();
+    let statements = tokio::select! {
+        biased;
+        _ = cancel.cancelled() => return Ok(crate::sql_import::SqlImportSummary::cancelled_before_execution()),
+        result = async move {
+            tokio::task::spawn_blocking(move || crate::sql_import::read_statements(&path, encoding)).await
+        } => {
+            result.map_err(|err| Error::BadInput(format!("无法读取 SQL 文件：{err}")))?
+                .map_err(Error::BadInput)?
+        }
+    };
     let (pool, _) = session_pool(session_id)?;
     let total = statements.len() as u64;
     crate::progress::set_file_progress(session_id, 0, total);
     let started = Instant::now();
-    let result = crate::db::run_sql_import(&pool, &statements, database, &|done, total| {
-        crate::progress::set_file_progress(session_id, done, total);
-    })
+    let result = crate::db::run_sql_import_cancellable(
+        &pool,
+        &statements,
+        database,
+        &|done, total| crate::progress::set_file_progress(session_id, done, total),
+        cancel,
+    )
     .await;
     if let Ok(summary) = &result {
         let mut executed = statements
@@ -357,15 +388,21 @@ pub async fn import_sql_file(
                 executed.push(statement.sql.clone());
             }
         }
-        if !executed.is_empty() {
+        if !executed.is_empty() || summary.cancellation.is_some() {
             let detail = crate::sql_log::sql_batch(&executed);
             crate::sql_log::record_detail(
                 session_id,
                 "import",
                 &detail,
                 started,
-                summary.failure.is_none(),
-                if summary.failure.is_some() {
+                summary.failure.is_none() && summary.cancellation.is_none(),
+                if let Some(cancellation) = &summary.cancellation {
+                    if cancellation.confirmed_stopped {
+                        "导入已取消"
+                    } else {
+                        "无法确认服务器已停止导入"
+                    }
+                } else if summary.failure.is_some() {
                     "导入语句失败"
                 } else {
                     "完成"

@@ -20,6 +20,44 @@ pub struct SqlImportSummary {
     pub affected_rows: u64,
     /// 前面的语句已经生效，不承诺整体回滚。
     pub failure: Option<SqlImportFailure>,
+    pub cancellation: Option<SqlImportCancellation>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SqlImportCancellation {
+    /// 尚未发送导入 SQL，或服务器已接受终止导入会话的请求。
+    pub confirmed_stopped: bool,
+}
+
+impl SqlImportSummary {
+    pub(crate) fn cancelled_before_execution() -> Self {
+        Self {
+            executed: 0,
+            affected_rows: 0,
+            failure: None,
+            cancellation: Some(SqlImportCancellation { confirmed_stopped: true }),
+        }
+    }
+}
+
+/// 每次导入持有自己的取消信号，开始前的取消也不会丢失。
+#[derive(Default)]
+pub struct SqlImportCancel {
+    requested: tokio::sync::watch::Sender<bool>,
+}
+
+impl SqlImportCancel {
+    pub fn cancel(&self) {
+        self.requested.send_replace(true);
+    }
+
+    pub(crate) fn is_requested(&self) -> bool {
+        *self.requested.borrow()
+    }
+
+    pub(crate) async fn cancelled(&self) {
+        let _ = self.requested.subscribe().wait_for(|requested| *requested).await;
+    }
 }
 
 pub(crate) fn server_error_message(server: &mysql_async::ServerError) -> String {
