@@ -1200,6 +1200,7 @@ void main() {
       );
       final fittingScrollbar = tester.widget<Scrollbar>(horizontalScrollbar);
       expect(fittingScrollbar.controller!.position.maxScrollExtent, 0);
+      expect(tester.getRect(find.byType(ListView)).bottom, tester.getRect(horizontalScrollbar).bottom);
 
       final columns = [for (var i = 0; i < 8; i++) column('c$i')];
       final source = FakeGridSource(
@@ -1217,14 +1218,26 @@ void main() {
       expect(scrollbar.controller!.position.maxScrollExtent, greaterThan(0));
 
       final bounds = tester.getRect(horizontalScrollbar);
-      await tester.dragFrom(
-        Offset(bounds.left + bounds.width * 0.25, bounds.bottom - 4),
-        Offset(bounds.width, 0),
-      );
-      await tester.pumpAndSettle();
+      final controller = scrollbar.controller!;
+      for (final distanceFromBottom in [2.5, 13.5]) {
+        controller.jumpTo(0);
+        await tester.pumpAndSettle();
+        final gesture = await tester.startGesture(
+          Offset(bounds.left + bounds.width * 0.25, bounds.bottom - distanceFromBottom),
+          kind: PointerDeviceKind.mouse,
+        );
+        await gesture.moveBy(const Offset(20, 0));
+        await tester.pump();
+        await gesture.moveBy(Offset(bounds.width, 0));
+        await gesture.up();
+        await tester.pumpAndSettle();
 
-      expect(tester.getRect(cell(0, 7)).right, lessThanOrEqualTo(bounds.right));
-    });
+        expect(controller.offset, controller.position.maxScrollExtent, reason: '距底部 $distanceFromBottom 时可拖动');
+        expect(tester.getRect(cell(0, 7)).right, lessThanOrEqualTo(bounds.right));
+        expect(selectedCells(tester, rows: 1, columns: 8), isEmpty);
+      }
+      expect(tester.getRect(find.byType(ListView)).bottom, lessThanOrEqualTo(bounds.bottom - 14));
+    }, variant: TargetPlatformVariant({TargetPlatform.macOS, TargetPlatform.windows}));
 
     testWidgets('按住拖动选出区域', (tester) async {
       await pumpGrid(tester, FakeGridSource.rows(3));
